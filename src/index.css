@@ -1,0 +1,333 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Cairo", "Noto Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-royal: #0a1628;
+  --color-royal-deep: #050a12;
+  --color-accent-orange: #ff8c00;
+  --color-accent-blue: #0052cc;
+  --color-border: #1e3a5f;
+}
+
+@layer base {
+  /* Western digits (0–9) in UI: pairs with Intl `numberingSystem: "latn"` and `data-numerals=latin` in production */
+  html {
+    font-variant-numeric: lining-nums tabular-nums;
+    -webkit-font-feature-settings: "lnum" 1;
+    font-feature-settings: "lnum" 1;
+  }
+  body {
+    @apply bg-[var(--color-royal-deep)] text-white font-sans antialiased;
+  }
+  /* Latin/Western digits in fields even under Arabic UI (avoid ١٢٣ in native numeric inputs) */
+  input,
+  textarea,
+  select {
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+  input[type="time"],
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="number"] {
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-variant-numeric: tabular-nums lining-nums !important;
+  }
+}
+
+/* طباعة من المتصفح: إخفاء الشريط والهيدر والتنقل؛ خلفية بيضاء للمحتوى */
+@media print {
+  body,
+  #root {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  [data-app-shell] > aside,
+  [data-app-shell] > main > header,
+  [data-app-shell] > nav {
+    display: none !important;
+  }
+  [data-app-shell] > main {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  /* المحرر القانوني: وثيقة الطلب فقط — بدون نافذة جديدة */
+  [data-app-shell] main:has([data-legal-editor-root]) > div.flex-1 {
+    padding: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  .legal-editor-screen-only {
+    display: none !important;
+  }
+  .legal-print-sheet-only {
+    display: block !important;
+    min-height: auto;
+    padding: 0;
+    margin: 0;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .legal-print-sheet-inner {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 12mm 14mm 22mm;
+    font-family: Arial, "Times New Roman", "Noto Naskh Arabic", serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* المملكة أعلى الورقة — خط عريض جذاب + خط ملكي أزرق يفصل الترويسة عن المحتوى */
+  .legal-print-kingdom-row {
+    text-align: right;
+    direction: rtl;
+    margin: 0 0 0 0;
+    padding-bottom: 0;
+  }
+  .legal-print-kingdom {
+    font-size: 26pt;
+    font-weight: 900 !important;
+    color: #003876 !important;
+    padding: 0 0 0 0;
+    margin: 0 0 0 0;
+    unicode-bidi: isolate;
+    letter-spacing: 0.04em;
+    line-height: 1.25;
+    font-family: "Times New Roman", "Noto Naskh Arabic", "Traditional Arabic", Arial, serif;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .legal-print-royal-line {
+    display: block;
+    height: 4px;
+    width: 100%;
+    background: #003876 !important;
+    margin: 12px 0 0 0;
+    margin-bottom: 22px;
+    border: none;
+    border-radius: 0;
+    box-shadow: 0 1px 0 rgba(0, 56, 118, 0.25);
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .legal-print-formal {
+    text-align: center;
+    font-size: 13pt;
+    font-weight: 700;
+    color: #000 !important;
+    margin: 0 0 22px 0;
+    padding: 0 8px;
+    line-height: 1.5;
+    unicode-bidi: plaintext;
+    direction: rtl;
+  }
+  .legal-print-body-main {
+    text-align: right;
+    font-size: 12pt;
+    line-height: 1.75;
+    color: #000 !important;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    unicode-bidi: plaintext;
+    direction: rtl;
+    margin-top: 4px;
+  }
+  .legal-print-body-main p {
+    margin: 0 0 0.85em 0;
+  }
+
+  .legal-print-pro-divider {
+    display: block;
+    height: 4px;
+    width: 100%;
+    background: #003876 !important;
+    margin: 0 0 22px;
+    border-radius: 0;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+.legal-print-sheet-only {
+  display: none;
+}
+
+/*
+ * html2canvas يُصيّر في سياق الشاشة وليس print — هذه القواعد تطابق @media print
+ * حتى تظهر الخطوط والخط الأزرق والترويسة عند التصدير (لا صفحات بيضاء).
+ */
+.legal-print-sheet-only.legal-pdf-capture-active {
+  display: block !important;
+  min-height: auto;
+  padding: 0;
+  margin: 0;
+  background: #fff !important;
+  color: #000 !important;
+}
+
+.legal-print-sheet-only.legal-pdf-capture-active .legal-print-sheet-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 12mm 14mm 22mm;
+  box-sizing: border-box;
+  font-family: Arial, "Times New Roman", "Noto Naskh Arabic", serif;
+  background: #fff !important;
+  color: #000 !important;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.legal-print-sheet-only.legal-pdf-capture-active .legal-print-kingdom-row {
+  text-align: right;
+  direction: rtl;
+  margin: 0;
+  padding-bottom: 0;
+}
+
+.legal-print-sheet-only.legal-pdf-capture-active .legal-print-kingdom {
+  font-size: 26pt;
+  font-weight: 900 !important;
+  color: #003876 !important;
+  padding: 0;
+  margin: 0;
+  unicode-bidi: isolate;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  font-family: "Times New Roman", "Noto Naskh Arabic", "Traditional Arabic", Arial, serif;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+
+.legal-print-sheet-only.legal-pdf-capture-active .legal-print-royal-line {
+  display: block;
+  height: 4px;
+  width: 100%;
+  background: #003876 !important;
+  margin: 12px 0 22px;
+  border: none;
+  border-radius: 0;
+  box-shadow: 0 1px 0 rgba(0, 56, 118, 0.25);
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+
+/* وضع احترافي دون ترويسة العرش — خط أزرق ملكي فقط */
+.legal-print-sheet-only.legal-pdf-capture-active .legal-print-pro-divider {
+  display: block;
+  height: 4px;
+  width: 100%;
+  background: #003876 !important;
+  margin: 0 0 22px;
+  border-radius: 0;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+
+.legal-print-sheet-only.legal-pdf-capture-active .legal-print-formal {
+  text-align: center;
+  font-size: 13pt;
+  font-weight: 700;
+  color: #000 !important;
+  margin: 0 0 22px;
+  padding: 0 8px;
+  line-height: 1.5;
+  unicode-bidi: plaintext;
+  direction: rtl;
+}
+
+.legal-print-sheet-only.legal-pdf-capture-active .legal-print-body-main {
+  text-align: right;
+  font-size: 12pt;
+  line-height: 1.75;
+  color: #000 !important;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  unicode-bidi: plaintext;
+  direction: rtl;
+  margin-top: 4px;
+}
+
+@keyframes idara-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes idara-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 82, 204, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 24px 2px rgba(0, 82, 204, 0.2);
+  }
+}
+
+.idara-animate-in {
+  animation: idara-fade-up 0.45s ease-out both;
+}
+
+.idara-sidebar-active {
+  animation: idara-glow 3s ease-in-out infinite;
+}
+
+@keyframes stock-ticker {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-stock-ticker {
+  display: inline-flex;
+  animation: stock-ticker 38s linear infinite;
+  will-change: transform;
+}
+
+html[data-visual-theme="neon"] body {
+  background: radial-gradient(ellipse 120% 80% at 50% -20%, rgba(168, 85, 247, 0.12), transparent),
+    radial-gradient(ellipse 80% 60% at 100% 50%, rgba(34, 211, 238, 0.08), transparent),
+    #050a12;
+}
+
+html[data-visual-theme="neon"] [data-app-shell] {
+  --neon-edge: rgba(34, 211, 238, 0.35);
+  --neon-glow: rgba(168, 85, 247, 0.25);
+}
+
+html[data-visual-theme="neon"] [data-app-shell] aside {
+  box-shadow: 0 0 40px rgba(34, 211, 238, 0.08), inset 0 0 60px rgba(168, 85, 247, 0.04);
+  border-color: rgba(34, 211, 238, 0.22) !important;
+}
+
+html[data-visual-theme="neon"] [data-app-shell] main > header {
+  border-color: rgba(168, 85, 247, 0.25) !important;
+  box-shadow: 0 4px 30px rgba(34, 211, 238, 0.06);
+}
+
+/* Pricing plan card — selected checkmark pop */
+@keyframes plan-check-pop {
+  0% {
+    transform: scale(0.35);
+    opacity: 0;
+  }
+  65% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .animate-plan-check-pop {
+    animation: plan-check-pop 0.38s cubic-bezier(0.34, 1.4, 0.64, 1) forwards;
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "www.smartal-idarapro.com" }],
+      "destination": "https://smartal-idarapro.com/$1",
+      "permanent": true
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/((?!api/|assets/|fonts/|.*\\.(?:js|css|png|jpg|jpeg|svg|ico|webmanifest|woff2?|ttf|map)$).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

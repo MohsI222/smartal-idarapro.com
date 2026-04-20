@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="سمارت الإدارة برو — منصة SaaS احترافية للمغرب: تأشيرات، مخزون، تأسيس شركات، تدريب، وأدوات أعمال."
+    />
+    <meta name="keywords" content="Smart Al-Idara Pro, SaaS, Morocco, إدارة, المغرب" />
+    <meta name="author" content="Smart Al-Idara Pro" />
+    <meta name="theme-color" content="#0052CC" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="سمارت الإدارة برو" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/pwa-512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:locale" content="ar_MA" />
+    <meta property="og:title" content="سمارت الإدارة برو" />
+    <meta
+      property="og:description"
+      content="منصة SaaS احترافية — تأشيرات، مخزون، تدريب، وأدوات أعمال للسوق المغربي."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="سمارت الإدارة برو" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/pwa-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/pwa-512.png" />
+    <title>سمارت الإدارة برو</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;700&family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+  </head>
+  <body class="antialiased">
+    <div id="root"></div>
+    <script>
+      (function () {
+        var RESET_KEY = "smartal-migration-reset-v1";
+        try {
+          if ("serviceWorker" in navigator && !localStorage.getItem(RESET_KEY)) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              if (!regs.length) {
+                localStorage.setItem(RESET_KEY, "1");
+                return;
+              }
+              Promise.all(regs.map(function (r) { return r.unregister(); }))
+                .then(function () {
+                  return "caches" in window
+                    ? caches.keys().then(function (ks) {
+                        return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+                      })
+                    : undefined;
+                })
+                .then(function () {
+                  localStorage.setItem(RESET_KEY, "1");
+                  location.reload();
+                });
+            });
+          }
+        } catch (e) { /* ignore */ }
+      })();
+
+      window.addEventListener("error", function (ev) {
+        var tgt = ev && ev.target;
+        if (!tgt || (tgt.tagName !== "SCRIPT" && tgt.tagName !== "LINK")) return;
+        var RECOVER_KEY = "smartal-recover-v1";
+        if (sessionStorage.getItem(RECOVER_KEY)) return;
+        sessionStorage.setItem(RECOVER_KEY, "1");
+        try {
+          if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              Promise.all(regs.map(function (r) { return r.unregister(); }))
+                .then(function () { return "caches" in window ? caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }) : undefined; })
+                .then(function () { location.reload(); });
+            });
+          } else {
+            location.reload();
+          }
+        } catch (e) { location.reload(); }
+      }, true);
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
