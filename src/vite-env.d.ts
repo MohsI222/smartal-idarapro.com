@@ -20,9 +20,6 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   /** Supabase anonymous/public key for browser use. */
   readonly VITE_SUPABASE_ANON_KEY?: string;
-  /**
-   * Social OAuth buttons: default ON when `VITE_SUPABASE_*` is set.
-   * Set to `false` to hide/disable social login in the UI.
-   */
-  readonly VITE_SOCIAL_LOGIN_ENABLED?: string;
+  /** Optional override for the public-facing super admin email shown in the UI. */
+  readonly VITE_SUPER_ADMIN_EMAIL?: string;
 }

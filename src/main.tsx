@@ -13,7 +13,16 @@ createRoot(document.getElementById("root")!).render(
 );
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-  });
+  if (import.meta.env.PROD) {
+    window.addEventListener("load", () => {
+      void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    });
+  } else {
+    void navigator.serviceWorker.getRegistrations().then((regs) => {
+      regs.forEach((r) => void r.unregister());
+      if ("caches" in window) {
+        void caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))));
+      }
+    });
+  }
 }

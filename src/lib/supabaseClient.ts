@@ -8,8 +8,15 @@ const supabaseAnonKey = typeof rawKey === "string" ? rawKey.trim() : "";
 
 const isValidUrl = /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(supabaseUrl);
 const isJwtKey = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(supabaseAnonKey);
-const isPublishableKey = /^sb_publishable_[A-Za-z0-9._-]{20,}$/.test(supabaseAnonKey);
+const isPublishableKey = /^sb_publishable_[A-Za-z0-9_-]{20,80}$/.test(supabaseAnonKey);
 const isValidKey = isJwtKey || isPublishableKey;
+
+if (import.meta.env.DEV && supabaseAnonKey.startsWith("sb_publishable_") && supabaseAnonKey.includes(".")) {
+  console.error(
+    "[supabase] Your sb_publishable_* key contains a '.' — real publishable keys use only underscores/alphanumerics.",
+    "This key will fail with 'Invalid API key'. Copy the exact key from Supabase Dashboard → Project Settings → API."
+  );
+}
 
 export const isSupabaseConfigured = Boolean(supabaseUrl) && Boolean(supabaseAnonKey) && isValidUrl && isValidKey;
 
