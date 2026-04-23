@@ -30,6 +30,25 @@ function mapSupabaseAuthError(msg: string): string {
   return msg;
 }
 
+function mapApiError(err: unknown): string {
+  if (!(err instanceof Error)) return "خطأ غير معروف";
+  const m = err.message;
+  if (
+    m.includes("Received HTML") ||
+    m.includes("VITE_API_URL") ||
+    m.includes("Failed to fetch") ||
+    m.includes("NetworkError") ||
+    m.includes("Load failed") ||
+    m.includes("fetch")
+  ) {
+    return "خادم التطبيق غير متاح حالياً — تحقق من إعدادات النشر أو تواصل مع الدعم.";
+  }
+  if (err instanceof ApiError && err.status === 404) {
+    return "خادم التطبيق غير متاح — يرجى التواصل مع الدعم.";
+  }
+  return m;
+}
+
 async function exchangeSupabaseSessionForIdara(
   accessToken: string,
   opts?: { referralCode?: string; startTrial?: boolean }
@@ -207,19 +226,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password,
       });
       if (sb.data.session?.access_token) {
-        const res = await exchangeSupabaseSessionForIdara(sb.data.session.access_token);
-        localStorage.setItem(TOKEN_KEY, res.token);
-        setToken(res.token);
-        setUser(res.user);
-        const primaryAdminSession =
-          res.user.role === "superadmin" ||
-          res.user.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL ||
-          res.user.name?.toUpperCase().includes("MOUTAOUAKIL");
-        if (primaryAdminSession) {
-          localStorage.setItem(AUTO_ADMIN_KEY, "1");
+        try {
+          const res = await exchangeSupabaseSessionForIdara(sb.data.session.access_token);
+          localStorage.setItem(TOKEN_KEY, res.token);
+          setToken(res.token);
+          setUser(res.user);
+          const primaryAdminSession =
+            res.user.role === "superadmin" ||
+            res.user.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL ||
+            res.user.name?.toUpperCase().includes("MOUTAOUAKIL");
+          if (primaryAdminSession) {
+            localStorage.setItem(AUTO_ADMIN_KEY, "1");
+          }
+          await refresh();
+          return;
+        } catch (apiErr) {
+          throw new Error(mapApiError(apiErr));
         }
-        await refresh();
-        return;
       }
       if (sb.error) {
         const m = sb.error.message?.toLowerCase() ?? "";
@@ -238,27 +261,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    const res = await api<{ token: string; user: User }>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({
-        email,
-        password,
-        rememberMe: Boolean(rememberMe),
-        deviceFingerprint: fp,
-        deviceLabel,
-      }),
-    });
-    localStorage.setItem(TOKEN_KEY, res.token);
-    setToken(res.token);
-    setUser(res.user);
-    const primaryAdminSession =
-      res.user.role === "superadmin" ||
-      res.user.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL ||
-      res.user.name?.toUpperCase().includes("MOUTAOUAKIL");
-    if (primaryAdminSession) {
-      localStorage.setItem(AUTO_ADMIN_KEY, "1");
+    try {
+      const res = await api<{ token: string; user: User }>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          password,
+          rememberMe: Boolean(rememberMe),
+          deviceFingerprint: fp,
+          deviceLabel,
+        }),
+      });
+      localStorage.setItem(TOKEN_KEY, res.token);
+      setToken(res.token);
+      setUser(res.user);
+      const primaryAdminSession =
+        res.user.role === "superadmin" ||
+        res.user.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL ||
+        res.user.name?.toUpperCase().includes("MOUTAOUAKIL");
+      if (primaryAdminSession) {
+        localStorage.setItem(AUTO_ADMIN_KEY, "1");
+      }
+      await refresh();
+    } catch (apiErr) {
+      throw new Error(mapApiError(apiErr));
     }
-    await refresh();
   };
 
   const register = async (
@@ -283,37 +310,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!at) {
         return { needsEmailConfirmation: true };
       }
-      const res = await exchangeSupabaseSessionForIdara(at, {
-        referralCode: opts?.referralCode,
-        startTrial: opts?.startTrial,
+      try {
+        const res = await exchangeSupabaseSessionForIdara(at, {
+          referralCode: opts?.referralCode,
+          startTrial: opts?.startTrial,
+        });
+        localStorage.setItem(TOKEN_KEY, res.token);
+        setToken(res.token);
+        setUser(res.user);
+        await refresh();
+        return { whatsappNotifyUrl: res.whatsappNotifyUrl };
+      } catch (apiErr) {
+        throw new Error(mapApiError(apiErr));
+      }
+    }
+
+    const fp = getDeviceFingerprint();
+    try {
+      const res = await api<{ token: string; user: User; whatsappNotifyUrl?: string }>("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          password,
+          name,
+          referralCode: opts?.referralCode,
+          ref: opts?.referralCode,
+          startTrial: opts?.startTrial,
+          deviceFingerprint: fp,
+          deviceLabel:
+            typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "",
+        }),
       });
       localStorage.setItem(TOKEN_KEY, res.token);
       setToken(res.token);
       setUser(res.user);
       await refresh();
       return { whatsappNotifyUrl: res.whatsappNotifyUrl };
+    } catch (apiErr) {
+      throw new Error(mapApiError(apiErr));
     }
-
-    const fp = getDeviceFingerprint();
-    const res = await api<{ token: string; user: User; whatsappNotifyUrl?: string }>("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({
-        email,
-        password,
-        name,
-        referralCode: opts?.referralCode,
-        ref: opts?.referralCode,
-        startTrial: opts?.startTrial,
-        deviceFingerprint: fp,
-        deviceLabel:
-          typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "",
-      }),
-    });
-    localStorage.setItem(TOKEN_KEY, res.token);
-    setToken(res.token);
-    setUser(res.user);
-    await refresh();
-    return { whatsappNotifyUrl: res.whatsappNotifyUrl };
   };
 
   const logout = () => {

@@ -190,7 +190,7 @@ const arMA: Dict = {
 
   "common.loading": "جاري التحميل… / Loading…",
   "common.dashboard": "لوحة التحكم / Dashboard",
-  "common.brandFooter": "Smart Al-Idara Pro © المغرب / Morocco",
+  "common.brandFooter": "Smart Al-Idara Pro 2026 © المغرب / Morocco",
   "common.appTitle": "Smart Al-Idara Pro",
   "common.back": "رجوع / Back",
   "common.save": "حفظ / Save",
@@ -1635,7 +1635,7 @@ const en: Dict = {
 
   "common.loading": "Loading…",
   "common.dashboard": "Dashboard",
-  "common.brandFooter": "Smart Al-Idara Pro © Morocco",
+  "common.brandFooter": "Smart Al-Idara Pro 2026 © Morocco",
   "common.appTitle": "Smart Al-Idara Pro",
   "common.back": "Back",
   "common.save": "Save",
@@ -2958,7 +2958,7 @@ const fr: Dict = {
 
   "common.loading": "Chargement…",
   "common.dashboard": "Tableau de bord",
-  "common.brandFooter": "Smart Al-Idara Pro © Maroc",
+  "common.brandFooter": "Smart Al-Idara Pro 2026 © Maroc",
   "common.back": "Retour",
   "common.save": "Enregistrer",
   "common.add": "Ajouter",
@@ -3288,7 +3288,7 @@ const es: Dict = {
 
   "common.loading": "Cargando…",
   "common.dashboard": "Panel",
-  "common.brandFooter": "Smart Al-Idara Pro © Marruecos",
+  "common.brandFooter": "Smart Al-Idara Pro 2026 © Marruecos",
   "common.back": "Volver",
   "common.save": "Guardar",
   "common.add": "Añadir",
