@@ -10,11 +10,18 @@
 }
 
 @layer base {
-  /* Western digits (0–9) in UI: pairs with Intl `numberingSystem: "latn"` and `data-numerals=latin` in production */
+  /* Western digits (0–9) always — pairs with Intl `numberingSystem:"latn"` and `data-numerals=latin` */
   html {
     font-variant-numeric: lining-nums tabular-nums;
     -webkit-font-feature-settings: "lnum" 1;
     font-feature-settings: "lnum" 1;
+  }
+  /* CSS override for Eastern-Arabic digits rendered by system fonts when lang=ar */
+  html[data-numerals="latin"],
+  html[lang^="ar"] {
+    font-variant-numeric: lining-nums tabular-nums;
+    -webkit-font-feature-settings: "lnum" 1, "tnum" 1;
+    font-feature-settings: "lnum" 1, "tnum" 1;
   }
   body {
     @apply bg-[var(--color-royal-deep)] text-white font-sans antialiased;

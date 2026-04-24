@@ -49,11 +49,8 @@ function detectInitial(): AppLocale {
 }
 
 function detectNumeral(): NumeralStyle {
-  if (import.meta.env.PROD) return "latin";
-  const s = localStorage.getItem(NUMERAL_KEY) as NumeralStyle | null;
-  if (s === "latin" || s === "arabic") return s;
-  const loc = detectInitial();
-  return loc.startsWith("ar") ? "arabic" : "latin";
+  // Always use Western digits (0-9) platform-wide — consistent in UI, PDF exports, and reports.
+  return "latin";
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
@@ -75,9 +72,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.lang = locale;
     document.documentElement.dir = isRtl ? "rtl" : "ltr";
-    if (import.meta.env.PROD) {
-      document.documentElement.dataset.numerals = "latin";
-    }
+    // Force Western digits (0–9) in all environments — dev + prod
+    document.documentElement.dataset.numerals = "latin";
   }, [locale, isRtl]);
 
   const t = useCallback((key: string, params?: Record<string, string>) => {

@@ -6,12 +6,17 @@ const FONT_LINKS = `
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=Noto+Naskh+Arabic:wght@400;600;700&family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
 `;
 
-/** Couleurs drapeau marocain (pro) : vert, rouge — usage sobre sur bandeaux et filets */
+/** Professional theme: Vibrant Blue / Clean White / Soft Gray — governmental/official look */
 const THEME = {
+  blue: "#0052CC",
+  blueDark: "#003d99",
+  blueLight: "#e8f0fe",
   green: "#006233",
   red: "#C1272D",
   ink: "#0f172a",
   muted: "#475569",
+  border: "#cbd5e1",
+  rowAlt: "#f8fafc",
 };
 
 export type SubscriptionContractFieldSet = {
@@ -91,13 +96,13 @@ function rowPair(
 ): string {
   return `
   <div class="row">
-    <div class="cell ar">
-      <div class="lab">${escapeHtmlPdf(labelAr)}</div>
-      <div class="val">${escapeHtmlPdf(valueAr)}</div>
+    <div class="cell ar" dir="rtl">
+      <div class="lab" style="text-align:right;">${escapeHtmlPdf(labelAr)}</div>
+      <div class="val" style="text-align:right;direction:rtl;unicode-bidi:plaintext;">${escapeHtmlPdf(valueAr)}</div>
     </div>
-    <div class="cell other">
-      <div class="lab">${escapeHtmlPdf(labelOther)}</div>
-      <div class="val">${escapeHtmlPdf(valueOther)}</div>
+    <div class="cell other" dir="ltr">
+      <div class="lab" style="text-align:left;">${escapeHtmlPdf(labelOther)}</div>
+      <div class="val" style="text-align:left;direction:ltr;">${escapeHtmlPdf(valueOther)}</div>
     </div>
   </div>`;
 }
@@ -157,118 +162,191 @@ export function buildSubscriptionContractPdfHtml(opts: {
   <style>
     @page { size: A4; margin: 14mm; }
     * { box-sizing: border-box; }
-    body {
+    html, body {
       margin: 0;
-      padding: 16px 14px 28px;
+      padding: 0;
       background: #fff;
+      /* Force Western/Latin digits (0-9) — prevent Arabic-Indic numerals in PDF */
+      font-variant-numeric: lining-nums tabular-nums;
+      -webkit-font-feature-settings: "lnum" 1, "tnum" 1;
+      font-feature-settings: "lnum" 1, "tnum" 1;
+    }
+    body {
+      padding: 16px 14px 28px;
       color: ${THEME.ink};
       font-family: "Noto Sans", "Noto Naskh Arabic", Arial, sans-serif;
+      font-size: 10pt;
+      line-height: 1.5;
     }
     .sheet {
       max-width: 780px;
       margin: 0 auto;
       background: #fff;
     }
+
+    /* ── Header ── */
     .head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding-bottom: 12px;
+      padding: 14px 18px;
       margin-bottom: 14px;
-      border-bottom: 4px solid ${THEME.red};
-      background: linear-gradient(90deg, rgba(0,98,51,0.08), rgba(193,39,45,0.06));
-      padding: 12px 14px;
-      border-radius: 8px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, ${THEME.blueDark} 0%, ${THEME.blue} 100%);
+      color: #fff;
     }
-    .head img.logo { height: 52px; width: auto; object-fit: contain; }
+    .head img.logo {
+      height: 52px;
+      width: auto;
+      object-fit: contain;
+      background: rgba(255,255,255,0.15);
+      border-radius: 6px;
+      padding: 4px;
+    }
     .head .titles { flex: 1; text-align: center; }
     .head h1 {
       margin: 0;
       font-size: 15px;
       font-weight: 800;
       font-family: Cairo, "Noto Naskh Arabic", sans-serif;
-      color: ${THEME.green};
+      color: #fff;
+      letter-spacing: 0.02em;
     }
     .head .sub {
-      margin: 4px 0 0;
+      margin: 5px 0 0;
       font-size: 11px;
-      color: ${THEME.muted};
+      color: rgba(255,255,255,0.82);
       font-weight: 600;
     }
+
+    /* ── Kingdom line ── */
+    .kingdom {
+      text-align: center;
+      font-size: 11.5px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: ${THEME.ink};
+      font-family: Cairo, "Noto Naskh Arabic", sans-serif;
+      padding: 6px 0;
+      border-bottom: 2px solid ${THEME.blue};
+    }
+
+    /* ── Column headers ── */
     .cols-header {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 8px;
-      font-size: 10px;
+      gap: 0;
+      margin-bottom: 6px;
+      font-size: 9.5px;
       font-weight: 800;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.06em;
+      border-radius: 6px 6px 0 0;
+      overflow: hidden;
     }
     .cols-header .ch-ar {
+      direction: rtl;
       text-align: right;
       font-family: Cairo, "Noto Naskh Arabic", sans-serif;
-      color: ${THEME.green};
-      border-bottom: 2px solid ${THEME.green};
-      padding-bottom: 4px;
+      background: ${THEME.blue};
+      color: #fff;
+      padding: 7px 12px;
+      border-left: 1px solid rgba(255,255,255,0.2);
     }
     .cols-header .ch-other {
+      direction: ltr;
       text-align: left;
-      color: ${THEME.red};
-      border-bottom: 2px solid ${THEME.red};
-      padding-bottom: 4px;
+      background: ${THEME.blueDark};
+      color: #fff;
+      padding: 7px 12px;
     }
+
+    /* ── Data rows ── */
     .row {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      margin-bottom: 6px;
+      gap: 0;
+      border: 1px solid ${THEME.border};
+      border-top: none;
+      margin-bottom: 0;
       overflow: hidden;
     }
+    .row:last-of-type { border-radius: 0 0 6px 6px; margin-bottom: 10px; }
+    .row:nth-child(even) .cell { background: ${THEME.blueLight}; }
+
+    /* Arabic cell — explicit RTL + right-aligned */
     .cell {
-      padding: 8px 10px;
+      padding: 9px 12px;
       vertical-align: top;
       font-size: 9.5pt;
-      line-height: 1.45;
+      line-height: 1.5;
     }
     .cell.ar {
-      background: #f8fafc;
-      border-inline-end: 1px solid #e2e8f0;
+      direction: rtl;
+      text-align: right;
+      unicode-bidi: plaintext;
+      background: ${THEME.rowAlt};
+      border-left: 2px solid ${THEME.blue};
       font-family: "Noto Naskh Arabic", Cairo, sans-serif;
     }
-    .cell.other { background: #fff; }
-    .lab { font-size: 8.5pt; font-weight: 700; color: ${THEME.muted}; margin-bottom: 4px; }
-    .val { white-space: pre-wrap; word-break: break-word; }
+    .cell.other {
+      direction: ltr;
+      text-align: left;
+      background: #fff;
+    }
+    .lab {
+      font-size: 8pt;
+      font-weight: 700;
+      color: ${THEME.blue};
+      margin-bottom: 4px;
+      letter-spacing: 0.03em;
+    }
+    .val { white-space: pre-wrap; word-break: break-word; color: ${THEME.ink}; }
+
+    /* ── Clauses ── */
+    .clauses-title {
+      font-size: 10pt;
+      font-weight: 700;
+      color: ${THEME.blue};
+      margin: 16px 0 6px;
+      padding: 6px 12px;
+      background: ${THEME.blueLight};
+      border-right: 4px solid ${THEME.blue};
+      border-radius: 4px;
+    }
     .clause {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 12px;
-      padding-top: 10px;
-      border-top: 1px dashed #cbd5e1;
+      gap: 12px;
+      margin-top: 10px;
+      padding: 10px 0;
+      border-top: 1px dashed ${THEME.border};
     }
-    .clause p { margin: 0 0 8px; font-size: 9.5pt; line-height: 1.5; }
-    .clause-ar { font-family: "Noto Naskh Arabic", Cairo, sans-serif; }
-    .clause-other { font-family: "Noto Sans", Arial, sans-serif; }
-    .kingdom {
-      text-align: center;
-      font-size: 11px;
-      font-weight: 700;
-      margin-bottom: 10px;
-      color: ${THEME.ink};
-      font-family: Cairo, "Noto Naskh Arabic", sans-serif;
+    .clause p { margin: 0 0 8px; font-size: 9.5pt; line-height: 1.6; }
+    .clause-ar {
+      direction: rtl;
+      text-align: right;
+      unicode-bidi: plaintext;
+      font-family: "Noto Naskh Arabic", Cairo, sans-serif;
     }
+    .clause-other {
+      direction: ltr;
+      text-align: left;
+      font-family: "Noto Sans", Arial, sans-serif;
+    }
+
+    /* ── Footer ── */
     .foot {
-      margin-top: 18px;
-      padding-top: 10px;
-      border-top: 2px solid ${THEME.green};
+      margin-top: 20px;
+      padding: 10px 16px;
+      border-top: 3px solid ${THEME.blue};
       font-size: 8pt;
       color: ${THEME.muted};
       text-align: center;
-      line-height: 1.4;
+      line-height: 1.5;
+      background: ${THEME.blueLight};
+      border-radius: 0 0 6px 6px;
     }
   </style>
 </head>

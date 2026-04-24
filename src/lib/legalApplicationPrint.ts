@@ -81,6 +81,9 @@ export function buildLegalApplicationFullHtml(
       font-family: "Noto Naskh Arabic", Arial, "Times New Roman", serif;
       font-size: 12pt;
       line-height: 1.55;
+      font-variant-numeric: lining-nums tabular-nums;
+      -webkit-font-feature-settings: "lnum" 1, "tnum" 1;
+      font-feature-settings: "lnum" 1, "tnum" 1;
     }
     .doc-wrap {
       max-width: 720px;
@@ -191,6 +194,9 @@ export function buildPlatformReportFullHtml(opts: PlatformPrintWindowOpts): stri
       font-family: "Noto Naskh Arabic", Arial, "Segoe UI", sans-serif;
       font-size: 12pt;
       line-height: 1.55;
+      font-variant-numeric: lining-nums tabular-nums;
+      -webkit-font-feature-settings: "lnum" 1, "tnum" 1;
+      font-feature-settings: "lnum" 1, "tnum" 1;
     }
     .doc-wrap {
       max-width: 720px;
@@ -585,7 +591,10 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
     body {
       font-family: Amiri, Cairo, "Noto Naskh Arabic", Arial, "Times New Roman", serif;
       font-weight: 400;
-      font-feature-settings: "liga" 1, "calt" 1;
+      /* Force Western digits (0-9) — prevent Arabic-Indic numerals in PDF */
+      font-variant-numeric: lining-nums tabular-nums;
+      -webkit-font-feature-settings: "liga" 1, "calt" 1, "lnum" 1, "tnum" 1;
+      font-feature-settings: "liga" 1, "calt" 1, "lnum" 1, "tnum" 1;
       -webkit-font-smoothing: antialiased;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
