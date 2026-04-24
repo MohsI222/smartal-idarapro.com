@@ -292,10 +292,14 @@ export function AuthPage() {
                   />
                   {t("auth.rememberMe")}
                 </label>
-                {err && <p className="text-sm text-red-400">{err}</p>}
+                {err && (
+                  <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-2.5">
+                    <p className="text-sm text-red-300 text-center font-medium">{err}</p>
+                  </div>
+                )}
                 <Button
                   type="submit"
-                  className="w-full h-11 font-semibold bg-gradient-to-l from-[#0052CC] to-[#003d99] hover:opacity-95 border-0 shadow-lg shadow-[#0052CC]/20"
+                  className="w-full h-11 font-semibold bg-gradient-to-l from-[#0052CC] to-[#003d99] hover:from-[#0061f2] hover:to-[#0052CC] border-0 shadow-lg shadow-[#0052CC]/30 transition-all duration-200"
                 >
                   {t("auth.submitLogin")}
                 </Button>
@@ -349,10 +353,14 @@ export function AuthPage() {
                     autoComplete="new-password"
                   />
                 </div>
-                {err && <p className="text-sm text-red-400">{err}</p>}
+                {err && (
+                  <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-2.5">
+                    <p className="text-sm text-red-300 text-center font-medium">{err}</p>
+                  </div>
+                )}
                 <Button
                   type="submit"
-                  className="w-full h-11 font-semibold bg-gradient-to-l from-[#FF8C00]/90 to-[#0052CC] hover:opacity-95 border-0 shadow-lg"
+                  className="w-full h-11 font-semibold bg-gradient-to-l from-[#FF8C00]/90 to-[#0052CC] hover:opacity-95 border-0 shadow-lg transition-all duration-200"
                 >
                   {t("auth.submitRegister")}
                 </Button>
