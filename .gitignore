@@ -5,5 +5,8 @@ data/*.sqlite-shm
 data/*.sqlite-wal
 data/uploads
 .env
+.env.production
+.env.local
+.env.*.local
 *.log
 .DS_Store
