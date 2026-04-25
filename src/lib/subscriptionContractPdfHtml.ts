@@ -172,14 +172,15 @@ export function buildSubscriptionContractPdfHtml(opts: {
       font-feature-settings: "lnum" 1, "tnum" 1;
     }
     body {
-      padding: 16px 14px 28px;
+      padding: 20px 18px 32px;
       color: ${THEME.ink};
       font-family: "Noto Sans", "Noto Naskh Arabic", Arial, sans-serif;
-      font-size: 10pt;
-      line-height: 1.5;
+      font-size: 8.5pt;
+      line-height: 1.65;
+      word-spacing: 0.04em;
     }
     .sheet {
-      max-width: 780px;
+      max-width: 760px;
       margin: 0 auto;
       background: #fff;
     }
@@ -277,10 +278,10 @@ export function buildSubscriptionContractPdfHtml(opts: {
 
     /* Arabic cell — explicit RTL + right-aligned */
     .cell {
-      padding: 9px 12px;
+      padding: 8px 14px;
       vertical-align: top;
-      font-size: 9.5pt;
-      line-height: 1.5;
+      font-size: 8pt;
+      line-height: 1.7;
     }
     .cell.ar {
       direction: rtl;
@@ -289,28 +290,39 @@ export function buildSubscriptionContractPdfHtml(opts: {
       background: ${THEME.rowAlt};
       border-left: 2px solid ${THEME.blue};
       font-family: "Noto Naskh Arabic", Cairo, sans-serif;
+      word-spacing: 0.06em;
+      letter-spacing: 0.01em;
     }
     .cell.other {
       direction: ltr;
       text-align: left;
       background: #fff;
+      word-spacing: 0.03em;
     }
     .lab {
-      font-size: 8pt;
+      font-size: 7pt;
       font-weight: 700;
       color: ${THEME.blue};
-      margin-bottom: 4px;
-      letter-spacing: 0.03em;
+      margin-bottom: 5px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
     }
-    .val { white-space: pre-wrap; word-break: break-word; color: ${THEME.ink}; }
+    .val {
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      color: ${THEME.ink};
+      font-size: 8pt;
+      line-height: 1.7;
+    }
 
     /* ── Clauses ── */
     .clauses-title {
-      font-size: 10pt;
+      font-size: 8.5pt;
       font-weight: 700;
       color: ${THEME.blue};
-      margin: 16px 0 6px;
-      padding: 6px 12px;
+      margin: 14px 0 6px;
+      padding: 5px 12px;
       background: ${THEME.blueLight};
       border-right: 4px solid ${THEME.blue};
       border-radius: 4px;
@@ -318,35 +330,72 @@ export function buildSubscriptionContractPdfHtml(opts: {
     .clause {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 12px;
-      margin-top: 10px;
-      padding: 10px 0;
+      gap: 16px;
+      margin-top: 8px;
+      padding: 10px 2px;
       border-top: 1px dashed ${THEME.border};
     }
-    .clause p { margin: 0 0 8px; font-size: 9.5pt; line-height: 1.6; }
+    .clause p {
+      margin: 0 0 10px;
+      font-size: 8pt;
+      line-height: 1.75;
+      word-spacing: 0.04em;
+    }
     .clause-ar {
       direction: rtl;
       text-align: right;
       unicode-bidi: plaintext;
       font-family: "Noto Naskh Arabic", Cairo, sans-serif;
+      word-spacing: 0.06em;
+      letter-spacing: 0.01em;
+      padding-right: 4px;
     }
     .clause-other {
       direction: ltr;
       text-align: left;
       font-family: "Noto Sans", Arial, sans-serif;
+      padding-left: 4px;
+    }
+
+    /* ── Signatures row ── */
+    .sig-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 18px;
+      padding-top: 10px;
+      border-top: 1px solid ${THEME.border};
+    }
+    .sig-box {
+      text-align: center;
+      font-size: 7.5pt;
+      color: ${THEME.muted};
+      padding: 8px;
+    }
+    .sig-box .sig-label {
+      font-weight: 700;
+      color: ${THEME.ink};
+      font-size: 8pt;
+      margin-bottom: 28px;
+    }
+    .sig-box .sig-line {
+      border-bottom: 1px solid ${THEME.ink};
+      margin: 0 10px;
+      height: 1px;
     }
 
     /* ── Footer ── */
     .foot {
-      margin-top: 20px;
-      padding: 10px 16px;
+      margin-top: 18px;
+      padding: 8px 16px;
       border-top: 3px solid ${THEME.blue};
-      font-size: 8pt;
+      font-size: 7pt;
       color: ${THEME.muted};
       text-align: center;
-      line-height: 1.5;
+      line-height: 1.55;
       background: ${THEME.blueLight};
       border-radius: 0 0 6px 6px;
+      word-spacing: 0.03em;
     }
   </style>
 </head>
