@@ -30,6 +30,7 @@
     "@radix-ui/react-tabs": "^1.1.2",
     "@radix-ui/react-toast": "^1.2.4",
     "@supabase/supabase-js": "^2.103.0",
+    "@vercel/speed-insights": "^2.0.0",
     "@zxing/browser": "^0.1.5",
     "@zxing/library": "^0.21.3",
     "arabic-persian-reshaper": "^1.0.1",
