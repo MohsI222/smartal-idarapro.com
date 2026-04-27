@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Copy, Loader2, Trash2, UserPlus, Wand2 } from "lucide-react";
+import { ArrowLeft, Copy, Loader2, Search, Trash2, UserPlus, Wand2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,10 +49,59 @@ export function TransportLogisticsAdmin() {
   });
   const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
   const [workerFieldErr, setWorkerFieldErr] = useState<"full_name" | "employee_id" | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const fullNameWrapRef = useRef<HTMLDivElement>(null);
   const employeeIdWrapRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const allowed = approvedModules.includes("transport_logistics");
+
+  /** Normalise query: strip Arabic-Indic digits → Latin, lowercase */
+  const normalisedQuery = useMemo(() => {
+    const q = searchQuery.trim();
+    return q.replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+            .replace(/[\u06F0-\u06F9]/g, (d) => String(d.codePointAt(0)! - 0x06F0))
+            .toLowerCase();
+  }, [searchQuery]);
+
+  /** Workers filtered by employee_id OR full_name */
+  const filteredWorkers = useMemo(() => {
+    if (!normalisedQuery) return workers;
+    return workers.filter((w) => {
+      const id = String(w.employee_id ?? "").toLowerCase();
+      const name = w.full_name.toLowerCase();
+      const dept = w.department.toLowerCase();
+      return id.includes(normalisedQuery) || name.includes(normalisedQuery) || dept.includes(normalisedQuery);
+    });
+  }, [workers, normalisedQuery]);
+
+  /** Vehicle logs filtered by vehicle_id OR driver_name */
+  const filteredDeptVehicles = useMemo(() => {
+    if (!normalisedQuery) return deptVehicles;
+    const result: Record<string, TlVehicleLog[]> = {};
+    for (const [d, logs] of Object.entries(deptVehicles)) {
+      result[d] = logs.filter((v) => {
+        const vid = String(v.vehicle_id ?? "").toLowerCase();
+        const driver = (v.driver_name ?? "").toLowerCase();
+        return vid.includes(normalisedQuery) || driver.includes(normalisedQuery);
+      });
+    }
+    return result;
+  }, [deptVehicles, normalisedQuery]);
+
+  /** Ops logs filtered by worker_full_name OR worker_id */
+  const filteredDeptOps = useMemo(() => {
+    if (!normalisedQuery) return deptOps;
+    const result: Record<string, TlOpsLog[]> = {};
+    for (const [d, logs] of Object.entries(deptOps)) {
+      result[d] = logs.filter((r) => {
+        const name = (r.worker_full_name ?? "").toLowerCase();
+        const wid = (r.worker_id ?? "").toLowerCase();
+        return name.includes(normalisedQuery) || wid.includes(normalisedQuery);
+      });
+    }
+    return result;
+  }, [deptOps, normalisedQuery]);
 
   const reload = useCallback(async () => {
     if (!token || !allowed) return;
@@ -263,6 +312,50 @@ export function TransportLogisticsAdmin() {
         <h1 className="text-xl md:text-2xl font-black text-white">{t("tl.adminTitle")}</h1>
       </div>
 
+      {/* ── Search bar ─────────────────────────────────────────────────────── */}
+      <div className="relative">
+        <Search
+          className={`absolute ${isRtl ? "right-3" : "left-3"} top-1/2 -translate-y-1/2 size-4 pointer-events-none transition-colors ${normalisedQuery ? "text-[#FF8C00]" : "text-slate-500"}`}
+        />
+        <input
+          ref={searchInputRef}
+          type="search"
+          lang="en"
+          dir="ltr"
+          inputMode="search"
+          autoComplete="off"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder={t("tl.searchPlaceholder")}
+          className={`w-full rounded-xl border bg-black/40 text-white placeholder:text-slate-500 text-sm h-11 focus:outline-none focus:ring-2 focus:ring-[#FF8C00]/50 tabular-nums transition-[border-color,box-shadow] ${isRtl ? "pr-10 pl-10" : "pl-10 pr-10"} ${normalisedQuery ? "border-[#FF8C00]/50" : "border-white/15"}`}
+        />
+        {normalisedQuery && (
+          <button
+            type="button"
+            aria-label={t("tl.searchClear")}
+            onClick={() => { setSearchQuery(""); searchInputRef.current?.focus(); }}
+            className={`absolute ${isRtl ? "left-3" : "right-3"} top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors`}
+          >
+            <X className="size-4" />
+          </button>
+        )}
+        {normalisedQuery && !loading && (
+          <div className={`absolute top-full mt-1 ${isRtl ? "right-0" : "left-0"} flex flex-wrap gap-2 text-xs text-slate-400 px-1`}>
+            <span>
+              {t("tl.searchResultsWorkers", { count: String(filteredWorkers.length) })}
+            </span>
+            <span>·</span>
+            <span>
+              {t("tl.searchResultsVehicles", {
+                count: String(
+                  Object.values(filteredDeptVehicles).reduce((s, arr) => s + arr.length, 0)
+                ),
+              })}
+            </span>
+          </div>
+        )}
+      </div>
+
       <section className="rounded-2xl border border-white/10 bg-[#050a12]/90 p-6 space-y-4">
         <h2 className="text-lg font-bold text-[#FF8C00] flex items-center gap-2">
           <UserPlus className="size-5" />
@@ -440,93 +533,115 @@ export function TransportLogisticsAdmin() {
         {loading ? (
           <Loader2 className="size-8 animate-spin text-slate-500" />
         ) : (
-          TL_DEPT_SLUGS.map((d) => (
-            <div key={d} className="space-y-3">
-              <h3 className="text-base font-bold text-white border-b border-cyan-500/20 pb-2">
-                {t(`tl.dept.${d}`)}
-              </h3>
-              {tlVehicleDeps(d) ? (
-                <div className="overflow-x-auto rounded-lg border border-white/10" lang="en" dir="ltr">
-                  <table className="w-full text-xs md:text-sm border-collapse min-w-[720px] font-mono tabular-nums">
-                    <thead>
-                      <tr className="bg-white/5 text-slate-400 text-left">
-                        <th className="p-2">{t("tl.pdf.colVehicle")}</th>
-                        <th className="p-2">{t("tl.pdf.colDriver")}</th>
-                        <th className="p-2">{t("tl.pdf.colPhone")}</th>
-                        <th className="p-2">{t("tl.pdf.colExpected")}</th>
-                        <th className="p-2">{t("tl.pdf.colEntry")}</th>
-                        <th className="p-2">{t("tl.pdf.colStatus")}</th>
-                        <th className="p-2">{t("tl.pdf.colDelay")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(deptVehicles[d] ?? []).length === 0 ? (
-                        <tr>
-                          <td className="p-3 text-slate-500 font-sans" colSpan={7}>
-                            {t("tl.reportNoRows")}
-                          </td>
+          TL_DEPT_SLUGS.map((d) => {
+            const vRows = filteredDeptVehicles[d] ?? [];
+            const oRows = filteredDeptOps[d] ?? [];
+            const isVeh = tlVehicleDeps(d);
+            const totalRows = isVeh ? vRows.length : oRows.length;
+            return (
+              <div key={d} className="space-y-3">
+                <div className="flex items-center justify-between border-b border-cyan-500/20 pb-2">
+                  <h3 className="text-base font-bold text-white">{t(`tl.dept.${d}`)}</h3>
+                  {normalisedQuery && (
+                    <span className="text-xs text-[#FF8C00] font-semibold" lang="en" dir="ltr">
+                      {isVeh
+                        ? t("tl.searchResultsVehicles", { count: String(totalRows) })
+                        : t("tl.searchResultsWorkers", { count: String(totalRows) })}
+                    </span>
+                  )}
+                </div>
+                {isVeh ? (
+                  <div className="overflow-x-auto rounded-lg border border-white/10" lang="en" dir="ltr">
+                    <table className="w-full text-xs md:text-sm border-collapse min-w-[720px] font-mono tabular-nums">
+                      <thead>
+                        <tr className="bg-white/5 text-slate-400 text-left">
+                          <th className="p-2">{t("tl.pdf.colVehicle")}</th>
+                          <th className="p-2">{t("tl.pdf.colDriver")}</th>
+                          <th className="p-2">{t("tl.pdf.colPhone")}</th>
+                          <th className="p-2">{t("tl.pdf.colExpected")}</th>
+                          <th className="p-2">{t("tl.pdf.colEntry")}</th>
+                          <th className="p-2">{t("tl.pdf.colStatus")}</th>
+                          <th className="p-2">{t("tl.pdf.colDelay")}</th>
                         </tr>
-                      ) : (
-                        (deptVehicles[d] ?? []).map((r) => (
-                          <tr key={r.id} className="border-t border-white/5">
-                            <td className="p-2">{ensureLatinDigitsInString(String(r.vehicle_id))}</td>
-                            <td className="p-2 font-sans">{r.driver_name}</td>
-                            <td className="p-2">{ensureLatinDigitsInString(String(r.driver_phone))}</td>
-                            <td className="p-2 whitespace-nowrap">{ensureLatinDigitsInString(r.expected_entry_at)}</td>
-                            <td className="p-2 whitespace-nowrap">
-                              {r.entry_at ? ensureLatinDigitsInString(r.entry_at) : "—"}
+                      </thead>
+                      <tbody>
+                        {vRows.length === 0 ? (
+                          <tr>
+                            <td className="p-3 text-slate-500 font-sans" colSpan={7}>
+                              {normalisedQuery ? t("tl.searchNoResults") : t("tl.reportNoRows")}
                             </td>
-                            <td className="p-2 font-sans">{r.alert_level}</td>
-                            <td className="p-2">{ensureLatinDigitsInString(String(r.delay_minutes))}</td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-lg border border-white/10" lang="en" dir="ltr">
-                  <table className="w-full text-xs md:text-sm border-collapse min-w-[640px] font-mono tabular-nums">
-                    <thead>
-                      <tr className="bg-white/5 text-slate-400 text-left">
-                        <th className="p-2">{t("tl.pdf.colEmployee")}</th>
-                        <th className="p-2">{t("tl.pdf.colTime")}</th>
-                        <th className="p-2">{t("tl.pdf.colQty")}</th>
-                        <th className="p-2">{t("tl.pdf.colTarget")}</th>
-                        <th className="p-2">{t("tl.pdf.colDelayReason")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(deptOps[d] ?? []).length === 0 ? (
-                        <tr>
-                          <td className="p-3 text-slate-500 font-sans" colSpan={5}>
-                            {t("tl.reportNoRows")}
-                          </td>
+                        ) : (
+                          vRows.map((r) => (
+                            <tr key={r.id} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+                              <td className="p-2 font-bold text-[#FF8C00]">{ensureLatinDigitsInString(String(r.vehicle_id))}</td>
+                              <td className="p-2 font-sans">{r.driver_name}</td>
+                              <td className="p-2">{ensureLatinDigitsInString(String(r.driver_phone))}</td>
+                              <td className="p-2 whitespace-nowrap">{ensureLatinDigitsInString(r.expected_entry_at)}</td>
+                              <td className="p-2 whitespace-nowrap">
+                                {r.entry_at ? ensureLatinDigitsInString(r.entry_at) : "—"}
+                              </td>
+                              <td className="p-2 font-sans">{r.alert_level}</td>
+                              <td className="p-2">{ensureLatinDigitsInString(String(r.delay_minutes))}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-white/10" lang="en" dir="ltr">
+                    <table className="w-full text-xs md:text-sm border-collapse min-w-[640px] font-mono tabular-nums">
+                      <thead>
+                        <tr className="bg-white/5 text-slate-400 text-left">
+                          <th className="p-2">{t("tl.pdf.colEmployee")}</th>
+                          <th className="p-2">{t("tl.pdf.colTime")}</th>
+                          <th className="p-2">{t("tl.pdf.colQty")}</th>
+                          <th className="p-2">{t("tl.pdf.colTarget")}</th>
+                          <th className="p-2">{t("tl.pdf.colDelayReason")}</th>
                         </tr>
-                      ) : (
-                        (deptOps[d] ?? []).map((r) => (
-                          <tr key={r.id} className="border-t border-white/5">
-                            <td className="p-2 font-sans">{r.worker_full_name ?? r.worker_id}</td>
-                            <td className="p-2 whitespace-nowrap">{ensureLatinDigitsInString(r.log_time)}</td>
-                            <td className="p-2">{formatTlLatinNum(r.quantity)}</td>
-                            <td className="p-2">{formatTlLatinNum(r.target_pct)}%</td>
-                            <td className="p-2 font-sans max-w-[220px] truncate">{r.delay_reason}</td>
+                      </thead>
+                      <tbody>
+                        {oRows.length === 0 ? (
+                          <tr>
+                            <td className="p-3 text-slate-500 font-sans" colSpan={5}>
+                              {normalisedQuery ? t("tl.searchNoResults") : t("tl.reportNoRows")}
+                            </td>
                           </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ))
+                        ) : (
+                          oRows.map((r) => (
+                            <tr key={r.id} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+                              <td className="p-2 font-sans font-bold text-cyan-200">{r.worker_full_name ?? r.worker_id}</td>
+                              <td className="p-2 whitespace-nowrap">{ensureLatinDigitsInString(r.log_time)}</td>
+                              <td className="p-2">{formatTlLatinNum(r.quantity)}</td>
+                              <td className="p-2">{formatTlLatinNum(r.target_pct)}%</td>
+                              <td className="p-2 font-sans max-w-[220px] truncate">{r.delay_reason}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </section>
 
       <section className="rounded-2xl border border-white/10 p-6 overflow-x-auto">
-        <h2 className="text-lg font-bold text-white mb-4">{t("tl.workersList")}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-bold text-white">{t("tl.workersList")}</h2>
+          {normalisedQuery && !loading && (
+            <span className="text-xs text-[#FF8C00] font-semibold">
+              {t("tl.searchResultsWorkers", { count: String(filteredWorkers.length) })}
+            </span>
+          )}
+        </div>
         {loading ? (
           <Loader2 className="size-8 animate-spin" />
+        ) : filteredWorkers.length === 0 ? (
+          <p className="text-sm text-slate-500 py-4 text-center">{t("tl.searchNoResults")}</p>
         ) : (
           <table className="w-full text-sm text-left border-collapse">
             <thead>
@@ -539,10 +654,10 @@ export function TransportLogisticsAdmin() {
               </tr>
             </thead>
             <tbody>
-              {workers.map((w) => (
-                <tr key={w.id} className="border-b border-white/5">
+              {filteredWorkers.map((w) => (
+                <tr key={w.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
                   <td className="p-2 text-white">{w.full_name}</td>
-                  <td className="p-2 font-mono text-xs">
+                  <td className="p-2 font-mono text-xs" lang="en" dir="ltr">
                     {ensureLatinDigitsInString(String(w.employee_id))}
                   </td>
                   <td className="p-2">{t(`tl.dept.${w.department}`)}</td>

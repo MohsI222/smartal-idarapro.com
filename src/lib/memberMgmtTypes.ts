@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { todayIsoLocal } from "@/lib/todayIso";
 
 export type OrgKind = "organization" | "institute" | "center";
 
@@ -31,7 +32,7 @@ export const ORG_LABELS: Record<OrgKind, string> = {
 };
 
 export function emptyMember(): MemberRow {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIsoLocal();
   return {
     id: uuidv4(),
     fullName: "",

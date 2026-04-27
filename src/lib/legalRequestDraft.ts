@@ -1,14 +1,16 @@
 import type { RequestGroupId } from "@/constants/legalRequestTypes";
 import type { AppLocale } from "@/i18n/strings";
 import { buildMoroccanLegalCitationAr } from "@/lib/moroccanLegalCitations";
+import { formatLocalLongDateLatinDigits } from "@/lib/latinNumeralFormat";
 import type { MoroccanDocumentClass, MoroccanInstitutionType } from "@/lib/moroccanLegalVariables";
 import { getSmartLegalParagraphAr } from "@/lib/legalSmartParagraph";
+import { toWesternDigits } from "@/lib/unicodeDigits";
 
 export function formatDocumentDate(isoDate: string, locale: AppLocale): string {
   if (!isoDate?.trim()) return "";
   const d = new Date(`${isoDate.trim()}T12:00:00`);
   if (Number.isNaN(d.getTime())) return isoDate;
-  return d.toLocaleDateString(locale, { year: "numeric", month: "long", day: "numeric" });
+  return formatLocalLongDateLatinDigits(d, locale);
 }
 
 /** ترويسة رسمية للمملكة — الوثائق الإدارية */
@@ -119,7 +121,7 @@ export function buildLegalRequestDraft(locale: AppLocale, p: DraftParams): strin
       : "";
 
   if (locale.startsWith("ar")) {
-    return [
+    const result = [
       saluteAr,
       "",
       rec,
@@ -147,11 +149,13 @@ export function buildLegalRequestDraft(locale: AppLocale, p: DraftParams): strin
     ]
       .filter((line) => line !== "")
       .join("\n");
+    return toWesternDigits(result);
   }
 
   if (locale === "fr") {
     const formalFr = p.formalRecipientLine.trim() || "À l’attention de l’autorité compétente,";
-    return [
+    return toWesternDigits(
+      [
       kingdom,
       "",
       formalFr,
@@ -173,12 +177,14 @@ export function buildLegalRequestDraft(locale: AppLocale, p: DraftParams): strin
       "Signature : ____________________",
     ]
       .filter((line) => line !== "")
-      .join("\n");
+      .join("\n")
+    );
   }
 
   if (locale === "es") {
     const formalEs = p.formalRecipientLine.trim() || "A la atención de la autoridad competente,";
-    return [
+    return toWesternDigits(
+      [
       kingdom,
       "",
       formalEs,
@@ -200,11 +206,13 @@ export function buildLegalRequestDraft(locale: AppLocale, p: DraftParams): strin
       "Firma: ____________________",
     ]
       .filter((line) => line !== "")
-      .join("\n");
+      .join("\n")
+    );
   }
 
   const formalEn = p.formalRecipientLine.trim() || "To the competent authority,";
-  return [
+  return toWesternDigits(
+    [
     kingdom,
     "",
     formalEn,
@@ -226,5 +234,6 @@ export function buildLegalRequestDraft(locale: AppLocale, p: DraftParams): strin
     "Signature: ____________________",
   ]
     .filter((line) => line !== "")
-    .join("\n");
+    .join("\n")
+  );
 }

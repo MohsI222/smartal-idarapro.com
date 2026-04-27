@@ -8,9 +8,10 @@
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
-    "build": "tsc --noEmit && vite build",
+    "build": "vite build",
     "start": "NODE_OPTIONS=--experimental-sqlite tsx server/index.ts",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "db:reset": "tsx server/reset-db.ts"
   },

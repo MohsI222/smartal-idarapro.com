@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useGlobalDomDigitLatinize } from "@/hooks/useGlobalDomDigitLatinize";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Bus,
@@ -88,6 +89,7 @@ function statusPill(
 }
 
 export function TlDepartmentPage() {
+  useGlobalDomDigitLatinize(true);
   const { dept } = useParams<{ dept: string }>();
   const [search] = useSearchParams();
   const magicParam = search.get("magic");
@@ -731,31 +733,43 @@ export function TlDepartmentPage() {
                 <div lang="en-US" dir="ltr">
                   <Label className="font-sans">{t("tl.vExpected")} (HH:mm)</Label>
                   <Input
-                    type="time"
-                    step={60}
-                    className="mt-1 bg-black/40 border-white/15"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]{2}:[0-9]{2}"
+                    placeholder="HH:mm"
+                    lang="en"
+                    dir="ltr"
+                    className="mt-1 bg-black/40 border-white/15 font-mono tabular-nums"
                     value={vForm.expected_entry_time}
-                    onChange={(e) => setVForm((p) => ({ ...p, expected_entry_time: e.target.value }))}
+                    onChange={(e) => setVForm((p) => ({ ...p, expected_entry_time: e.target.value.replace(/[^\d:]/g, "").slice(0, 5) }))}
                   />
                 </div>
                 <div lang="en-US" dir="ltr">
                   <Label className="font-sans">{t("tl.vEntry")} (HH:mm)</Label>
                   <Input
-                    type="time"
-                    step={60}
-                    className="mt-1 bg-black/40 border-white/15"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]{2}:[0-9]{2}"
+                    placeholder="HH:mm"
+                    lang="en"
+                    dir="ltr"
+                    className="mt-1 bg-black/40 border-white/15 font-mono tabular-nums"
                     value={vForm.entry_time}
-                    onChange={(e) => setVForm((p) => ({ ...p, entry_time: e.target.value }))}
+                    onChange={(e) => setVForm((p) => ({ ...p, entry_time: e.target.value.replace(/[^\d:]/g, "").slice(0, 5) }))}
                   />
                 </div>
                 <div lang="en-US" dir="ltr">
                   <Label className="font-sans">{t("tl.vExit")} (HH:mm)</Label>
                   <Input
-                    type="time"
-                    step={60}
-                    className="mt-1 bg-black/40 border-white/15"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]{2}:[0-9]{2}"
+                    placeholder="HH:mm"
+                    lang="en"
+                    dir="ltr"
+                    className="mt-1 bg-black/40 border-white/15 font-mono tabular-nums"
                     value={vForm.exit_time}
-                    onChange={(e) => setVForm((p) => ({ ...p, exit_time: e.target.value }))}
+                    onChange={(e) => setVForm((p) => ({ ...p, exit_time: e.target.value.replace(/[^\d:]/g, "").slice(0, 5) }))}
                   />
                 </div>
                 {vForm.vehicle_kind === "bus" ? (
@@ -991,12 +1005,16 @@ export function TlDepartmentPage() {
                 <div lang="en-US" dir="ltr">
                   <Label>{t("tl.opsTime")} (HH:mm)</Label>
                   <Input
-                    type="time"
-                    step={60}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]{2}:[0-9]{2}"
+                    placeholder="HH:mm"
+                    lang="en"
+                    dir="ltr"
                     className="mt-1 bg-black/40 border-white/15 font-mono tabular-nums"
                     style={{ fontVariantNumeric: "lining-nums" }}
                     value={oForm.log_time}
-                    onChange={(e) => setOForm((p) => ({ ...p, log_time: e.target.value }))}
+                    onChange={(e) => setOForm((p) => ({ ...p, log_time: e.target.value.replace(/[^\d:]/g, "").slice(0, 5) }))}
                   />
                 </div>
                 <div lang="en-US" dir="ltr">

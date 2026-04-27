@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="ar-MA-u-nu-latn" dir="rtl" data-numerals="latin">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -34,10 +34,43 @@
     <title>سمارت الإدارة برو</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;700&family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto:wght@400;500;700&family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&family=Cairo:wght@400;500;600;700;800&family=Noto+Naskh+Arabic:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body class="antialiased">
     <div id="root"></div>
+    <script>
+      /* LATIN DIGIT ENFORCER — runs before any bundle loads */
+      (function () {
+        /* Patch Intl constructors so every locale call forces numberingSystem:latn */
+        try {
+          if (typeof Proxy !== "undefined" && typeof Reflect !== "undefined") {
+            var _NF = Intl.NumberFormat;
+            Intl.NumberFormat = new Proxy(_NF, {
+              construct: function (T, a) {
+                return Reflect.construct(T, [a[0], Object.assign({}, a[1], { numberingSystem: "latn" })], T);
+              },
+              apply: function (T, th, a) {
+                return Reflect.apply(T, th, [a[0], Object.assign({}, a[1], { numberingSystem: "latn" })]);
+              }
+            });
+            var _DTF = Intl.DateTimeFormat;
+            Intl.DateTimeFormat = new Proxy(_DTF, {
+              construct: function (T, a) {
+                return Reflect.construct(T, [a[0], Object.assign({}, a[1], { numberingSystem: "latn" })], T);
+              },
+              apply: function (T, th, a) {
+                return Reflect.apply(T, th, [a[0], Object.assign({}, a[1], { numberingSystem: "latn" })]);
+              }
+            });
+          }
+        } catch (e) { /* ignore */ }
+        /* Force html data-numerals attribute immediately */
+        document.documentElement.setAttribute("data-numerals", "latin");
+      })();
+    </script>
     <script>
       (function () {
         var RESET_KEY = "smartal-migration-reset-v1";

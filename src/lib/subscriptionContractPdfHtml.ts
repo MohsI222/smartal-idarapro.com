@@ -1,9 +1,19 @@
 import { escapeHtmlPdf } from "@/lib/htmlEscape";
+import {
+  formatLatinNumber,
+  INTL_EN_US_WITH_LATN_NUMERALS,
+} from "@/lib/latinNumeralFormat";
+import { toWesternDigits } from "@/lib/unicodeDigits";
+
+/** Escape for PDF + force every digit rune to U+0030–39. */
+function escLatn(s: string): string {
+  return escapeHtmlPdf(toWesternDigits(s));
+}
 
 const FONT_LINKS = `
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=Noto+Naskh+Arabic:wght@400;600;700&family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Tajawal:wght@400;500;600;700&family=Noto+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
 `;
 
 /** Professional theme: Vibrant Blue / Clean White / Soft Gray — governmental/official look */
@@ -97,12 +107,12 @@ function rowPair(
   return `
   <div class="row">
     <div class="cell ar" dir="rtl">
-      <div class="lab" style="text-align:right;">${escapeHtmlPdf(labelAr)}</div>
-      <div class="val" style="text-align:right;direction:rtl;unicode-bidi:plaintext;">${escapeHtmlPdf(valueAr)}</div>
+      <div class="lab" style="text-align:right;">${escLatn(labelAr)}</div>
+      <div class="val" style="text-align:right;direction:rtl;unicode-bidi:plaintext;">${escLatn(valueAr)}</div>
     </div>
     <div class="cell other" dir="ltr">
-      <div class="lab" style="text-align:left;">${escapeHtmlPdf(labelOther)}</div>
-      <div class="val" style="text-align:left;direction:ltr;">${escapeHtmlPdf(valueOther)}</div>
+      <div class="lab" style="text-align:left;">${escLatn(labelOther)}</div>
+      <div class="val" style="text-align:left;direction:ltr;">${escLatn(valueOther)}</div>
     </div>
   </div>`;
 }
@@ -118,20 +128,36 @@ export function buildSubscriptionContractPdfHtml(opts: {
   const { fields, clauses, logoSrc } = opts;
   const safeLogo = escapeHtmlPdf(logoSrc);
 
-  const priceStr = String(fields.priceDh ?? 0);
+  const priceStr = formatLatinNumber(
+    Number(fields.priceDh ?? 0),
+    { maximumFractionDigits: 0 },
+    INTL_EN_US_WITH_LATN_NUMERALS
+  );
   const L = fields.rowLabels;
 
+  const dirBlock = toWesternDigits(
+    `الاسم: ${fields.directorName}\nالبطاقة الوطنية: ${fields.directorCin}\nالعنوان: ${fields.directorAddress}\nالهاتف: ${fields.directorPhone}`
+  );
+  const dirEn = toWesternDigits(
+    `Name: ${fields.directorName}\nNational ID: ${fields.directorCin}\nAddress: ${fields.directorAddress}\nPhone: ${fields.directorPhone}`
+  );
+  const subBlock = toWesternDigits(
+    `الاسم: ${fields.subscriberName}\nالبطاقة الوطنية: ${fields.subscriberCin}\nالعنوان: ${fields.subscriberAddress}\nالهاتف: ${fields.subscriberPhone}`
+  );
+  const subEn = toWesternDigits(
+    `Name: ${fields.subscriberName}\nNational ID: ${fields.subscriberCin}\nAddress: ${fields.subscriberAddress}\nPhone: ${fields.subscriberPhone}`
+  );
   const gridBlock = rowPair(
     L.partyAAr,
     L.partyAOther,
-    `الاسم: ${fields.directorName}\nالبطاقة الوطنية: ${fields.directorCin}\nالعنوان: ${fields.directorAddress}\nالهاتف: ${fields.directorPhone}`,
-    `Name: ${fields.directorName}\nNational ID: ${fields.directorCin}\nAddress: ${fields.directorAddress}\nPhone: ${fields.directorPhone}`
+    dirBlock,
+    dirEn
   )
     + rowPair(
         L.partyBAr,
         L.partyBOther,
-        `الاسم: ${fields.subscriberName}\nالبطاقة الوطنية: ${fields.subscriberCin}\nالعنوان: ${fields.subscriberAddress}\nالهاتف: ${fields.subscriberPhone}`,
-        `Name: ${fields.subscriberName}\nNational ID: ${fields.subscriberCin}\nAddress: ${fields.subscriberAddress}\nPhone: ${fields.subscriberPhone}`
+        subBlock,
+        subEn
       )
     + rowPair(L.entityAr, L.entityOther, fields.entityTypeLabelAr, fields.entityTypeLabelOther)
     + rowPair(L.planAr, L.planOther, fields.planLabelAr, fields.planLabelOther)
@@ -143,8 +169,8 @@ export function buildSubscriptionContractPdfHtml(opts: {
     + rowPair(L.payAr, L.payOther, fields.paymentNoteAr, fields.paymentNoteOther);
 
   const clauseBlock = (ar: string, other: string) => {
-    const a = escapeHtmlPdf(ar).replace(/\n/g, "<br/>");
-    const o = escapeHtmlPdf(other).replace(/\n/g, "<br/>");
+    const a = escLatn(ar).replace(/\n/g, "<br/>");
+    const o = escLatn(other).replace(/\n/g, "<br/>");
     return `
   <div class="clause">
     <div class="clause-ar" dir="rtl"><p>${a}</p></div>
@@ -157,7 +183,7 @@ export function buildSubscriptionContractPdfHtml(opts: {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtmlPdf(clauses.docTitleAr)}</title>
+  <title>${escLatn(clauses.docTitleAr)}</title>
   ${FONT_LINKS}
   <style>
     @page { size: A4; margin: 14mm; }
@@ -166,6 +192,8 @@ export function buildSubscriptionContractPdfHtml(opts: {
       margin: 0;
       padding: 0;
       background: #fff;
+      text-rendering: auto;
+      -webkit-font-smoothing: antialiased;
       /* Force Western/Latin digits (0-9) — prevent Arabic-Indic numerals in PDF */
       font-variant-numeric: lining-nums tabular-nums;
       -webkit-font-feature-settings: "lnum" 1, "tnum" 1;
@@ -174,15 +202,41 @@ export function buildSubscriptionContractPdfHtml(opts: {
     body {
       padding: 20px 18px 32px;
       color: ${THEME.ink};
-      font-family: "Noto Sans", "Noto Naskh Arabic", Arial, sans-serif;
+      font-family: "Noto Sans", Arial, sans-serif;
       font-size: 8.5pt;
-      line-height: 1.65;
-      word-spacing: 0.04em;
+      line-height: 1.8;
+      white-space: normal;
+      word-spacing: normal;
+      transform: none;
     }
     .sheet {
       max-width: 760px;
       margin: 0 auto;
       background: #fff;
+      transform: none;
+    }
+    /* Arabic script: explicit spacing + clear fonts (avoid overlap in canvas/PDF capture) */
+    .head h1,
+    .kingdom,
+    .cols-header .ch-ar,
+    .cell.ar,
+    .cell.ar .lab,
+    .cell.ar .val,
+    .clause-ar,
+    .clause-ar p,
+    .foot {
+      font-family: "Amiri", "Tajawal", Arial, sans-serif !important;
+      letter-spacing: normal !important;
+      word-spacing: 2px !important;
+      line-height: 1.8 !important;
+      text-rendering: auto !important;
+    }
+    .cell.ar .lab {
+      text-transform: none;
+      letter-spacing: normal !important;
+    }
+    .cols-header .ch-ar {
+      text-transform: none;
     }
 
     /* ── Header ── */
@@ -210,9 +264,7 @@ export function buildSubscriptionContractPdfHtml(opts: {
       margin: 0;
       font-size: 15px;
       font-weight: 800;
-      font-family: Cairo, "Noto Naskh Arabic", sans-serif;
       color: #fff;
-      letter-spacing: 0.02em;
     }
     .head .sub {
       margin: 5px 0 0;
@@ -228,7 +280,6 @@ export function buildSubscriptionContractPdfHtml(opts: {
       font-weight: 700;
       margin-bottom: 12px;
       color: ${THEME.ink};
-      font-family: Cairo, "Noto Naskh Arabic", sans-serif;
       padding: 6px 0;
       border-bottom: 2px solid ${THEME.blue};
     }
@@ -249,18 +300,25 @@ export function buildSubscriptionContractPdfHtml(opts: {
     .cols-header .ch-ar {
       direction: rtl;
       text-align: right;
-      font-family: Cairo, "Noto Naskh Arabic", sans-serif;
       background: ${THEME.blue};
       color: #fff;
-      padding: 7px 12px;
+      padding: 12px;
       border-left: 1px solid rgba(255,255,255,0.2);
+      white-space: normal;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+      line-height: 1.8;
     }
     .cols-header .ch-other {
       direction: ltr;
       text-align: left;
       background: ${THEME.blueDark};
       color: #fff;
-      padding: 7px 12px;
+      padding: 12px;
+      white-space: normal;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
+      line-height: 1.8;
     }
 
     /* ── Data rows ── */
@@ -278,10 +336,13 @@ export function buildSubscriptionContractPdfHtml(opts: {
 
     /* Arabic cell — explicit RTL + right-aligned */
     .cell {
-      padding: 8px 14px;
+      padding: 12px;
       vertical-align: top;
       font-size: 8pt;
-      line-height: 1.7;
+      line-height: 1.8;
+      white-space: normal;
+      overflow-wrap: break-word;
+      word-wrap: break-word;
     }
     .cell.ar {
       direction: rtl;
@@ -289,15 +350,11 @@ export function buildSubscriptionContractPdfHtml(opts: {
       unicode-bidi: plaintext;
       background: ${THEME.rowAlt};
       border-left: 2px solid ${THEME.blue};
-      font-family: "Noto Naskh Arabic", Cairo, sans-serif;
-      word-spacing: 0.06em;
-      letter-spacing: 0.01em;
     }
     .cell.other {
       direction: ltr;
       text-align: left;
       background: #fff;
-      word-spacing: 0.03em;
     }
     .lab {
       font-size: 7pt;
@@ -308,12 +365,12 @@ export function buildSubscriptionContractPdfHtml(opts: {
       text-transform: uppercase;
     }
     .val {
-      white-space: pre-wrap;
+      white-space: pre-line;
       word-break: break-word;
       overflow-wrap: break-word;
       color: ${THEME.ink};
       font-size: 8pt;
-      line-height: 1.7;
+      line-height: 1.8;
     }
 
     /* ── Clauses ── */
@@ -338,16 +395,12 @@ export function buildSubscriptionContractPdfHtml(opts: {
     .clause p {
       margin: 0 0 10px;
       font-size: 8pt;
-      line-height: 1.75;
-      word-spacing: 0.04em;
+      line-height: 1.8;
     }
     .clause-ar {
       direction: rtl;
       text-align: right;
       unicode-bidi: plaintext;
-      font-family: "Noto Naskh Arabic", Cairo, sans-serif;
-      word-spacing: 0.06em;
-      letter-spacing: 0.01em;
       padding-right: 4px;
     }
     .clause-other {
@@ -387,15 +440,14 @@ export function buildSubscriptionContractPdfHtml(opts: {
     /* ── Footer ── */
     .foot {
       margin-top: 18px;
-      padding: 8px 16px;
+      padding: 12px 16px;
       border-top: 3px solid ${THEME.blue};
       font-size: 7pt;
       color: ${THEME.muted};
       text-align: center;
-      line-height: 1.55;
+      line-height: 1.8;
       background: ${THEME.blueLight};
       border-radius: 0 0 6px 6px;
-      word-spacing: 0.03em;
     }
   </style>
 </head>
@@ -404,15 +456,15 @@ export function buildSubscriptionContractPdfHtml(opts: {
     <header class="head">
       <img class="logo print-keep" src="${safeLogo}" width="120" height="52" alt="" />
       <div class="titles">
-        <h1>${escapeHtmlPdf(clauses.docTitleAr)}</h1>
-        <p class="sub" dir="ltr" style="text-align:center;">${escapeHtmlPdf(clauses.docTitleOther)}</p>
+        <h1>${escLatn(clauses.docTitleAr)}</h1>
+        <p class="sub" dir="ltr" style="text-align:center;">${escLatn(clauses.docTitleOther)}</p>
       </div>
       <div style="width:120px;height:52px;"></div>
     </header>
-    <div class="kingdom" dir="rtl">${escapeHtmlPdf(clauses.kingdomAr)} — ${escapeHtmlPdf(clauses.kingdomOther)}</div>
+    <div class="kingdom" dir="rtl">${escLatn(clauses.kingdomAr)} — ${escLatn(clauses.kingdomOther)}</div>
     <div class="cols-header">
-      <div class="ch-ar">${escapeHtmlPdf(clauses.colArabic)}</div>
-      <div class="ch-other">${escapeHtmlPdf(clauses.colTranslation)}</div>
+      <div class="ch-ar">${escLatn(clauses.colArabic)}</div>
+      <div class="ch-other">${escLatn(clauses.colTranslation)}</div>
     </div>
     ${gridBlock}
     ${clauseBlock(clauses.introAr, clauses.introOther)}
@@ -423,7 +475,9 @@ export function buildSubscriptionContractPdfHtml(opts: {
     ${clauseBlock(clauses.validityAr, clauses.validityOther)}
     ${clauseBlock(clauses.signaturesAr, clauses.signaturesOther)}
     <footer class="foot">
-      Smart Al-Idara Pro — وثيقة إطار للتوقيع والتصديق أمام السلطات المختصة — نموذج إرشادي يُستكمل بحسب الحالة الفردية.
+      ${escLatn(
+        "Smart Al-Idara Pro — وثيقة إطار للتوقيع والتصديق أمام السلطات المختصة — نموذج إرشادي يُستكمل بحسب الحالة الفردية."
+      )}
     </footer>
   </div>
 </body>

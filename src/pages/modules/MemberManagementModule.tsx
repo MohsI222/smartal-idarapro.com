@@ -31,18 +31,25 @@ import { parseMoroccanIdHints } from "@/lib/moroccanIdOcrParse";
 import { parseMemberExcelFileSync, writeMemberExcelFile } from "@/lib/memberMgmtExcel";
 import { loadMemberMgmt, saveMemberMgmt } from "@/lib/memberMgmtStorage";
 import { exportMemberMgmtPdfPreferBackend } from "@/lib/memberMgmtPdf";
+import { toWesternDigits } from "@/lib/utils";
 import {
-  ORG_LABELS,
   addYearsFromDate,
   emptyMember,
   isMemberPaid,
-  memberStatusLabel,
   parseYmd,
   startOfToday,
   type MemberMgmtSetup,
   type MemberRow,
   type OrgKind,
 } from "@/lib/memberMgmtTypes";
+
+const ORG_ORDER: OrgKind[] = ["organization", "institute", "center"];
+
+function orgKindLabel(t: (key: string) => string, k: OrgKind): string {
+  if (k === "organization") return t("memberMgmt.orgKind.organization");
+  if (k === "institute") return t("memberMgmt.orgKind.institute");
+  return t("memberMgmt.orgKind.center");
+}
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { cn } from "@/lib/utils";
@@ -92,7 +99,7 @@ async function fileToLogoDataUrl(file: File): Promise<string> {
 
 export function MemberManagementModule() {
   const { user, isApproved, approvedModules } = useAuth();
-  const { t } = useI18n();
+  const { t, isRtl, formatNumber, formatDateTime } = useI18n();
   const uid = user?.id ?? "guest";
   const [setup, setSetup] = useState<MemberMgmtSetup | null>(null);
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -160,10 +167,13 @@ export function MemberManagementModule() {
     );
   }, []);
 
-  const removeMember = useCallback((id: string) => {
-    if (!confirm("حذف هذا المنخرط نهائياً؟")) return;
-    setMembers((prev) => prev.filter((m) => m.id !== id));
-  }, []);
+  const removeMember = useCallback(
+    (id: string) => {
+      if (!window.confirm(t("memberMgmt.confirmDelete"))) return;
+      setMembers((prev) => prev.filter((m) => m.id !== id));
+    },
+    [t]
+  );
 
   const openNewMember = () => {
     setEditingMember(emptyMember());
@@ -206,11 +216,13 @@ export function MemberManagementModule() {
     const buf = await file.arrayBuffer();
     const rows = parseMemberExcelFileSync(buf);
     if (!rows.length) {
-      alert("لم يُعثر على صفوف صالحة في الملف.");
+      window.alert(t("memberMgmt.importNoRows"));
       return;
     }
     setMembers((prev) => [...prev, ...rows]);
-    alert(`تم استيراد ${rows.length} سجلًا.`);
+    window.alert(
+      t("memberMgmt.importedCount", { count: formatNumber(rows.length) })
+    );
   };
 
   const handleExportExcel = useCallback(() => {
@@ -218,12 +230,15 @@ export function MemberManagementModule() {
     window.setTimeout(() => {
       try {
         const safe = (setup?.name ?? "members").replace(/[^\w\u0600-\u06FF-]+/g, "_");
-        writeMemberExcelFile(members, `${safe}_المنخرطون.xlsx`);
+        writeMemberExcelFile(
+          members,
+          `${safe}_${t("memberMgmt.excelNameSuffix")}.xlsx`
+        );
       } finally {
         setExportPreparing(false);
       }
     }, 80);
-  }, [members, setup?.name]);
+  }, [members, setup?.name, t]);
 
   const handleExportPDF = useCallback(async () => {
     if (!setup) return;
@@ -237,11 +252,11 @@ export function MemberManagementModule() {
       });
     } catch (e) {
       console.error(e);
-      alert("تعذر إنشاء ملف PDF. تحقق من وجود الخط تحت /fonts/ أو حاول مجدداً.");
+      window.alert(t("memberMgmt.pdfErr"));
     } finally {
       setExportPreparing(false);
     }
-  }, [setup, members]);
+  }, [setup, members, t]);
 
   const openSetupEdit = () => {
     if (setup) {
@@ -257,7 +272,7 @@ export function MemberManagementModule() {
   if (!hydrated) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-slate-400">
-        جاري التحميل…
+        {t("common.loading")}
       </div>
     );
   }
@@ -276,10 +291,10 @@ export function MemberManagementModule() {
     );
   }
 
-  /** وضع الإعداد الأولي — ملء الاسم والنوع */
+  /** Initial setup: org type + name */
   if (!setup) {
     return (
-      <div className={GRAD_PAGE} dir="rtl">
+      <div className={GRAD_PAGE} dir={isRtl ? "rtl" : "ltr"}>
         <div
           className={cn(
             "mx-auto max-w-lg p-8 md:p-10",
@@ -292,14 +307,14 @@ export function MemberManagementModule() {
               <Building2 className="size-6 text-white" />
             </span>
             <div>
-              <h1 className="text-xl font-black text-white">إعداد المؤسسة</h1>
-              <p className="text-sm text-slate-300">اختر النوع والاسم ثم احفظ للبدء</p>
+              <h1 className="text-xl font-black text-white">{t("memberMgmt.setupTitle")}</h1>
+              <p className="text-sm text-slate-300">{t("memberMgmt.setupDesc")}</p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div>
-              <Label className="text-slate-200">النوع</Label>
+              <Label className="text-slate-200">{t("memberMgmt.orgType")}</Label>
               <select
                 value={setupDraft.orgKind}
                 onChange={(e) =>
@@ -307,24 +322,24 @@ export function MemberManagementModule() {
                 }
                 className="mt-1.5 w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-fuchsia-400/50"
               >
-                {(Object.keys(ORG_LABELS) as OrgKind[]).map((k) => (
+                {ORG_ORDER.map((k) => (
                   <option key={k} value={k}>
-                    {ORG_LABELS[k]}
+                    {orgKindLabel(t, k)}
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <Label className="text-slate-200">الاسم</Label>
+              <Label className="text-slate-200">{t("memberMgmt.orgName")}</Label>
               <Input
                 value={setupDraft.name}
                 onChange={(e) => setSetupDraft((d) => ({ ...d, name: e.target.value }))}
-                placeholder="مثال: معهد النجاح للتكوين"
+                placeholder={t("memberMgmt.orgNamePh")}
                 className="mt-1.5 border-white/20 bg-black/30"
               />
             </div>
             <div>
-              <Label className="text-slate-200">شعار المؤسسة (اختياري)</Label>
+              <Label className="text-slate-200">{t("memberMgmt.orgLogo")}</Label>
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <input
                   ref={logoInputRef}
@@ -338,7 +353,7 @@ export function MemberManagementModule() {
                       const data = await fileToLogoDataUrl(f);
                       setSetupDraft((d) => ({ ...d, logoDataUrl: data }));
                     } catch {
-                      alert("تعذر قراءة الصورة.");
+                      window.alert(t("memberMgmt.orgLogoReadErr"));
                     }
                     e.target.value = "";
                   }}
@@ -350,7 +365,7 @@ export function MemberManagementModule() {
                   className="bg-white/10 text-white hover:bg-white/20"
                 >
                   <Camera className="size-4" />
-                  رفع الشعار
+                  {t("memberMgmt.uploadLogo")}
                 </Button>
                 {setupDraft.logoDataUrl && (
                   <img
@@ -360,7 +375,7 @@ export function MemberManagementModule() {
                   />
                 )}
               </div>
-              <p className="mt-1 text-[11px] text-slate-500">يُخزَّن محلياً مع حسابك فقط.</p>
+              <p className="mt-1 text-[11px] text-slate-500">{t("memberMgmt.orgLogoHint")}</p>
             </div>
             <Button
               type="button"
@@ -368,7 +383,7 @@ export function MemberManagementModule() {
               disabled={!setupDraft.name.trim()}
               className="w-full bg-gradient-to-l from-emerald-500 to-cyan-500 py-6 text-lg font-bold text-[#042f2e] shadow-lg hover:opacity-95"
             >
-              حفظ والمتابعة
+              {t("memberMgmt.saveContinue")}
             </Button>
           </div>
         </div>
@@ -377,9 +392,9 @@ export function MemberManagementModule() {
   }
 
   return (
-    <div className={GRAD_PAGE} dir="rtl">
+    <div className={GRAD_PAGE} dir={isRtl ? "rtl" : "ltr"}>
       <div className="mx-auto max-w-7xl space-y-6">
-        {/* رأس زجاجي */}
+        {/* Header */}
         <div
           className={cn(
             "flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between",
@@ -401,10 +416,10 @@ export function MemberManagementModule() {
             )}
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-fuchsia-200/80">
-                {ORG_LABELS[setup.orgKind]}
+                {orgKindLabel(t, setup.orgKind)}
               </p>
               <h1 className="text-2xl font-black text-white md:text-3xl">{setup.name}</h1>
-              <p className="text-sm text-slate-300">تسيير المعاهد والمراكز — المنخرطون</p>
+              <p className="text-sm text-slate-300">{t("memberMgmt.subtitle")}</p>
             </div>
           </div>
           <Button
@@ -414,11 +429,11 @@ export function MemberManagementModule() {
             className="border-white/20 bg-white/10 text-white hover:bg-white/20"
           >
             <Settings2 className="size-4" />
-            إعدادات المؤسسة
+            {t("memberMgmt.orgSettings")}
           </Button>
         </div>
 
-        {/* تنبيهات المتأخرين */}
+        {/* Overdue alert */}
         <Card
           className={cn(
             "overflow-hidden border-2 border-red-500 shadow-[0_0_40px_rgba(239,68,68,0.35)]",
@@ -428,13 +443,16 @@ export function MemberManagementModule() {
           <CardContent className="p-4 md:p-6">
             <div className="mb-4 flex items-center gap-2">
               <AlertTriangle className="size-6 shrink-0 text-amber-200" />
-              <h2 className="text-lg font-black md:text-xl">تنبيهات المتأخرين</h2>
-              <span className="rounded-full bg-black/25 px-2 py-0.5 text-xs font-bold">
-                {overdue.length}
+              <h2 className="text-lg font-black md:text-xl">{t("memberMgmt.overdueTitle")}</h2>
+              <span
+                dir="ltr"
+                className="rounded-full bg-black/25 px-2 py-0.5 text-xs font-bold font-digits-latin"
+              >
+                {formatNumber(overdue.length)}
               </span>
             </div>
             {overdue.length === 0 ? (
-              <p className="text-sm text-red-100/90">لا يوجد منخرطون متأخرون حالياً — بارك الله فيكم.</p>
+              <p className="text-sm text-red-100/90">{t("memberMgmt.overdueEmpty")}</p>
             ) : (
               <ul className="space-y-3">
                 {overdue.map((m) => (
@@ -445,8 +463,15 @@ export function MemberManagementModule() {
                     <div>
                       <p className="font-bold">{m.fullName}</p>
                       <p className="text-sm text-red-100/90">
-                        رقم الانخراط: <strong className="tabular-nums">{m.membershipNo}</strong> — المستحق:{" "}
-                        <strong className="tabular-nums">{m.amountDh}</strong> درهم
+                        {t("memberMgmt.lineMembership")}{" "}
+                        <strong dir="ltr" className="tabular-nums font-digits-latin">
+                          {toWesternDigits(String(m.membershipNo))}
+                        </strong>{" "}
+                        — {t("memberMgmt.lineAmount")}{" "}
+                        <strong dir="ltr" className="tabular-nums font-digits-latin">
+                          {formatNumber(m.amountDh, { maximumFractionDigits: 0 })}
+                        </strong>{" "}
+                        {t("memberMgmt.currency")}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -456,7 +481,7 @@ export function MemberManagementModule() {
                         onClick={() => markPaid(m.id)}
                         className="bg-emerald-500 font-bold text-emerald-950 hover:bg-emerald-400"
                       >
-                        تم الدفع
+                        {t("memberMgmt.markPaid")}
                       </Button>
                       <Button
                         type="button"
@@ -466,7 +491,7 @@ export function MemberManagementModule() {
                         className="border-red-300/40 bg-red-950/40 text-red-100 hover:bg-red-950/60"
                       >
                         <Trash2 className="size-4" />
-                        حذف
+                        {t("memberMgmt.removeMember")}
                       </Button>
                     </div>
                   </li>
@@ -476,7 +501,7 @@ export function MemberManagementModule() {
           </CardContent>
         </Card>
 
-        {/* شريط أدوات */}
+        {/* Toolbar */}
         <div className={cn("flex flex-col gap-3 p-4 md:flex-row md:flex-wrap md:items-center", GLASS)}>
           <Button
             type="button"
@@ -484,7 +509,7 @@ export function MemberManagementModule() {
             className="bg-gradient-to-l from-violet-600 to-fuchsia-600 font-semibold shadow-lg"
           >
             <UserPlus className="size-4" />
-            إدخال يدوي
+            {t("memberMgmt.addManual")}
           </Button>
           <Button
             type="button"
@@ -496,7 +521,7 @@ export function MemberManagementModule() {
             className="border-cyan-400/30 bg-cyan-500/20 text-cyan-50 hover:bg-cyan-500/30"
           >
             <Camera className="size-4" />
-            مسح البطاقة الوطنية
+            {t("memberMgmt.scanId")}
           </Button>
           <input
             ref={excelInputRef}
@@ -516,12 +541,12 @@ export function MemberManagementModule() {
             className="border-emerald-400/30 bg-emerald-500/15 text-emerald-50"
           >
             <FileUp className="size-4" />
-            استيراد Excel
+            {t("memberMgmt.importExcel")}
           </Button>
           <div className="ms-auto flex flex-col items-stretch gap-2 sm:items-end">
             {exportPreparing && (
               <p className="text-center text-sm font-semibold text-amber-200 sm:text-right animate-pulse">
-                جاري التحضير…
+                {t("memberMgmt.preparing")}
               </p>
             )}
             <div className="flex flex-wrap gap-2">
@@ -533,7 +558,7 @@ export function MemberManagementModule() {
                 className="border-amber-400/40 bg-amber-500/15 text-amber-100 disabled:opacity-50"
               >
                 <FileSpreadsheet className="size-4" />
-                تحميل Excel
+                {t("memberMgmt.downloadExcel")}
               </Button>
               <Button
                 type="button"
@@ -543,32 +568,32 @@ export function MemberManagementModule() {
                 className="border-rose-400/40 bg-rose-500/20 text-rose-50 disabled:opacity-50"
               >
                 <Download className="size-4" />
-                تحميل PDF
+                {t("memberMgmt.downloadPdf")}
               </Button>
             </div>
           </div>
         </div>
 
-        {/* الجدول الذكي */}
+        {/* Table */}
         <div className={cn("overflow-x-auto p-2 md:p-4", GLASS)}>
           <table className="w-full min-w-[920px] border-collapse text-sm">
             <thead>
-              <tr className="bg-gradient-to-l from-indigo-600/80 to-purple-600/80 text-right text-white">
-                <th className="rounded-s-xl p-3 font-bold">الاسم الكامل</th>
-                <th className="p-3 font-bold">رقم البطاقة الوطنية</th>
-                <th className="p-3 font-bold">رقم الانخراط</th>
-                <th className="p-3 font-bold">تاريخ التسجيل</th>
-                <th className="p-3 font-bold">تاريخ الانتهاء</th>
-                <th className="p-3 font-bold">مبلغ الدفع</th>
-                <th className="p-3 font-bold">الحالة</th>
-                <th className="rounded-e-xl p-3 font-bold">إجراءات</th>
+              <tr className="bg-gradient-to-l from-indigo-600/80 to-purple-600/80 text-start text-white">
+                <th className="rounded-s-xl p-3 font-bold">{t("memberMgmt.colFullName")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colNationalId")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colMembership")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colRegDate")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colEndDate")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colAmount")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colStatus")}</th>
+                <th className="rounded-e-xl p-3 font-bold">{t("memberMgmt.colActions")}</th>
               </tr>
             </thead>
             <tbody>
               {members.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-10 text-center text-slate-400">
-                    لا توجد بيانات بعد — أضف منخرطاً أو استورد ملف Excel.
+                    {t("memberMgmt.emptyTable")}
                   </td>
                 </tr>
               ) : (
@@ -585,11 +610,17 @@ export function MemberManagementModule() {
                       )}
                     >
                       <td className="p-3 font-medium">{m.fullName}</td>
-                      <td className="p-3 tabular-nums text-slate-300">{m.nationalId}</td>
-                      <td className="p-3 tabular-nums">{m.membershipNo}</td>
-                      <td className="p-3 tabular-nums text-slate-300">{m.regDate}</td>
-                      <td className="p-3 tabular-nums">{m.endDate}</td>
-                      <td className="p-3 tabular-nums">{m.amountDh} DH</td>
+                      <td className="p-3 tabular-nums text-slate-300">
+                        {toWesternDigits(m.nationalId)}
+                      </td>
+                      <td className="p-3 tabular-nums">{toWesternDigits(String(m.membershipNo))}</td>
+                      <td className="p-3 tabular-nums text-slate-300">{toWesternDigits(m.regDate)}</td>
+                      <td className="p-3 tabular-nums">{toWesternDigits(m.endDate)}</td>
+                      <td className="p-3 tabular-nums">
+                        <span dir="ltr" className="font-digits-latin">
+                          {formatNumber(m.amountDh, { maximumFractionDigits: 0 })} {t("memberMgmt.currency")}
+                        </span>
+                      </td>
                       <td className="p-3">
                         <span
                           className={cn(
@@ -599,7 +630,7 @@ export function MemberManagementModule() {
                               : "bg-red-500/30 text-red-100 ring-1 ring-red-400/50"
                           )}
                         >
-                          {memberStatusLabel(m) === "Paid" ? "Paid" : "Unpaid"}
+                          {paid ? t("memberMgmt.paidStatus") : t("memberMgmt.unpaidStatus")}
                         </span>
                       </td>
                       <td className="p-3">
@@ -611,7 +642,7 @@ export function MemberManagementModule() {
                               className="h-8 bg-emerald-600/90 px-2 text-[11px] font-bold text-white hover:bg-emerald-500"
                               onClick={() => markPaid(m.id)}
                             >
-                              تم الدفع
+                              {t("memberMgmt.markPaid")}
                             </Button>
                           )}
                           <Button
@@ -641,24 +672,28 @@ export function MemberManagementModule() {
             </tbody>
           </table>
           <p className="mt-3 text-center text-[11px] text-slate-500">
-            تُحدَّث الحالة تلقائياً عند تجاوز تاريخ الانتهاء — اليوم:{" "}
-            {startOfToday().toISOString().slice(0, 10)}
+            {t("memberMgmt.tableFooter", {
+              date: formatDateTime(startOfToday().toISOString().slice(0, 10) + "T12:00:00"),
+            })}
           </p>
         </div>
       </div>
 
       {/* حوار إعدادات المؤسسة */}
       <Dialog open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
-        <DialogContent className="max-w-md border-white/20 bg-[#0f172a]/95 text-white" dir="rtl">
+        <DialogContent
+          className="max-w-md border-white/20 bg-[#0f172a]/95 text-white"
+          dir={isRtl ? "rtl" : "ltr"}
+        >
           <DialogHeader>
-            <DialogTitle>إعدادات المؤسسة</DialogTitle>
+            <DialogTitle>{t("memberMgmt.orgSettings")}</DialogTitle>
             <DialogDescription className="text-slate-400">
-              تعديل النوع والاسم والشعار (محلي لحسابك).
+              {t("memberMgmt.orgSettingsDesc")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             <div>
-              <Label>النوع</Label>
+              <Label>{t("memberMgmt.orgType")}</Label>
               <select
                 value={setupDraft.orgKind}
                 onChange={(e) =>
@@ -666,15 +701,15 @@ export function MemberManagementModule() {
                 }
                 className="mt-1.5 w-full rounded-xl border border-slate-600 bg-slate-900/80 px-3 py-2.5 text-sm"
               >
-                {(Object.keys(ORG_LABELS) as OrgKind[]).map((k) => (
+                {ORG_ORDER.map((k) => (
                   <option key={k} value={k}>
-                    {ORG_LABELS[k]}
+                    {orgKindLabel(t, k)}
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <Label>الاسم</Label>
+              <Label>{t("memberMgmt.orgName")}</Label>
               <Input
                 value={setupDraft.name}
                 onChange={(e) => setSetupDraft((d) => ({ ...d, name: e.target.value }))}
@@ -682,7 +717,7 @@ export function MemberManagementModule() {
               />
             </div>
             <div>
-              <Label>الشعار</Label>
+              <Label>{t("memberMgmt.orgLogo")}</Label>
               <div className="mt-2 flex items-center gap-2">
                 <input
                   type="file"
@@ -696,7 +731,7 @@ export function MemberManagementModule() {
                       const data = await fileToLogoDataUrl(f);
                       setSetupDraft((d) => ({ ...d, logoDataUrl: data }));
                     } catch {
-                      alert("تعذر قراءة الصورة.");
+                      window.alert(t("memberMgmt.orgLogoReadErr"));
                     }
                     e.target.value = "";
                   }}
@@ -704,7 +739,7 @@ export function MemberManagementModule() {
                 <Button type="button" variant="secondary" asChild>
                   <label htmlFor="mm-logo-edit" className="cursor-pointer">
                     <Plus className="size-4" />
-                    تغيير الشعار
+                    {t("memberMgmt.changeLogo")}
                   </label>
                 </Button>
                 {setupDraft.logoDataUrl && (
@@ -722,29 +757,32 @@ export function MemberManagementModule() {
               onClick={saveSetup}
               disabled={!setupDraft.name.trim()}
             >
-              حفظ
+              {t("common.save")}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* حوار عضو */}
+      {/* Member dialog */}
       <Dialog open={memberDialogOpen} onOpenChange={setMemberDialogOpen}>
-        <DialogContent className="max-w-lg border-white/20 bg-[#0f172a]/95 text-white" dir="rtl">
+        <DialogContent
+          className="max-w-lg border-white/20 bg-[#0f172a]/95 text-white"
+          dir={isRtl ? "rtl" : "ltr"}
+        >
           <DialogHeader>
             <DialogTitle>
               {editingMember && members.some((x) => x.id === editingMember.id)
-                ? "تعديل منخرط"
-                : "منخرط جديد"}
+                ? t("memberMgmt.editMember")
+                : t("memberMgmt.newMember")}
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              أدخل البيانات أو استخدم مسح البطاقة من الشريط العلوي.
+              {t("memberMgmt.memberFormHint")}
             </DialogDescription>
           </DialogHeader>
           {editingMember && (
             <div className="grid gap-3 pt-2">
               <div>
-                <Label>الاسم الكامل</Label>
+                <Label>{t("memberMgmt.colFullName")}</Label>
                 <Input
                   value={editingMember.fullName}
                   onChange={(e) => setEditingMember({ ...editingMember, fullName: e.target.value })}
@@ -752,7 +790,7 @@ export function MemberManagementModule() {
                 />
               </div>
               <div>
-                <Label>رقم البطاقة الوطنية</Label>
+                <Label>{t("memberMgmt.colNationalId")}</Label>
                 <Input
                   value={editingMember.nationalId}
                   onChange={(e) =>
@@ -762,7 +800,7 @@ export function MemberManagementModule() {
                 />
               </div>
               <div>
-                <Label>رقم الانخراط</Label>
+                <Label>{t("memberMgmt.colMembership")}</Label>
                 <Input
                   value={editingMember.membershipNo}
                   onChange={(e) =>
@@ -773,9 +811,11 @@ export function MemberManagementModule() {
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label>تاريخ التسجيل</Label>
+                  <Label>{t("memberMgmt.colRegDate")}</Label>
                   <Input
                     type="date"
+                    lang="en"
+                    dir="ltr"
                     value={editingMember.regDate}
                     onChange={(e) =>
                       setEditingMember({ ...editingMember, regDate: e.target.value })
@@ -784,9 +824,11 @@ export function MemberManagementModule() {
                   />
                 </div>
                 <div>
-                  <Label>تاريخ الانتهاء</Label>
+                  <Label>{t("memberMgmt.colEndDate")}</Label>
                   <Input
                     type="date"
+                    lang="en"
+                    dir="ltr"
                     value={editingMember.endDate}
                     onChange={(e) =>
                       setEditingMember({ ...editingMember, endDate: e.target.value })
@@ -796,7 +838,7 @@ export function MemberManagementModule() {
                 </div>
               </div>
               <div>
-                <Label>مبلغ الدفع (درهم)</Label>
+                <Label>{t("memberMgmt.amountLabel")}</Label>
                 <Input
                   type="number"
                   min={0}
@@ -816,25 +858,26 @@ export function MemberManagementModule() {
                 className="w-full bg-gradient-to-l from-emerald-600 to-teal-600"
                 onClick={saveMember}
               >
-                حفظ
+                {t("common.save")}
               </Button>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* مسح OCR */}
+      {/* ID scan OCR */}
       <Dialog open={ocrOpen} onOpenChange={setOcrOpen}>
-        <DialogContent className="max-w-lg border-white/20 bg-[#0f172a]/95" dir="rtl">
+        <DialogContent
+          className="max-w-lg border-white/20 bg-[#0f172a]/95"
+          dir={isRtl ? "rtl" : "ltr"}
+        >
           <DialogHeader>
-            <DialogTitle className="text-white">مسح البطاقة الوطنية</DialogTitle>
-            <DialogDescription>
-              صورة واضحة للبطاقة — يُستخرج الاسم والرقم محلياً في متصفحك.
-            </DialogDescription>
+            <DialogTitle className="text-white">{t("memberMgmt.ocrDialogTitle")}</DialogTitle>
+            <DialogDescription>{t("memberMgmt.ocrDialogDesc")}</DialogDescription>
           </DialogHeader>
           <OcrScanner
-            title="رفع صورة البطاقة"
-            description="بعد الاستخراج يمكنك مراجعة الحقول في النموذج."
+            title={t("memberMgmt.ocrCardTitle")}
+            description={t("memberMgmt.ocrCardDesc")}
             onExtracted={(text) => onOcrText(text)}
             variant="royal"
           />

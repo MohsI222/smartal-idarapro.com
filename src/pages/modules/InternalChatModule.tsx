@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { formatLatinTime } from "@/lib/latinNumeralFormat";
 
 type Msg = { id: string; from: "me" | "team"; text: string; time: string };
 
@@ -33,7 +34,7 @@ export function InternalChatModule() {
         id: crypto.randomUUID(),
         from: "me",
         text,
-        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        time: formatLatinTime(new Date()),
       },
     ]);
     setDraft("");

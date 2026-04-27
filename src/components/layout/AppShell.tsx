@@ -18,7 +18,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, toWesternDigits } from "@/lib/utils";
 import { PLATFORM_NAV, PRIMARY_NAV, SECONDARY_NAV } from "@/constants/appNav";
 import { navItemVisibleForModules } from "@/constants/navModuleMap";
 import type { SectionId } from "@/constants/sections";
@@ -33,6 +33,7 @@ import { AccountLockedScreen } from "@/components/AccountLockedScreen";
 import { SubscriptionExpiredScreen } from "@/components/SubscriptionExpiredScreen";
 import { OFFICIAL_WHATSAPP_DIGITS } from "@/constants/contact";
 import { isPrimaryAdminClient } from "@/lib/adminClient";
+import { useGlobalDomDigitLatinize } from "@/hooks/useGlobalDomDigitLatinize";
 
 export function AppShell() {
   const { pathname } = useLocation();
@@ -58,6 +59,8 @@ export function AppShell() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [headerLogo, setHeaderLogo] = useState<string | null>(null);
   const profileRef = useRef<HTMLDivElement>(null);
+
+  useGlobalDomDigitLatinize(true);
 
   useEffect(() => {
     document.title = "سمارت الإدارة برو";
@@ -333,7 +336,10 @@ export function AppShell() {
                   <span className="text-[10px] text-slate-500 truncate w-full">{user?.email}</span>
                   {typeof user?.trial_balance === "number" && (
                     <span className="text-[10px] font-semibold text-emerald-400/95 truncate w-full">
-                      رصيد تجريبي: {formatNumber(Math.round(user.trial_balance))}
+                      رصيد تجريبي:{" "}
+                      <span dir="ltr" className="font-digits-latin">
+                        {formatNumber(Math.round(user.trial_balance))}
+                      </span>
                     </span>
                   )}
                 </span>
@@ -397,9 +403,10 @@ export function AppShell() {
           <div className="px-4 md:px-8 pt-3 space-y-2">
             {subscriptionCountdown && (
               <div className="rounded-xl border border-sky-500/45 bg-sky-950/30 px-4 py-2.5 text-sm text-sky-100">
-                {t("sub.countdownLine")
-                  .replace("{days}", formatNumber(subscriptionCountdown.days))
-                  .replace("{hours}", formatNumber(subscriptionCountdown.hours))}
+                {t("sub.countdownLine", {
+                  days: formatNumber(subscriptionCountdown.days),
+                  hours: formatNumber(subscriptionCountdown.hours),
+                })}
               </div>
             )}
             {subscriptionExpiryNotice === "7" && (
@@ -422,9 +429,10 @@ export function AppShell() {
               subscriptionExpiryNotice === null && (
               <div className="rounded-xl border border-amber-500/50 bg-amber-950/35 px-4 py-3 text-sm text-amber-100 flex flex-wrap items-center justify-between gap-3">
                 <span>
-                  {t("sub.urgentBanner")
-                    .replace("{days}", formatNumber(subscriptionDaysRemaining))
-                    .replace("{end}", subscription?.ends_at ?? "—")}
+                  {t("sub.urgentBanner", {
+                    days: formatNumber(subscriptionDaysRemaining),
+                    end: toWesternDigits(subscription?.ends_at ?? "—"),
+                  })}
                 </span>
                 <Link
                   to="/app/pay"

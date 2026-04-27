@@ -2,6 +2,8 @@
  * استخراج حقول البطاقة الوطنية المغربية (CNIE) من نص OCR — إرشادي، مع تطبيع وتعدد أنماط.
  */
 
+import { toWesternDigits } from "@/lib/unicodeDigits";
+
 export type MoroccanIdHints = {
   raw: string;
   /** رقم البطاقة الوطنية */
@@ -16,16 +18,12 @@ export type MoroccanIdHints = {
   email?: string;
 };
 
-const AR_DIGITS = "٠١٢٣٤٥٦٧٨٩";
-const LAT_DIGITS = "0123456789";
-
-/** تحويل الأرقام العربية إلى لاتينية وتقليل الضوضاء */
+/** تحويل أي أرقام غير لاتينية إلى 0–9 وتقليل الضوضاء */
 export function normalizeOcrText(text: string): string {
-  let s = text;
-  for (let i = 0; i < AR_DIGITS.length; i++) {
-    s = s.split(AR_DIGITS[i]).join(LAT_DIGITS[i]);
-  }
-  return s.replace(/\u200f|\u200e/g, "").replace(/[ \t]+/g, " ").replace(/\r/g, "");
+  return toWesternDigits(text)
+    .replace(/\u200f|\u200e/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\r/g, "");
 }
 
 function linesFromText(text: string): string[] {

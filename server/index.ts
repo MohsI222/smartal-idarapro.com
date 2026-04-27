@@ -2,8 +2,6 @@ import "dotenv/config";
 import cors from "cors";
 import express from "express";
 import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import multer from "multer";
 import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
@@ -11,6 +9,7 @@ import sharp from "sharp";
 import { registerBackendServices } from "./backendServices.ts";
 import { registerBase44StudioRoutes } from "./base44Studio.ts";
 import { registerTlErpRoutes } from "./tlErpRoutes.ts";
+import { getTlUploadRoot, getUploadDir } from "./paths.js";
 import { randomUUID } from "node:crypto";
 import { db } from "./db.js";
 import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto.js";
@@ -24,6 +23,7 @@ import {
   createAuthOriginGuard,
 } from "./authSecurity.js";
 import { sanitizeEmail, sanitizeUserDisplayName } from "./stringUtil.js";
+import { paramString } from "./reqParams.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -90,11 +90,8 @@ function userHasActiveTrial(userId: string): boolean {
   return Number.isFinite(t) && t > Date.now();
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadDir = path.join(__dirname, "..", "data", "uploads");
-fs.mkdirSync(uploadDir, { recursive: true });
-const tlUploadRoot = path.join(uploadDir, "tl");
-fs.mkdirSync(tlUploadRoot, { recursive: true });
+const uploadDir = getUploadDir();
+const tlUploadRoot = getTlUploadRoot();
 const uploadTl = multer({
   dest: tlUploadRoot,
   limits: { fileSize: 12 * 1024 * 1024 },
@@ -114,7 +111,6 @@ const uploadTl = multer({
     else cb(new Error("file_type"));
   },
 });
-fs.mkdirSync(path.join(__dirname, "..", "data"), { recursive: true });
 
 ensureSuperAdmin();
 
@@ -967,7 +963,7 @@ app.get("/api/admin/pending", authMiddleware, superAdminOnly, (_req, res) => {
 
 app.post("/api/admin/approve/:subId", authMiddleware, superAdminOnly, (req, res) => {
   const adminId = (req as express.Request & { userId: string }).userId;
-  const { subId } = req.params;
+  const subId = paramString(req.params.subId);
   const row = db
     .prepare(
       `SELECT id, user_id, plan_id, billing_period FROM subscriptions WHERE id = ? AND status = 'pending'`
@@ -1033,7 +1029,7 @@ app.get("/api/admin/referral-rewards", authMiddleware, superAdminOnly, (_req, re
 });
 
 app.post("/api/admin/referral-reward/approve/:rewardId", authMiddleware, superAdminOnly, (req, res) => {
-  const { rewardId } = req.params;
+  const rewardId = paramString(req.params.rewardId);
   const rw = db
     .prepare(`SELECT * FROM referral_rewards WHERE id = ? AND status = 'pending'`)
     .get(rewardId) as { id: string; user_id: string; tier: string } | undefined;
@@ -1059,7 +1055,7 @@ app.post("/api/admin/referral-reward/approve/:rewardId", authMiddleware, superAd
 
 app.post("/api/admin/reject/:subId", authMiddleware, superAdminOnly, (req, res) => {
   const adminId = (req as express.Request & { userId: string }).userId;
-  const { subId } = req.params;
+  const subId = paramString(req.params.subId);
   const r = db
     .prepare(
       `UPDATE subscriptions SET status = 'rejected', reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ? AND status = 'pending'`
@@ -1089,7 +1085,7 @@ app.get("/api/admin/users", authMiddleware, superAdminOnly, (_req, res) => {
 
 app.post("/api/admin/users/:targetUserId/locked", authMiddleware, superAdminOnly, (req, res) => {
   const adminId = (req as express.Request & { userId: string }).userId;
-  const { targetUserId } = req.params;
+  const targetUserId = paramString(req.params.targetUserId);
   const locked = Boolean((req.body as { locked?: boolean }).locked);
   if (targetUserId === adminId) {
     res.status(400).json({ error: "cannot_lock_self" });
@@ -1117,7 +1113,7 @@ app.post(
   superAdminOnly,
   (req, res) => {
     const adminId = (req as express.Request & { userId: string }).userId;
-    const { targetUserId } = req.params;
+    const targetUserId = paramString(req.params.targetUserId);
     const mode = (req.body as { mode?: string }).mode;
     if (mode !== "active" && mode !== "expired") {
       res.status(400).json({ error: "invalid_mode" });
@@ -1363,7 +1359,7 @@ app.post("/api/hr/employees", authMiddleware, (req, res) => {
 
 app.patch("/api/hr/employees/:id", authMiddleware, (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const { id } = req.params;
+  const id = paramString(req.params.id);
   if (!moduleAllowed(userId, "hr")) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
@@ -1399,7 +1395,7 @@ app.patch("/api/hr/employees/:id", authMiddleware, (req, res) => {
 
 app.patch("/api/hr/metrics/:id", authMiddleware, (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const { id } = req.params;
+  const id = paramString(req.params.id);
   if (!moduleAllowed(userId, "hr")) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
@@ -1574,7 +1570,7 @@ app.post("/api/acc/reports", authMiddleware, (req, res) => {
 
 app.patch("/api/acc/reports/:id", authMiddleware, (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const { id } = req.params;
+  const id = paramString(req.params.id);
   if (!moduleAllowed(userId, "acc")) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
@@ -1940,7 +1936,7 @@ app.post("/api/visa/appointment-status/:centerId/refresh", authMiddleware, (req,
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const centerId = String(req.params.centerId ?? "").trim();
+  const centerId = paramString(req.params.centerId).trim();
   if (!centerId) {
     res.status(400).json({ error: "مرجع المركز ناقص" });
     return;
@@ -2032,7 +2028,7 @@ app.patch("/api/inventory/products/:id", authMiddleware, (req, res) => {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const { id } = req.params;
+  const id = paramString(req.params.id);
   const b = req.body as {
     name?: string;
     sku?: string;
@@ -2407,7 +2403,7 @@ app.post("/api/media/enhance-image", authMiddleware, upload.single("image"), asy
     /** تقليل ضوضاء خفيف ثم تحسين تباين */
     pipeline = pipeline.median(3);
     pipeline = pipeline.modulate({ brightness: 1.05, saturation: 1.12 });
-    pipeline = pipeline.sharpen({ sigma: 0.85, flat: 1, jagged: 1.45 });
+    pipeline = pipeline.sharpen(0.85, 1, 1.45);
     if (removeBg) {
       pipeline = meta.hasAlpha ? pipeline.ensureAlpha() : pipeline.flatten({ background: { r: 255, g: 255, b: 255 } });
     }
@@ -2428,6 +2424,9 @@ app.post("/api/media/enhance-image", authMiddleware, upload.single("image"), asy
 });
 
 const PORT = Number(process.env.PORT ?? 4000);
-app.listen(PORT, () => {
-  console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
+  });
+}
+export default app;

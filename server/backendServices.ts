@@ -16,9 +16,8 @@ import {
 import { v2 as cloudinary } from "cloudinary";
 import multer from "multer";
 import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
+import { getUploadDir } from "./paths.js";
 import {
   MOROCCAN_DOCUMENT_CLASS_LABELS_AR,
   MOROCCAN_INSTITUTION_LABELS_AR,
@@ -67,9 +66,7 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const uploadDir = path.join(__dirname, "..", "data", "uploads");
-fs.mkdirSync(uploadDir, { recursive: true });
+const uploadDir = getUploadDir();
 /** صور + موسيقى اختيارية للفيديو الترويجي */
 const uploadPromoFields = multer({ dest: uploadDir, limits: { fileSize: 32 * 1024 * 1024 } }).fields([
   { name: "images", maxCount: 12 },
@@ -289,7 +286,9 @@ header.report-header{direction:${dir};text-align:${align};padding:14px 16px 16px
 <header class="report-header">
 <div class="main-line">${mt}</div>
 ${st ? `<div class="section-line">${st}</div>` : ""}
-<div class="date-line">${escapeHtml(new Date().toLocaleString(opts.lang))}</div>
+<div class="date-line">${escapeHtml(
+      new Date().toLocaleString("en-US", { numberingSystem: "latn" })
+    )}</div>
 </header>
 ${logo}
 <div class="print-body">${opts.innerHtml}</div>
@@ -321,7 +320,9 @@ header.kingdom-header{direction:${dir};text-align:${align};padding-bottom:10px;m
 <header class="kingdom-header">
 <div class="kingdom-line">${kl}</div>
 <div class="section-line">${st}</div>
-<div class="date-line">${escapeHtml(new Date().toLocaleString(opts.lang))}</div>
+<div class="date-line">${escapeHtml(
+      new Date().toLocaleString("en-US", { numberingSystem: "latn" })
+    )}</div>
 </header>
 ${logo}
 <div class="print-body">${opts.innerHtml}</div>

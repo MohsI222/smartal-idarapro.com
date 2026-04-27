@@ -42,6 +42,7 @@ import { lookupBarcodeOpenFoodFacts } from "@/lib/barcodeGlobalLookup";
 import { MiniCalculatorDialog } from "@/components/MiniCalculatorDialog";
 import { InventoryAiDocScannerButton } from "@/components/InventoryAiDocScannerButton";
 import type { VisionReceiptItem } from "@/lib/inventoryVisionTypes";
+import { todayIsoLocal } from "@/lib/todayIso";
 import {
   parseDraftLinesFromPlainText,
   parseStockRowsFromPlainText,
@@ -157,7 +158,7 @@ export function InventoryPosModule() {
   const [sale, setSale] = useState({
     customer: "",
     paid: "",
-    due_at: "",
+    due_at: todayIsoLocal(),
   });
   const [quickListIndex, setQuickListIndex] = useState(0);
   const [quickUnit, setQuickUnit] = useState<QuickUnit>("piece");
@@ -1177,6 +1178,8 @@ export function InventoryPosModule() {
                 <Label className="text-slate-300">{t("inv.expiryDate")}</Label>
                 <Input
                   type="date"
+                  lang="en"
+                  dir="ltr"
                   className="mt-1 bg-[#0c1222] border-slate-700"
                   value={newProduct.expiry_date}
                   onChange={(e) => setNewProduct((n) => ({ ...n, expiry_date: e.target.value }))}
@@ -1515,6 +1518,8 @@ export function InventoryPosModule() {
                       <Label>{t("inv.dueDate")}</Label>
                       <Input
                         type="date"
+                        lang="en"
+                        dir="ltr"
                         className="mt-1 bg-[#0c1222] border-slate-700"
                         value={sale.due_at}
                         onChange={(e) => setSale((s) => ({ ...s, due_at: e.target.value }))}

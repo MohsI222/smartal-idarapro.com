@@ -1,19 +1,9 @@
 /**
  * Build local YYYY-MM-DDTHH:mm for TL APIs from today's date + time (HH:mm).
- * Eastern Arabic digits in the string are normalized to Latin before parsing.
+ * Any non–Latin-9 digits in the string are normalized before parsing.
  */
 
-const EAST = "٠١٢٣٤٥٦٧٨٩";
-const WEST = "0123456789";
-
-function toLatinDigits(s: string): string {
-  let out = "";
-  for (const ch of s) {
-    const i = EAST.indexOf(ch);
-    out += i >= 0 ? WEST[i]! : ch;
-  }
-  return out;
-}
+import { toWesternDigits } from "@/lib/unicodeDigits";
 
 export function tlTodayYmdLocal(): string {
   const d = new Date();
@@ -35,7 +25,7 @@ export function tlNowHmLocal(): string {
  */
 export function tlCombineTodayWithTime(timeHm: string | undefined | null): string | null {
   if (timeHm == null) return null;
-  const raw = toLatinDigits(timeHm.trim());
+  const raw = toWesternDigits(timeHm.trim());
   if (raw === "") return null;
   const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
   if (!m) return null;

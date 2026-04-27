@@ -1,6 +1,70 @@
 @import "tailwindcss";
 
+/*
+ * ═══════════════════════════════════════════════════════
+ *  LATIN DIGIT ENFORCEMENT — 4-LAYER CSS SHIELD
+ * ═══════════════════════════════════════════════════════
+ *
+ * Layer A — ForceLatin font-face (user-requested):
+ *   U+0030-0039  → Arial (Latin digits 0-9)
+ *
+ * Layer B — DigitNeutralizer font-face:
+ *   U+0660-0669  → Arial (Eastern Arabic-Indic ٠١٢٣٤٥٦٧٨٩)
+ *   U+06F0-06F9  → Arial (Extended Arabic-Indic ۰۱۲۳۴۵۶۷۸۹)
+ *   Forces browser to use Arial for these codepoints.
+ *   Arial has no glyphs for U+0660-06F9, so any that slip
+ *   through JS are rendered invisible/tofu rather than as
+ *   Arabic-Indic glyphs — preventing user confusion.
+ *
+ * Layer C — font-feature-settings: "anum" 0
+ *   Disables the OpenType Arabic Numeral feature that some
+ *   fonts use to automatically substitute Arabic-script
+ *   digits for Latin ones at the font level.
+ *
+ * Layer D — The JS guards (installLatinDigitGuard + MutationObserver)
+ *   handle the actual text-node replacement (see main.tsx).
+ */
+
+/* Layer A: ForceLatin — Latin digit glyphs (0–9) */
+@font-face {
+  font-family: "ForceLatin";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: local("Arial"), local("Helvetica Neue"), local("Helvetica");
+  unicode-range: U+0030-0039;
+}
+
+/* Layer B: DigitNeutralizer — Eastern + Extended Arabic-Indic digit ranges */
+@font-face {
+  font-family: "ForceLatin";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: local("Arial"), local("Helvetica Neue"), local("Helvetica");
+  unicode-range: U+0660-0669, U+06F0-06F9;
+}
+
+/* Alias kept for backward compat with any code referencing LatinDigits directly */
+@font-face {
+  font-family: "LatinDigits";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: local("Arial");
+  unicode-range: U+0030-0039;
+}
+
+/* Global: ForceLatin first in stack; Layer C: "anum" 0 disables Arabic numeral shaping */
+* {
+  font-family: "ForceLatin", "LatinDigits", "Cairo", "Noto Sans", ui-sans-serif, system-ui, sans-serif !important;
+  font-variant-numeric: tabular-nums !important;
+  -webkit-font-feature-settings: "tnum" 1, "lnum" 1, "anum" 0 !important;
+  font-feature-settings: "tnum" 1, "lnum" 1, "anum" 0 !important;
+}
+
 @theme {
+  /* Primary UI script font unchanged (Arabic: Cairo). Latin digits: feature settings + toWesternDigits / Intl latn. */
   --font-sans: "Cairo", "Noto Sans", ui-sans-serif, system-ui, sans-serif;
   --color-royal: #0a1628;
   --color-royal-deep: #050a12;
@@ -10,23 +74,49 @@
 }
 
 @layer base {
-  /* Western digits (0–9) always — pairs with Intl `numberingSystem:"latn"` and `data-numerals=latin` */
-  html {
-    font-variant-numeric: lining-nums tabular-nums;
-    -webkit-font-feature-settings: "lnum" 1;
-    font-feature-settings: "lnum" 1;
-  }
-  /* CSS override for Eastern-Arabic digits rendered by system fonts when lang=ar */
+  /* ─── Latin digit enforcement: apply globally whenever the html element carries data-numerals="latin" ─── */
   html[data-numerals="latin"],
   html[lang^="ar"] {
     font-variant-numeric: lining-nums tabular-nums;
-    -webkit-font-feature-settings: "lnum" 1, "tnum" 1;
-    font-feature-settings: "lnum" 1, "tnum" 1;
+    -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    font-feature-settings: "tnum" 1, "lnum" 1 !important;
+  }
+  /*
+   * Native date/time picker fix:
+   * Browsers render the native calendar/clock picker using the input element's own
+   * lang attribute. Setting lang="en" and direction:ltr forces Latin digits (0–9)
+   * in the picker UI regardless of the page lang="ar-*" setting.
+   */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="week"],
+  input[type="number"] {
+    direction: ltr !important;
+    unicode-bidi: embed;
+    font-variant-numeric: lining-nums tabular-nums !important;
+    -webkit-font-feature-settings: "tnum" 1, "lnum" 1, "anum" 0 !important;
+    font-feature-settings: "tnum" 1, "lnum" 1, "anum" 0 !important;
+  }
+
+  /* All table cells: always lining + tabular so every column of digits aligns */
+  td,
+  th {
+    font-variant-numeric: lining-nums tabular-nums !important;
+    -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    font-feature-settings: "tnum" 1, "lnum" 1 !important;
+  }
+  #root,
+  body {
+    font-variant-numeric: tabular-nums;
+    -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    font-feature-settings: "tnum" 1, "lnum" 1 !important;
   }
   body {
     @apply bg-[var(--color-royal-deep)] text-white font-sans antialiased;
   }
-  /* Latin/Western digits in fields even under Arabic UI (avoid ١٢٣ in native numeric inputs) */
+  /* Native date/time/number pickers: Latin digit glyph stack + lining nums */
   input,
   textarea,
   select {
@@ -38,6 +128,14 @@
   input[type="number"] {
     font-family: Arial, Helvetica, sans-serif !important;
     font-variant-numeric: tabular-nums lining-nums !important;
+  }
+  /* span/div carrying dir="ltr" with numeric content: enforce Latin glyphs */
+  [dir="ltr"].font-digits-latin,
+  span[dir="ltr"],
+  .tabular-nums {
+    font-variant-numeric: lining-nums tabular-nums !important;
+    -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    font-feature-settings: "tnum" 1, "lnum" 1 !important;
   }
 }
 
@@ -336,5 +434,15 @@ html[data-visual-theme="neon"] [data-app-shell] main > header {
 @layer utilities {
   .animate-plan-check-pop {
     animation: plan-check-pop 0.38s cubic-bezier(0.34, 1.4, 0.64, 1) forwards;
+  }
+  /* Latin digit glyphs (0–9): inherit Arabic UI font — only change numeral shaping, not body typeface */
+  .font-digits-latin {
+    font-family: inherit;
+    font-variant-numeric: tabular-nums !important;
+    -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    unicode-bidi: isolate;
+    direction: ltr;
+    text-align: inherit;
   }
 }

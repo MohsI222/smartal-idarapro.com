@@ -30,6 +30,7 @@ import { exportSmartAlIdaraPdfPreferBackend } from "@/lib/pdfExport";
 import { downloadHtmlAsWord } from "@/lib/wordExport";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { todayIsoLocal } from "@/lib/todayIso";
 
 type Employee = {
   id: string;
@@ -67,16 +68,16 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
   const [absForm, setAbsForm] = useState({
     employeeName: "",
     employeeId: "",
-    from: "",
-    to: "",
+    from: todayIsoLocal(),
+    to: todayIsoLocal(),
     reason: "",
   });
-  const [returnDate, setReturnDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [returnDate, setReturnDate] = useState(() => todayIsoLocal());
 
   const [dismissForm, setDismissForm] = useState({
     employeeName: "",
     employeeId: "",
-    dateNotice: new Date().toISOString().slice(0, 10),
+    dateNotice: todayIsoLocal(),
     grounds: "",
   });
 
@@ -90,7 +91,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
   const [rulesAck, setRulesAck] = useState({
     employeeName: "",
     employeeId: "",
-    date: new Date().toISOString().slice(0, 10),
+    date: todayIsoLocal(),
   });
 
   const [contractCtx, setContractCtx] = useState({
@@ -110,7 +111,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
     employeeName: "",
     employeeId: "",
     role: "",
-    hireDate: "",
+    hireDate: todayIsoLocal(),
     endDate: "",
   });
 
@@ -195,7 +196,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
         ...absForm,
       },
     ]);
-    setAbsForm({ employeeName: "", employeeId: "", from: "", to: "", reason: "" });
+    setAbsForm({ employeeName: "", employeeId: "", from: todayIsoLocal(), to: todayIsoLocal(), reason: "" });
   };
 
   const defaultEmployer = useMemo(
@@ -325,6 +326,8 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                   <Label>{t("hr.enterprise.returnDate")}</Label>
                   <Input
                     type="date"
+                    lang="en"
+                    dir="ltr"
                     className="mt-1"
                     value={returnDate}
                     onChange={(e) => setReturnDate(e.target.value)}
@@ -864,6 +867,9 @@ function Field({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
+        {...(type === "date" || type === "time" || type === "datetime-local"
+          ? { lang: "en", dir: "ltr" }
+          : {})}
       />
     </div>
   );

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { downloadCsv } from "@/lib/exportMoroccanPdf";
+import { todayIsoLocal } from "@/lib/todayIso";
 import { buildPdfTableHtml, exportSmartAlIdaraPdfPreferBackend } from "@/lib/pdfExport";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -25,7 +26,7 @@ export function LawModule() {
   const allowed = isApproved && approvedModules.includes("law");
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, CaseRow>>({});
-  const [form, setForm] = useState({ title: "", client_name: "", deadline: "" });
+  const [form, setForm] = useState({ title: "", client_name: "", deadline: todayIsoLocal() });
 
   const load = useCallback(async () => {
     if (!token || !allowed) return;
@@ -83,7 +84,7 @@ export function LawModule() {
         deadline: form.deadline || undefined,
       }),
     });
-    setForm({ title: "", client_name: "", deadline: "" });
+    setForm({ title: "", client_name: "", deadline: todayIsoLocal() });
     await load();
   };
 
@@ -179,6 +180,8 @@ export function LawModule() {
             <Input
               className="mt-1"
               type="date"
+              lang="en"
+              dir="ltr"
               value={form.deadline}
               onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))}
             />
@@ -230,6 +233,8 @@ export function LawModule() {
                   <td className="p-2">
                     <Input
                       type="date"
+                      lang="en"
+                      dir="ltr"
                       className="h-9 bg-slate-900/50 border-slate-700"
                       value={d.deadline ?? ""}
                       onChange={(e) =>

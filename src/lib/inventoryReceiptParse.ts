@@ -1,4 +1,5 @@
 import type { VisionReceiptItem } from "@/lib/inventoryVisionTypes";
+import { toWesternDigits } from "@/lib/unicodeDigits";
 
 /** أشكال خفيفة لمطابقة المخزون — بدون استيراد من الصفحات */
 export type ProductLite = {
@@ -22,13 +23,7 @@ export type DraftLineLike = {
 };
 
 export function normalizeArabicDigits(s: string): string {
-  const ar = "٠١٢٣٤٥٦٧٨٩";
-  let out = "";
-  for (const ch of s) {
-    const i = ar.indexOf(ch);
-    out += i >= 0 ? String(i) : ch;
-  }
-  return out.replace(/،/g, ",").replace(/\u066B/g, ".");
+  return toWesternDigits(s).replace(/،/g, ",").replace(/\u066B/g, ".");
 }
 
 function normalizeNameKey(s: string): string {

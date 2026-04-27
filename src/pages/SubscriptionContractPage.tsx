@@ -13,6 +13,7 @@ import { getContractPdfClauses, getContractPdfRowLabels, getContractPaymentNotes
 import { translate } from "@/i18n/strings";
 import { buildSubscriptionContractPdfHtml } from "@/lib/subscriptionContractPdfHtml";
 import { downloadPdfFromFullHtmlDocument } from "@/lib/pdfCanvasExport";
+import { addCalendarYearsIsoLocal, todayIsoLocal } from "@/lib/todayIso";
 import { cn } from "@/lib/utils";
 
 const ENTITY_IDS = [
@@ -29,7 +30,7 @@ const ENTITY_IDS = [
 ] as const;
 
 export function SubscriptionContractPage() {
-  const { t, locale } = useI18n();
+  const { t, locale, formatNumber, latinize } = useI18n();
   const [planId, setPlanId] = useState(PLAN_OPTIONS[0]?.id ?? "");
   const [billing, setBilling] = useState<BillingPeriod>("monthly");
   const [entityId, setEntityId] = useState<(typeof ENTITY_IDS)[number]>("enterprise");
@@ -42,8 +43,8 @@ export function SubscriptionContractPage() {
   const [subscriberCin, setSubscriberCin] = useState("");
   const [subscriberAddress, setSubscriberAddress] = useState("");
   const [subscriberPhone, setSubscriberPhone] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(() => todayIsoLocal());
+  const [endDate, setEndDate] = useState(() => addCalendarYearsIsoLocal(todayIsoLocal(), 1));
   const [signaturePlace, setSignaturePlace] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -51,19 +52,23 @@ export function SubscriptionContractPage() {
   const priceDh = plan ? planPriceDh(plan, billing) : 0;
 
   const planLabelAr = useMemo(
-    () => (plan ? translate("ar-MA", plan.labelKey) : ""),
-    [plan]
+    () => (plan ? latinize(translate("ar-MA", plan.labelKey)) : ""),
+    [plan, latinize]
   );
   const planLabelOther = useMemo(
-    () => (plan ? translate(locale, plan.labelKey) : ""),
-    [plan, locale]
+    () => (plan ? latinize(translate(locale, plan.labelKey)) : ""),
+    [plan, locale, latinize]
   );
 
-  const billingAr = translate("ar-MA", billing === "monthly" ? "contract.billingMonthly" : "contract.billingYearly");
-  const billingOther = translate(locale, billing === "monthly" ? "contract.billingMonthly" : "contract.billingYearly");
+  const billingAr = latinize(
+    translate("ar-MA", billing === "monthly" ? "contract.billingMonthly" : "contract.billingYearly")
+  );
+  const billingOther = latinize(
+    translate(locale, billing === "monthly" ? "contract.billingMonthly" : "contract.billingYearly")
+  );
 
-  const entityAr = translate("ar-MA", `contract.entity.${entityId}`);
-  const entityOther = translate(locale, `contract.entity.${entityId}`);
+  const entityAr = latinize(translate("ar-MA", `contract.entity.${entityId}`));
+  const entityOther = latinize(translate(locale, `contract.entity.${entityId}`));
 
   const downloadPdf = async () => {
     if (!plan) return;
@@ -231,7 +236,7 @@ export function SubscriptionContractPage() {
               >
                 {ENTITY_IDS.map((id) => (
                   <option key={id} value={id}>
-                    {translate(locale, `contract.entity.${id}`)}
+                    {latinize(translate(locale, `contract.entity.${id}`))}
                   </option>
                 ))}
               </select>
@@ -245,7 +250,7 @@ export function SubscriptionContractPage() {
               >
                 {PLAN_OPTIONS.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {translate(locale, p.labelKey)}
+                    {latinize(translate(locale, p.labelKey))}
                   </option>
                 ))}
               </select>
@@ -258,7 +263,11 @@ export function SubscriptionContractPage() {
                   checked={billing === "monthly"}
                   onChange={() => setBilling("monthly")}
                 />
-                {t("contract.billingMonthly")} — {plan ? plan.priceMonthlyDh : "—"} MAD
+                {t("contract.billingMonthly")} —{" "}
+                <span dir="ltr" className="font-digits-latin">
+                  {plan ? formatNumber(plan.priceMonthlyDh, { maximumFractionDigits: 0 }) : "—"}
+                </span>{" "}
+                MAD
               </label>
               <label className="flex items-center gap-2 cursor-pointer text-sm">
                 <input
@@ -267,7 +276,11 @@ export function SubscriptionContractPage() {
                   checked={billing === "yearly"}
                   onChange={() => setBilling("yearly")}
                 />
-                {t("contract.billingYearly")} — {plan ? plan.priceYearlyDh : "—"} MAD
+                {t("contract.billingYearly")} —{" "}
+                <span dir="ltr" className="font-digits-latin">
+                  {plan ? formatNumber(plan.priceYearlyDh, { maximumFractionDigits: 0 }) : "—"}
+                </span>{" "}
+                MAD
               </label>
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
@@ -275,6 +288,8 @@ export function SubscriptionContractPage() {
                 <Label>{t("contract.startDate")}</Label>
                 <Input
                   type="date"
+                  lang="en"
+                  dir="ltr"
                   className="mt-1 bg-[#050a12]/80 border-slate-600"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
@@ -284,6 +299,8 @@ export function SubscriptionContractPage() {
                 <Label>{t("contract.endDate")}</Label>
                 <Input
                   type="date"
+                  lang="en"
+                  dir="ltr"
                   className="mt-1 bg-[#050a12]/80 border-slate-600"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}

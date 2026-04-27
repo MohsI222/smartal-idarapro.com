@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { randomUUID, randomBytes } from "node:crypto";
 import { db } from "./db.js";
+import { paramString } from "./reqParams.js";
 
 export type TlFilesConfig = {
   uploadTl: { single: (field: string) => express.RequestHandler };
@@ -192,7 +193,7 @@ export function registerTlErpRoutes(
 
   app.patch("/api/tl/workers/:id", ...authGate, (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    const id = req.params.id;
+    const id = paramString(req.params.id);
     const b = req.body as Partial<RowWorker>;
     const cur = db.prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`).get(id, userId) as RowWorker | undefined;
     if (!cur) {
@@ -219,7 +220,7 @@ export function registerTlErpRoutes(
 
   app.post("/api/tl/workers/:id/regenerate-magic", ...authGate, (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    const id = req.params.id;
+    const id = paramString(req.params.id);
     const magic = randomBytes(18).toString("hex");
     const r = db.prepare(`UPDATE tl_workers SET magic_token = ? WHERE id = ? AND user_id = ?`).run(magic, id, userId);
     if (r.changes === 0) {
@@ -232,7 +233,7 @@ export function registerTlErpRoutes(
 
   app.delete("/api/tl/workers/:id", ...authGate, (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    db.prepare(`DELETE FROM tl_workers WHERE id = ? AND user_id = ?`).run(req.params.id, userId);
+    db.prepare(`DELETE FROM tl_workers WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
     res.json({ ok: true });
   });
 
@@ -307,7 +308,7 @@ export function registerTlErpRoutes(
 
   app.patch("/api/tl/vehicles/:id", ...authGate, (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    const id = req.params.id;
+    const id = paramString(req.params.id);
     const cur = db
       .prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ? AND user_id = ?`)
       .get(id, userId) as Record<string, unknown> | undefined;
@@ -358,7 +359,7 @@ export function registerTlErpRoutes(
 
   app.delete("/api/tl/vehicles/:id", ...authGate, (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    db.prepare(`DELETE FROM tl_vehicle_logs WHERE id = ? AND user_id = ?`).run(req.params.id, userId);
+    db.prepare(`DELETE FROM tl_vehicle_logs WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
     res.json({ ok: true });
   });
 
@@ -415,7 +416,7 @@ export function registerTlErpRoutes(
 
   app.patch("/api/tl/ops/:id", ...authGate, (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    const id = req.params.id;
+    const id = paramString(req.params.id);
     const cur = db.prepare(`SELECT * FROM tl_ops_logs WHERE id = ? AND user_id = ?`).get(id, userId) as Record<string, unknown> | undefined;
     if (!cur) {
       res.status(404).json({ error: "غير موجود" });
@@ -440,7 +441,7 @@ export function registerTlErpRoutes(
 
   app.delete("/api/tl/ops/:id", ...authGate, (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    db.prepare(`DELETE FROM tl_ops_logs WHERE id = ? AND user_id = ?`).run(req.params.id, userId);
+    db.prepare(`DELETE FROM tl_ops_logs WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
     res.json({ ok: true });
   });
 
@@ -454,7 +455,7 @@ export function registerTlErpRoutes(
 
   app.delete("/api/tl/incidents/:id", ...authGate, (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    db.prepare(`DELETE FROM tl_incidents WHERE id = ? AND user_id = ?`).run(req.params.id, userId);
+    db.prepare(`DELETE FROM tl_incidents WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
     res.json({ ok: true });
   });
 
@@ -486,7 +487,7 @@ export function registerTlErpRoutes(
 
   app.get("/api/tl/messages/eligible/:fromWorkerId", ...authGate, (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    const fromWorkerId = req.params.fromWorkerId;
+    const fromWorkerId = paramString(req.params.fromWorkerId);
     const wk = db.prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`).get(fromWorkerId, userId) as RowWorker | undefined;
     if (!wk) {
       res.status(404).json({ error: "worker_not_found" });
@@ -644,7 +645,7 @@ export function registerTlErpRoutes(
 
     app.get("/api/tl/messages/:id/attachment", authMiddleware, gate, (req, res) => {
       const userId = (req as express.Request & { userId: string }).userId;
-      const id = req.params.id;
+      const id = paramString(req.params.id);
       const row = db
         .prepare(`SELECT * FROM tl_messages WHERE id = ? AND user_id = ?`)
         .get(id, userId) as {

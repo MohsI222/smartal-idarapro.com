@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,6 +45,8 @@ import {
   buildLegalRequestDraft,
   formatDocumentDate,
 } from "@/lib/legalRequestDraft";
+import { formatEnGbShortDateLatin, formatLatinDateDMYFromIsoDate } from "@/lib/latinNumeralFormat";
+import { todayIsoLocal } from "@/lib/todayIso";
 import {
   downloadLegalDocumentDocx,
   downloadLegalDocumentXlsx,
@@ -61,6 +64,7 @@ import { isAddressChangeRequestProfile } from "@/lib/legalAdministrativePdfConte
 import type { AppLocale } from "@/i18n/strings";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { toWesternDigits } from "@/lib/utils";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 
 const STORAGE_KEY = "legal_editor_form";
@@ -87,14 +91,6 @@ const DOCUMENT_CLASS_OPTIONS: MoroccanDocumentClass[] = [
   "complaint",
   "admin_request",
 ];
-
-function todayIsoLocal(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 type FormState = {
   fullName: string;
@@ -123,6 +119,7 @@ const initialForm: FormState = {
   formalRecipientLine: "",
   recipientEntity: "",
   serviceCenterId: "admin_commune",
+  /* `type="date"` value is local YYYY-MM-DD; en-GB Latin line: `documentDateEnGb` */
   documentDate: "",
   requestTypeId: "residence_certificate",
   customRequestLabel: "",
@@ -283,6 +280,14 @@ export function LegalEditor() {
   const [ocrNote, setOcrNote] = useState<string | null>(null);
   const speech = useSpeechToText(locale);
 
+  /** Open with today in the date field (ISO for &lt;input type="date" /&gt;; DMY Latin in `documentDateEnGb`). */
+  useLayoutEffect(() => {
+    setForm((f) => {
+      if (f.documentDate?.trim()) return f;
+      return { ...f, documentDate: todayIsoLocal() };
+    });
+  }, []);
+
   const appendRequestText = useCallback((text: string) => {
     const chunk = text.trim();
     if (!chunk) return;
@@ -314,10 +319,17 @@ export function LegalEditor() {
     return locale.startsWith("ar") ? arabicOfficialLine(v) : v;
   }, [form.serviceCenterId, t, locale]);
 
+  /** dd/MM/yyyy Latin (e.g. 25/04/2026 only) */
   const documentDateDisplay = useMemo(
-    () => formatDocumentDate(form.documentDate, locale as AppLocale),
-    [form.documentDate, locale]
+    () => formatLatinDateDMYFromIsoDate(form.documentDate),
+    [form.documentDate]
   );
+
+  /** en-GB + `numberingSystem: "latn"` (same effect as toLocaleDateString("en-GB", { numberingSystem: "latn" })). */
+  const documentDateEnGb = useMemo(() => {
+    const iso = form.documentDate?.trim() || todayIsoLocal();
+    return formatEnGbShortDateLatin(new Date(`${iso}T12:00:00`));
+  }, [form.documentDate]);
 
   const requestGroupId = useMemo(() => getRequestGroupIdForType(form.requestTypeId), [form.requestTypeId]);
 
@@ -603,13 +615,23 @@ export function LegalEditor() {
               value={form.recipientEntity}
               onChange={(v) => setForm((f) => ({ ...f, recipientEntity: v }))}
             />
-            <Field
-              label={t("legalAi.field.documentDate")}
-              required
-              type="date"
-              value={form.documentDate}
-              onChange={(v) => setForm((f) => ({ ...f, documentDate: v }))}
-            />
+            <div className="space-y-1.5 min-w-0">
+              <Field
+                label={t("legalAi.field.documentDate")}
+                required
+                type="date"
+                value={form.documentDate}
+                onChange={(v) => setForm((f) => ({ ...f, documentDate: v }))}
+              />
+              <p
+                className="text-xs text-slate-400 font-semibold pl-0.5 tabular-nums break-all"
+                dir="ltr"
+                translate="no"
+                lang="en-GB"
+              >
+                {documentDateEnGb}
+              </p>
+            </div>
             <div className="md:col-span-2 space-y-2">
               <Label className="text-white font-bold flex items-center gap-1">
                 {t("legalAi.field.serviceCenter")} <span className="text-[#FF8C00]">*</span>
@@ -980,16 +1002,20 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="bg-[#0c1222] border-slate-700 font-medium text-white h-11"
+        {...(type === "date" || type === "time" || type === "datetime-local"
+          ? { lang: "en", dir: "ltr" }
+          : {})}
       />
     </div>
   );
 }
 
 function PreviewRow({ label, value }: { label: string; value: string }) {
+  const show = toWesternDigits(value || "—");
   return (
     <div className="flex flex-col sm:flex-row sm:justify-between gap-1 border-b border-slate-800/80 pb-2">
       <span className="text-slate-500 font-bold text-xs uppercase shrink-0">{label}</span>
-      <span className="text-white font-semibold text-end sm:text-start break-words">{value || "—"}</span>
+      <span className="text-white font-semibold text-end sm:text-start break-words tabular-nums">{show}</span>
     </div>
   );
 }

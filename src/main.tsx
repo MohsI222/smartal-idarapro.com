@@ -1,3 +1,5 @@
+// MUST be the first import — patches Intl globally and installs body-level digit sweeper
+import "@/lib/installLatinDigitGuard";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";

@@ -460,13 +460,20 @@ export function DashboardHome() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
                     <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                    <YAxis
+                      tick={{ fill: "#94a3b8", fontSize: 11 }}
+                      tickFormatter={(v) => formatNumber(Number(v), { maximumFractionDigits: 0 })}
+                    />
                     <Tooltip
                       contentStyle={{
                         background: "#0a1628",
                         border: "1px solid rgba(255,140,0,0.4)",
                         borderRadius: 12,
                       }}
+                      formatter={(value: number | string) => [
+                        formatNumber(Number(value), { maximumFractionDigits: 2 }),
+                        t("dashboard.revenueToday"),
+                      ]}
                     />
                     <Area
                       type="monotone"
@@ -521,7 +528,10 @@ export function DashboardHome() {
                   className="flex flex-wrap items-baseline justify-between gap-2 border border-white/5 rounded-lg px-3 py-2 bg-black/20"
                 >
                   <span className="text-slate-200 truncate min-w-0">{e.title}</span>
-                  <span className="text-[10px] text-slate-500 font-mono shrink-0">
+                  <span
+                    dir="ltr"
+                    className="text-[10px] text-slate-500 font-digits-latin shrink-0"
+                  >
                     {formatDateTime(new Date(e.at))}
                   </span>
                 </li>
@@ -678,11 +688,16 @@ function StatCard({
   return (
     <Card className="border-white/10 bg-white/5 backdrop-blur-md hover:border-[#0052CC]/40 transition-colors idara-animate-in shadow-lg">
       <CardContent className="p-4 flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-2">
-          <Icon className={`size-6 ${accent}`} strokeWidth={1.75} />
-          <span className="text-2xl font-black text-white tabular-nums">{value}</span>
+        <div className="flex items-start justify-between gap-2">
+          <Icon className={`size-6 shrink-0 ${accent}`} strokeWidth={1.75} />
+          <span
+            dir="ltr"
+            className="text-2xl font-black text-white tabular-nums font-digits-latin min-w-0 text-end"
+          >
+            {value}
+          </span>
         </div>
-        <p className="text-xs text-slate-500 leading-tight">{label}</p>
+        <p className="text-xs text-slate-500 leading-tight text-start">{label}</p>
       </CardContent>
     </Card>
   );

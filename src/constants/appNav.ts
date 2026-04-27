@@ -4,6 +4,7 @@ import {
   Calculator,
   Car,
   FileText,
+  Gavel,
   GraduationCap,
   Landmark,
   LayoutGrid,
@@ -56,6 +57,7 @@ export const PRIMARY_NAV: AppNavItem[] = [
   { to: "/app/acc", icon: Calculator, labelKey: "nav.financeMgmt" },
   { to: "/app/law", icon: Scale, labelKey: "nav.caseTracking" },
   { to: "/app/legal-ai", icon: Sparkles, labelKey: "nav.legalAi" },
+  { to: "/app/lawyer", icon: Gavel, labelKey: "nav.lawyerPortal", emphasize: true },
 ];
 
 export const SECONDARY_NAV: AppNavItem[] = [

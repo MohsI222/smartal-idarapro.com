@@ -34,7 +34,7 @@ const PAYMENT_METHODS = [
 
 export function Pay() {
   const { token, refresh } = useAuth();
-  const { t, isRtl } = useI18n();
+  const { t, isRtl, formatNumber } = useI18n();
   const [searchParams] = useSearchParams();
   const planFromUrl = searchParams.get("plan");
   const initialPlan = useMemo(() => {
@@ -71,10 +71,10 @@ export function Pay() {
 
   const whatsappHref = useMemo(() => {
     const text = encodeURIComponent(
-      `Smart Al-Idara Pro — ${t(selected.labelKey)} — ${priceNow} DH (${billing}) — ${method}`
+      `Smart Al-Idara Pro — ${t(selected.labelKey)} — ${formatNumber(priceNow, { maximumFractionDigits: 0 })} DH (${billing}) — ${method}`
     );
     return `https://wa.me/${OFFICIAL_WHATSAPP_DIGITS}?text=${text}`;
-  }, [selected, method, t, priceNow, billing]);
+  }, [selected, method, t, priceNow, billing, formatNumber]);
 
   const submit = async () => {
     if (!token) {
@@ -161,11 +161,17 @@ export function Pay() {
         </div>
 
         <p className="text-center text-xs font-semibold text-emerald-400/90">
-          {t("pay.yearlySavingsHint").replace("{pct}", String(savePct))}
+          {t("pay.yearlySavingsHint").replace(
+            "{pct}",
+            formatNumber(savePct, { maximumFractionDigits: 0 })
+          )}
         </p>
         {billing === "yearly" && (
           <p className="text-center text-[11px] text-slate-500">
-            {t("pay.savingsDhYearly").replace("{dh}", String(yearlySavingsDh(selected)))}
+            {t("pay.savingsDhYearly").replace(
+              "{dh}",
+              formatNumber(yearlySavingsDh(selected), { maximumFractionDigits: 0 })
+            )}
           </p>
         )}
 

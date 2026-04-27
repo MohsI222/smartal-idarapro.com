@@ -50,6 +50,9 @@ const LegalEditor = lazy(() =>
 const AiMediaLabModule = lazy(() =>
   import("@/pages/modules/AiMediaLabModule").then((m) => ({ default: m.AiMediaLabModule }))
 );
+const LawyerPortalModule = lazy(() =>
+  import("@/pages/modules/LawyerPortalModule").then((m) => ({ default: m.LawyerPortalModule }))
+);
 
 function Protected({ children }: { children: ReactNode }) {
   const { token, loading } = useAuth();
@@ -137,6 +140,7 @@ function AppRoutes() {
         <Route path="academy" element={<CorporateAcademyModule />} />
         <Route path="tools" element={<BusinessToolsModule />} />
         <Route path="legal-ai" element={<LegalEditor />} />
+        <Route path="lawyer" element={<LawyerPortalModule />} />
         <Route path="media-lab" element={<AiMediaLabModule />} />
         <Route path="tl" element={<TransportLogisticsHub />} />
         <Route path="tl/admin" element={<TransportLogisticsAdmin />} />

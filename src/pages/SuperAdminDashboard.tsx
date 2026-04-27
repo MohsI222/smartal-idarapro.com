@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useGlobalDomDigitLatinize } from "@/hooks/useGlobalDomDigitLatinize";
 import {
   Barcode,
   Bell,
@@ -144,6 +145,7 @@ type SupportInboxRow = {
 };
 
 export function SuperAdminDashboard() {
+  useGlobalDomDigitLatinize(true);
   const { token, user } = useAuth();
   const { t, isRtl, formatNumber } = useI18n();
   const [pending, setPending] = useState<PendingRow[]>([]);
@@ -358,13 +360,20 @@ export function SuperAdminDashboard() {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
                     <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                    <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                    <YAxis
+                      tick={{ fill: "#94a3b8", fontSize: 11 }}
+                      tickFormatter={(v) => formatNumber(Number(v), { maximumFractionDigits: 0 })}
+                    />
                     <Tooltip
                       contentStyle={{
                         background: "#0a1628",
                         border: "1px solid rgba(251,146,60,0.45)",
                         borderRadius: 12,
                       }}
+                      formatter={(value: number | string, name: string) => [
+                        formatNumber(Number(value), { maximumFractionDigits: 2 }),
+                        name,
+                      ]}
                     />
                     <Area
                       type="monotone"
@@ -428,23 +437,33 @@ export function SuperAdminDashboard() {
                             border: "1px solid rgba(34,211,238,0.35)",
                             borderRadius: 12,
                           }}
+                          formatter={(value: number) => [
+                            formatNumber(value, { maximumFractionDigits: 0 }),
+                            "",
+                          ]}
                         />
                       </PieChart>
                     </ResponsiveContainer>
                   )}
                 </div>
                 <div className="flex flex-col justify-center gap-3 text-sm text-slate-300">
-                  <p>
-                    <span className="font-bold text-emerald-400">{t("admin.statsActiveSubs")}:</span>{" "}
-                    {formatNumber(subStats.activeSubscriptions)}
+                  <p className="flex flex-wrap items-baseline gap-x-1.5">
+                    <span className="font-bold text-emerald-400">{t("admin.statsActiveSubs")}:</span>
+                    <span dir="ltr" className="font-digits-latin">
+                      {formatNumber(subStats.activeSubscriptions)}
+                    </span>
                   </p>
-                  <p>
-                    <span className="font-bold text-slate-400">{t("admin.statsExpiredSubs")}:</span>{" "}
-                    {formatNumber(subStats.expiredSubscriptions)}
+                  <p className="flex flex-wrap items-baseline gap-x-1.5">
+                    <span className="font-bold text-slate-400">{t("admin.statsExpiredSubs")}:</span>
+                    <span dir="ltr" className="font-digits-latin">
+                      {formatNumber(subStats.expiredSubscriptions)}
+                    </span>
                   </p>
-                  <p>
-                    <span className="font-bold text-cyan-300">{t("admin.statsTrials")}:</span>{" "}
-                    {formatNumber(subStats.activeTrials)}
+                  <p className="flex flex-wrap items-baseline gap-x-1.5">
+                    <span className="font-bold text-cyan-300">{t("admin.statsTrials")}:</span>
+                    <span dir="ltr" className="font-digits-latin">
+                      {formatNumber(subStats.activeTrials)}
+                    </span>
                   </p>
                 </div>
               </div>
@@ -652,13 +671,22 @@ export function SuperAdminDashboard() {
                 {subStats ? (
                   <ul className="list-disc space-y-2 ps-5 text-slate-200">
                     <li>
-                      {t("admin.statsActiveSubs")}: {formatNumber(subStats.activeSubscriptions)}
+                      {t("admin.statsActiveSubs")}:{" "}
+                      <span dir="ltr" className="font-digits-latin">
+                        {formatNumber(subStats.activeSubscriptions)}
+                      </span>
                     </li>
                     <li>
-                      {t("admin.statsExpiredSubs")}: {formatNumber(subStats.expiredSubscriptions)}
+                      {t("admin.statsExpiredSubs")}:{" "}
+                      <span dir="ltr" className="font-digits-latin">
+                        {formatNumber(subStats.expiredSubscriptions)}
+                      </span>
                     </li>
                     <li>
-                      {t("admin.statsTrials")}: {formatNumber(subStats.activeTrials)}
+                      {t("admin.statsTrials")}:{" "}
+                      <span dir="ltr" className="font-digits-latin">
+                        {formatNumber(subStats.activeTrials)}
+                      </span>
                     </li>
                   </ul>
                 ) : (
@@ -849,8 +877,12 @@ function StatCard({
     <div className="bg-[#121214] p-6 rounded-2xl border border-gray-800">
       <p className="text-gray-500 text-sm mb-2">{title}</p>
       <div className="flex items-end justify-between gap-2">
-        <h4 className={`text-2xl font-bold ${color}`}>{value}</h4>
-        <span className="text-xs text-green-500 font-bold">{trend}</span>
+        <h4 dir="ltr" className={`text-2xl font-bold tabular-nums font-digits-latin ${color}`}>
+          {value}
+        </h4>
+        <span className="text-xs text-green-500 font-bold text-end min-w-0 max-w-[55%] font-digits-latin" dir="ltr">
+          {trend}
+        </span>
       </div>
     </div>
   );

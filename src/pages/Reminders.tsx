@@ -8,6 +8,7 @@ import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { tlDefaultExpectedEntryLocal } from "@/lib/tlDateTimeLocal";
 
 type Row = {
   id: string;
@@ -26,7 +27,7 @@ export function Reminders() {
     channel: "email",
     target: "",
     message: "",
-    due_at: "",
+    due_at: tlDefaultExpectedEntryLocal(),
   });
 
   const load = useCallback(async () => {
@@ -46,7 +47,7 @@ export function Reminders() {
       token,
       body: JSON.stringify(form),
     });
-    setForm({ channel: "email", target: "", message: "", due_at: "" });
+    setForm({ channel: "email", target: "", message: "", due_at: tlDefaultExpectedEntryLocal() });
     await load();
   };
 
@@ -111,6 +112,8 @@ export function Reminders() {
             <Input
               className="mt-1"
               type="datetime-local"
+              lang="en"
+              dir="ltr"
               value={form.due_at}
               onChange={(e) => setForm((f) => ({ ...f, due_at: e.target.value }))}
             />

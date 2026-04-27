@@ -1,12 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
-import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { getDataDir } from "./paths.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.join(__dirname, "..", "data");
-fs.mkdirSync(dataDir, { recursive: true });
-const dbPath = path.join(dataDir, "idara.sqlite");
+const dbPath = path.join(getDataDir(), "idara.sqlite");
 
 export const db = new DatabaseSync(dbPath);
 

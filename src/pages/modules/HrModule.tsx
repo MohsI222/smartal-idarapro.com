@@ -433,6 +433,8 @@ export function HrModule() {
                       <td className="p-2">
                         <Input
                           type="date"
+                          lang="en"
+                          dir="ltr"
                           className="h-9 bg-slate-900/50 border-slate-700"
                           value={d.contract_end ?? ""}
                           onChange={(ev) =>
@@ -610,6 +612,9 @@ function Field({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        {...(type === "date" || type === "time" || type === "datetime-local"
+          ? { lang: "en", dir: "ltr" }
+          : {})}
       />
     </div>
   );

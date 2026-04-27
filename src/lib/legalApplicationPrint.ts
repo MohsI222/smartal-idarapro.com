@@ -1,4 +1,4 @@
-import { escapeHtmlPdf } from "@/lib/htmlEscape";
+import { escapeHtmlPdf, escapeHtmlPdfLatin } from "@/lib/htmlEscape";
 import { formatLatinDateTime } from "@/lib/tlLatinNums";
 
 /** خطوط عربية من Google قبل الطباعة — يقلّل الصفحات البيضاء بسبب عدم تحميل الخط. */
@@ -57,7 +57,7 @@ export function buildLegalApplicationFullHtml(
   lang: string = "ar"
 ): string {
   const kingdom = escapeHtmlPdf("المملكة المغربية");
-  const bodyText = escapeHtmlPdf(requestDetails.trim() || "—");
+  const bodyText = escapeHtmlPdfLatin(requestDetails.trim() || "—");
   const headerDir = direction;
   const headerAlign = direction === "rtl" ? "right" : "left";
   const bodyAlign = direction === "rtl" ? "right" : "left";
@@ -77,13 +77,18 @@ export function buildLegalApplicationFullHtml(
       background: #fff !important;
       color: #000 !important;
     }
+    * {
+      font-variant-numeric: tabular-nums !important;
+      -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+      font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    }
     body {
       font-family: "Noto Naskh Arabic", Arial, "Times New Roman", serif;
       font-size: 12pt;
       line-height: 1.55;
       font-variant-numeric: lining-nums tabular-nums;
-      -webkit-font-feature-settings: "lnum" 1, "tnum" 1;
-      font-feature-settings: "lnum" 1, "tnum" 1;
+      -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+      font-feature-settings: "tnum" 1, "lnum" 1 !important;
     }
     .doc-wrap {
       max-width: 720px;
@@ -168,9 +173,9 @@ export type PlatformPrintWindowOpts = {
 /** HTML كامل لتقرير المنصة — للتصدير PDF عبر Canvas */
 export function buildPlatformReportFullHtml(opts: PlatformPrintWindowOpts): string {
   const { innerHtml, sectionTitle, mainTitle, direction, lang, dateLocale = lang, trialWatermark } = opts;
-  const mt = escapeHtmlPdf(mainTitle.trim());
-  const st = escapeHtmlPdf(sectionTitle.trim());
-  const dateStr = escapeHtmlPdf(formatLatinDateTime(dateLocale || lang));
+  const mt = escapeHtmlPdfLatin(mainTitle.trim());
+  const st = escapeHtmlPdfLatin(sectionTitle.trim());
+  const dateStr = escapeHtmlPdfLatin(formatLatinDateTime(dateLocale || lang));
   const headerDir = direction;
   const headerAlign = direction === "rtl" ? "right" : "left";
   const bodyAlign = direction === "rtl" ? "right" : "left";
@@ -190,13 +195,18 @@ export function buildPlatformReportFullHtml(opts: PlatformPrintWindowOpts): stri
       background: #fff !important;
       color: #000 !important;
     }
+    * {
+      font-variant-numeric: tabular-nums !important;
+      -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+      font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    }
     body {
       font-family: "Noto Naskh Arabic", Arial, "Segoe UI", sans-serif;
       font-size: 12pt;
       line-height: 1.55;
       font-variant-numeric: lining-nums tabular-nums;
-      -webkit-font-feature-settings: "lnum" 1, "tnum" 1;
-      font-feature-settings: "lnum" 1, "tnum" 1;
+      -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+      font-feature-settings: "tnum" 1, "lnum" 1 !important;
     }
     .doc-wrap {
       max-width: 720px;
@@ -330,9 +340,9 @@ export function buildOfficialDocumentFullHtml(opts: OfficialPrintWindowOpts): st
     officialKingdomLine,
     dateLocale = lang,
   } = opts;
-  const kingdom = escapeHtmlPdf(officialKingdomLine.trim() || "المملكة المغربية");
-  const titleSec = escapeHtmlPdf(sectionTitle.trim());
-  const dateStr = escapeHtmlPdf(formatLatinDateTime(dateLocale || lang));
+  const kingdom = escapeHtmlPdfLatin(officialKingdomLine.trim() || "المملكة المغربية");
+  const titleSec = escapeHtmlPdfLatin(sectionTitle.trim());
+  const dateStr = escapeHtmlPdfLatin(formatLatinDateTime(dateLocale || lang));
   const headerDir = direction;
   const headerAlign = direction === "rtl" ? "right" : "left";
   const bodyAlign = direction === "rtl" ? "right" : "left";
@@ -352,10 +362,18 @@ export function buildOfficialDocumentFullHtml(opts: OfficialPrintWindowOpts): st
       background: #fff !important;
       color: #000 !important;
     }
+    * {
+      font-variant-numeric: tabular-nums !important;
+      -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+      font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    }
     body {
       font-family: "Noto Naskh Arabic", Arial, "Times New Roman", serif;
       font-size: 12pt;
       line-height: 1.5;
+      font-variant-numeric: lining-nums tabular-nums;
+      -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+      font-feature-settings: "tnum" 1, "lnum" 1 !important;
     }
     .doc-wrap {
       max-width: 720px;
@@ -472,7 +490,7 @@ function bodyChunksToSimpleParagraphsHtml(raw: string): string {
     chunks = t.split("\n").map((s) => s.trim()).filter(Boolean);
   }
   const parts = chunks.length > 0 ? chunks : [t];
-  return parts.map((p) => `<p class="simple-para">${escapeHtmlPdf(p)}</p>`).join("");
+  return parts.map((p) => `<p class="simple-para">${escapeHtmlPdfLatin(p)}</p>`).join("");
 }
 
 /** فصل المقدمة عن فقرة «أنا الممضي أسفله» (أو ما يقابلها) لزيادة المسافة البصرية الاحترافية */
@@ -541,17 +559,17 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
     kingdomHeaderImageDataUrl != null
       ? escapeHtmlPdf("المملكة المغربية")
       : administrativePdfHtmlTitle(lang, officialLegal);
-  const formal = escapeHtmlPdf(formalRecipientLine.trim() || "—");
+  const formal = escapeHtmlPdfLatin(formalRecipientLine.trim() || "—");
   const rawBody = requestBody.trim() || "—";
   const { head: headRaw, tail: tailRaw } = splitAdministrativeBodyForUndersigned(rawBody);
   const headSafe = headRaw.trim().length ? headRaw.trim() : "—";
   const headBlock = officialLegal
-    ? `<div class="request-main">${escapeHtmlPdf(headSafe)}</div>`
+    ? `<div class="request-main">${escapeHtmlPdfLatin(headSafe)}</div>`
     : `<div class="request-main request-main--simple">${bodyChunksToSimpleParagraphsHtml(headSafe)}</div>`;
   const tailBlock =
     tailRaw != null && tailRaw.length > 0
       ? officialLegal
-        ? `<div class="request-main request-main-undersigned">${escapeHtmlPdf(tailRaw)}</div>`
+        ? `<div class="request-main request-main-undersigned">${escapeHtmlPdfLatin(tailRaw)}</div>`
         : `<div class="request-main request-main--simple request-main-undersigned">${bodyChunksToSimpleParagraphsHtml(tailRaw)}</div>`
       : "";
   const bodyAlign = direction === "rtl" ? "right" : "left";
@@ -563,7 +581,7 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
   const sigHeading = escapeHtmlPdf(sig.heading);
   const sigHint = escapeHtmlPdf(sig.hint);
   const dateCap = escapeHtmlPdf(administrativePdfDateCaption(lang));
-  const dateEsc = escapeHtmlPdf(documentDateLine.trim() || "—");
+  const dateEsc = escapeHtmlPdfLatin(documentDateLine.trim() || "—");
   const shellClass = [
     "doc-shell",
     layoutSpacing === "address_change" ? "doc-shell--addr" : "doc-shell--std",
@@ -581,7 +599,12 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
   ${ADMIN_EDITOR_PDF_FONT_LINKS}
   <style>
     @page { size: A4 portrait; margin: 0; }
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+      font-variant-numeric: tabular-nums !important;
+      -webkit-font-feature-settings: "tnum" 1, "lnum" 1 !important;
+      font-feature-settings: "tnum" 1, "lnum" 1 !important;
+    }
     html, body {
       margin: 0;
       padding: 0;
@@ -591,10 +614,10 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
     body {
       font-family: Amiri, Cairo, "Noto Naskh Arabic", Arial, "Times New Roman", serif;
       font-weight: 400;
-      /* Force Western digits (0-9) — prevent Arabic-Indic numerals in PDF */
+      /* Western digits 0–9; Arabic script unchanged */
       font-variant-numeric: lining-nums tabular-nums;
-      -webkit-font-feature-settings: "liga" 1, "calt" 1, "lnum" 1, "tnum" 1;
-      font-feature-settings: "liga" 1, "calt" 1, "lnum" 1, "tnum" 1;
+      -webkit-font-feature-settings: "liga" 1, "calt" 1, "tnum" 1, "lnum" 1;
+      font-feature-settings: "liga" 1, "calt" 1, "tnum" 1, "lnum" 1;
       -webkit-font-smoothing: antialiased;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;

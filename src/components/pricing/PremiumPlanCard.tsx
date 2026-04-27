@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
-import { Check, Crown, GraduationCap, Package, Scale, Sparkles } from "lucide-react";
+import { Check, Crown, Gavel, GraduationCap, Package, Scale, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { BillingPeriod, PlanOption } from "@/constants/plans";
 import { planPriceDh, yearlySavingsDh, yearlySavingsPercent } from "@/constants/plans";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 const ICON_OVERRIDES: Partial<Record<SectionId, LucideIcon>> = {
   edu: GraduationCap,
   law: Scale,
+  lawyer: Gavel,
   inventory: Package,
 };
 
@@ -37,7 +38,7 @@ type Props =
     };
 
 export function PremiumPlanCard(props: Props) {
-  const { t, isRtl } = useI18n();
+  const { t, isRtl, formatNumber } = useI18n();
   const { plan } = props;
   const visual = getPlanVisual(plan.id);
   const savePct = yearlySavingsPercent(plan);
@@ -86,44 +87,50 @@ export function PremiumPlanCard(props: Props) {
             </p>
             <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0">
               <span
+                dir="ltr"
                 className={cn(
-                  "bg-gradient-to-l bg-clip-text font-black tabular-nums tracking-tight text-transparent",
+                  "bg-gradient-to-l bg-clip-text font-black tabular-nums font-digits-latin tracking-tight text-transparent",
                   "text-4xl md:text-5xl lg:text-[3.25rem]",
-                  "[font-family:var(--font-sans),ui-sans-serif,system-ui,sans-serif]",
                   visual.priceGradient
                 )}
               >
-                {priceMain}
+                {formatNumber(priceMain, { maximumFractionDigits: 0 })}
               </span>
               <span className="text-base font-bold tracking-wide text-slate-400 md:text-lg">DH</span>
             </div>
 
             {props.mode === "landing" && (
               <p className="mt-2 text-sm text-slate-500">
-                <span className="font-semibold text-slate-300">{plan.priceYearlyDh} DH</span> /{" "}
-                {t("pay.billingYearly").split(" / ")[0] ?? t("pay.billingYearly")}
+                <span dir="ltr" className="font-semibold text-slate-300 font-digits-latin">
+                  {formatNumber(plan.priceYearlyDh, { maximumFractionDigits: 0 })} DH
+                </span>{" "}
+                / {t("pay.billingYearly").split(" / ")[0] ?? t("pay.billingYearly")}
               </p>
             )}
 
             {props.mode === "pay" && props.billing === "yearly" && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span
+                  dir="ltr"
                   className={cn(
-                    "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-black tabular-nums",
+                    "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-black tabular-nums font-digits-latin",
                     "bg-gradient-to-r from-orange-500 via-rose-500 to-orange-600 text-white shadow-md shadow-orange-500/30"
                   )}
                 >
-                  −{savePct}%
+                  −{formatNumber(savePct, { maximumFractionDigits: 0 })}%
                 </span>
                 <span className="text-[11px] font-medium text-slate-500">
-                  {t("pay.savingsDhYearly").replace("{dh}", String(saveDh))}
+                  {t("pay.savingsDhYearly").replace("{dh}", formatNumber(saveDh, { maximumFractionDigits: 0 }))}
                 </span>
               </div>
             )}
 
             {props.mode === "landing" && (
               <p className="mt-2 text-[11px] font-semibold text-emerald-400/95">
-                {t("pay.yearlySavingsHint").replace("{pct}", String(savePct))}
+                {t("pay.yearlySavingsHint").replace(
+                  "{pct}",
+                  formatNumber(savePct, { maximumFractionDigits: 0 })
+                )}
               </p>
             )}
           </div>

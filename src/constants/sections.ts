@@ -2,6 +2,7 @@ import {
   Bell,
   Building2,
   Calculator,
+  Gavel,
   GraduationCap,
   LayoutGrid,
   MessageCircle,
@@ -17,6 +18,7 @@ import {
 export type SectionId =
   | "hr"
   | "law"
+  | "lawyer"
   | "acc"
   | "edu"
   | "public"
@@ -62,6 +64,15 @@ export const SECTIONS: SectionDef[] = [
     color: "text-orange-400",
     price: "—",
     path: "/app/law",
+  },
+  {
+    id: "lawyer",
+    titleKey: "section.lawyer.title",
+    shortTitleKey: "section.lawyer.short",
+    icon: Gavel,
+    color: "text-amber-400",
+    price: "—",
+    path: "/app/lawyer",
   },
   {
     id: "acc",

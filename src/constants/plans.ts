@@ -4,6 +4,7 @@ import type { SectionId } from "./sections";
 export const ALL_SAAS_MODULE_IDS: SectionId[] = [
   "hr",
   "law",
+  "lawyer",
   "acc",
   "edu",
   "public",
@@ -87,7 +88,7 @@ export const PLAN_OPTIONS: PlanOption[] = [
     priceMonthlyDh: 599,
     priceYearlyDh: 5000,
     accent: "rose",
-    modules: ["legal_ai", "members", "acc", "hr", "inventory", "law", "reminders", "public", "chat"],
+    modules: ["lawyer", "legal_ai", "law", "members", "acc", "hr", "inventory", "reminders", "public", "chat"],
   },
   {
     id: "libraries_base",

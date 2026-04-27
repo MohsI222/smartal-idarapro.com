@@ -8,7 +8,7 @@ import {
 } from "docx";
 import * as XLSX from "xlsx";
 import { downloadXlsxWorkbook } from "@/lib/excelDownload";
-import { escapeHtmlPdf } from "@/lib/htmlEscape";
+import { escapeHtmlPdf, escapeHtmlPdfLatin } from "@/lib/htmlEscape";
 import { buildOfficialDocumentFullHtml } from "@/lib/legalApplicationPrint";
 import {
   moroccanDocumentClassLabel,
@@ -257,7 +257,7 @@ export async function openLegalDocumentOfficialPdf(
       </tbody>
     </table>
     <div style="font-weight:700;margin-bottom:8px;">${escapeHtmlPdf(H.requestBody)}</div>
-    <div style="white-space:pre-wrap;font-size:12pt;line-height:1.65;">${escapeHtmlPdf(payload.requestDetails.trim() || "—")}</div>
+    <div style="white-space:pre-wrap;font-size:12pt;line-height:1.65;">${escapeHtmlPdfLatin(payload.requestDetails.trim() || "—")}</div>
   `;
   const kingdom = legalOfficialKingdomLine(lang);
   const sectionTitle = `${docLabel} — ${instLabel}`;

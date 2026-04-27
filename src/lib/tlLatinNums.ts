@@ -1,41 +1,38 @@
 /**
- * أرقام لاتينية (0123…) لسجل النقل واللوجستيك — ثابتة بغض النظر عن لغة الواجهة.
+ * أرقام لاتينية (0123…) — `en-US` + `numberingSystem: "latn"` (مثل بقية المنصة).
  */
+import {
+  formatLatinDateTime as formatLatinDateTimeCore,
+  formatLatinNumber,
+  INTL_EN_US_WITH_LATN_NUMERALS,
+} from "@/lib/latinNumeralFormat";
+import { toWesternDigits } from "@/lib/unicodeDigits";
+
 export function formatTlLatinInt(n: number | null | undefined): string {
   if (n == null || Number.isNaN(Number(n))) return "—";
-  return new Intl.NumberFormat("en-US", { numberingSystem: "latn", maximumFractionDigits: 0 }).format(
-    Number(n)
-  );
+  return formatLatinNumber(Number(n), { maximumFractionDigits: 0 });
 }
 
 export function formatTlLatinNum(n: number | null | undefined, maxFrac = 2): string {
   if (n == null || Number.isNaN(Number(n))) return "—";
-  return new Intl.NumberFormat("en-US", { numberingSystem: "latn", maximumFractionDigits: maxFrac }).format(
-    Number(n)
-  );
+  return formatLatinNumber(Number(n), { maximumFractionDigits: maxFrac });
 }
 
-/** Dates/times for PDF and print views — always Western digits (0–9). */
-export function formatLatinDateTime(locale: string, date: Date = new Date()): string {
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      numberingSystem: "latn",
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(date);
-  } catch {
-    return date.toLocaleString("en-US", { numberingSystem: "latn" });
-  }
+/**
+ * @param _appLocaleish Unused — all formatters use en-US + latn (kept for call-site compatibility).
+ * @param date Date to format (default: now).
+ */
+export function formatLatinDateTime(
+  _appLocaleish?: string,
+  date: Date = new Date()
+): string {
+  void _appLocaleish;
+  return formatLatinDateTimeCore(date, INTL_EN_US_WITH_LATN_NUMERALS);
 }
 
-/** عرض أرقام داخل سلسلة (مثل طوابع زمنية) بأرقام لاتينية */
+/**
+ * @deprecated use `import { toWesternDigits } from "@/lib/utils"`
+ */
 export function ensureLatinDigitsInString(s: string): string {
-  const east = "٠١٢٣٤٥٦٧٨٩";
-  const west = "0123456789";
-  let out = "";
-  for (const ch of s) {
-    const i = east.indexOf(ch);
-    out += i >= 0 ? west[i]! : ch;
-  }
-  return out;
+  return toWesternDigits(s);
 }
