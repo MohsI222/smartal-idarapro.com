@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import { I18nProvider, useI18n } from "@/i18n/I18nProvider";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
@@ -162,6 +163,7 @@ export default function App() {
           <AuthProvider>
             <AppRoutes />
             <Toaster richColors position="top-center" theme="dark" />
+            <SpeedInsights />
           </AuthProvider>
         </ThemeProvider>
       </I18nProvider>
