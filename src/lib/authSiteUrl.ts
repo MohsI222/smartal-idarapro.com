@@ -1,17 +1,11 @@
 /**
- * Returns the site origin to use for Supabase OAuth PKCE and email redirects.
+ * Production site origin for Supabase OAuth PKCE and email-confirmation redirects.
+ * Redirects must be allowlisted in Supabase: Authentication → URL Configuration → Redirect URLs
+ * (e.g. `https://smartal-idarapro.com/auth/callback` and your `*.vercel.app` preview URLs).
  *
- * - In the browser: uses window.location.origin so the site works on
- *   both the custom domain (https://smartal-idarapro.com) AND the
- *   Vercel preview URL (https://smartal-idaraprocom.vercel.app).
- * - In SSR / non-browser contexts: falls back to VITE_PUBLIC_APP_URL or
- *   the hardcoded production domain.
- *
- * IMPORTANT: Add BOTH redirect URLs in Supabase Dashboard ->
- *   Authentication -> URL Configuration -> Redirect URLs:
- *     https://smartal-idarapro.com/auth/callback
- *     https://smartal-idaraprocom.vercel.app/auth/callback
- *     https://*.vercel.app/auth/callback   (wildcard covers all previews)
+ * - In the browser: `window.location.origin` so the app works on the custom domain
+ *   and on Vercel preview deployments (e.g. `https://my-app.vercel.app`).
+ * - In non-browser contexts: `VITE_PUBLIC_APP_URL`, else the default production host below.
  */
 function getSiteOrigin(): string {
   if (typeof window !== "undefined" && window.location?.origin) {
@@ -22,7 +16,10 @@ function getSiteOrigin(): string {
   return "https://smartal-idarapro.com";
 }
 
-export const AUTH_SITE_ORIGIN = "https://smartal-idarapro.com";
+/** Use this or `getAuthCallbackUrl` — do not hardcode the production domain (breaks Vercel previews). */
+export function getAuthSiteOrigin(): string {
+  return getSiteOrigin();
+}
 
 export function getAuthCallbackUrl(): string {
   return `${getSiteOrigin()}/auth/callback`;

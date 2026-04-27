@@ -39,7 +39,8 @@ function mapApiError(err: unknown): string {
     m.includes("Failed to fetch") ||
     m.includes("NetworkError") ||
     m.includes("Load failed") ||
-    m.includes("fetch")
+    m.includes("Network request failed") ||
+    m.toLowerCase().includes("cors")
   ) {
     return "خادم التطبيق غير متاح حالياً — تحقق من إعدادات النشر أو تواصل مع الدعم.";
   }
