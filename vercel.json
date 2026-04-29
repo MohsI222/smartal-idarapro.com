@@ -1,25 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "framework": "vite",
-  "env": {
-    "ADMIN_BOOTSTRAP_KEY": "",
-    "JWT_EXPIRES_DAYS": "365",
-    "JWT_SECRET": "change-me-in-production-please-use-a-long-random-string",
-    "NODE_OPTIONS": "--experimental-sqlite",
-    "PORT": "4000",
-    "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlodGV5bHBscGR0eGRwcXhhZnJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwOTk3ODQsImV4cCI6MjA5MTY3NTc4NH0.ZbFycMjVp6LKKbFZOO5OXAOLlheq3QEPilodFT12dUI",
-    "SUPABASE_URL": "https://ihteylplpdtxdpqxafrq.supabase.co",
-    "SUPER_ADMIN_EMAIL": "lahcenm534@gmail.com",
-    "SUPER_ADMIN_NAME": "LAHCEN EL MOUTAOUAKIL",
-    "SUPER_ADMIN_PASSWORD": "Lahcen2026@",
-    "SUPER_ADMIN_WHATSAPP": "+212780290270",
-    "VITE_API_URL": "https://smartal-idarapro.com/api",
-    "VITE_PUBLIC_APP_URL": "https://smartal-idarapro.com",
-    "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlodGV5bHBscGR0eGRwcXhhZnJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwOTk3ODQsImV4cCI6MjA5MTY3NTc4NH0.ZbFycMjVp6LKKbFZOO5OXAOLlheq3QEPilodFT12dUI",
-    "VITE_SUPABASE_URL": "https://ihteylplpdtxdpqxafrq.supabase.co"
-  },
   "redirects": [
     {
       "source": "/(.*)",
@@ -30,12 +10,16 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!api/|assets/|fonts/|.*\\.(?:js|css|png|jpg|jpeg|svg|ico|webmanifest|woff2?|ttf|map)$).*)",
+      "source": "/api/:path*",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ],
   "functions": {
-    "api/[[...slug]].ts": {
+    "api/index.ts": {
       "maxDuration": 60,
       "memory": 1024
     }

@@ -24,6 +24,7 @@ import {
 } from "./authSecurity.js";
 import { sanitizeEmail, sanitizeUserDisplayName } from "./stringUtil.js";
 import { paramString } from "./reqParams.js";
+import { vercelApiUrlRestore } from "./vercelUrlMiddleware.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -193,6 +194,7 @@ async function extractReceiptWithOpenAiVision(
 }
 
 const app = express();
+app.use(vercelApiUrlRestore);
 applySecurityMiddleware(app);
 app.use(cors({ origin: true, credentials: true }));
 const authOriginGuard = createAuthOriginGuard();

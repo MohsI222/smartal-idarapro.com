@@ -17,7 +17,9 @@ createRoot(document.getElementById("root")!).render(
 if ("serviceWorker" in navigator) {
   if (import.meta.env.PROD) {
     window.addEventListener("load", () => {
-      void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      const base = import.meta.env.BASE_URL ?? "/";
+      const swUrl = base.endsWith("/") ? `${base}sw.js` : `${base}/sw.js`;
+      void navigator.serviceWorker.register(swUrl).catch(() => undefined);
     });
   } else {
     void navigator.serviceWorker.getRegistrations().then((regs) => {

@@ -1,14 +1,12 @@
 /**
- * Default same-origin `/api`. Override with `VITE_API_URL` for split hosting, e.g.
- * `https://app.example.com/api` (no trailing slash after `api`).
+ * API base for `fetch`. Same host → always `/api` from origin root (valid even when the SPA uses `VITE_BASE_PATH`).
+ * Override with full URL only when the API is on another host, e.g. `https://api.example.com/api`.
  */
 export function getApiUrlPrefix(): string {
   const raw = import.meta.env.VITE_API_URL?.trim();
   if (!raw) return "/api";
   return raw.replace(/\/$/, "");
 }
-
-const API = getApiUrlPrefix();
 
 export class ApiError extends Error {
   constructor(
@@ -31,7 +29,7 @@ export async function api<T>(
   };
   if (token) (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${API}${path}`, { ...rest, headers });
+  const res = await fetch(`${getApiUrlPrefix()}${path}`, { ...rest, headers });
   const text = await res.text();
   const trimmed = text.trimStart();
   if (

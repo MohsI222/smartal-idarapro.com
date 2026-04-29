@@ -32,6 +32,21 @@ function mapSupabaseAuthError(msg: string): string {
 
 function mapApiError(err: unknown): string {
   if (!(err instanceof Error)) return "خطأ غير معروف";
+  /** أخطاء واضحة من الخادم (كلمة مرور، صيغة…) — لا نستبدلها برسالة عامة */
+  if (err instanceof ApiError) {
+    const st = err.status;
+    const msg = err.message;
+    if (st === 401 || st === 400 || st === 403 || st === 422 || st === 429) {
+      return msg;
+    }
+    if (st === 404) {
+      return "خادم التطبيق غير متاح — يرجى التواصل مع الدعم.";
+    }
+    if (msg.includes("Received HTML") || msg.includes("VITE_API_URL")) {
+      return "خادم التطبيق غير متاح حالياً — تحقق من إعدادات النشر أو تواصل مع الدعم.";
+    }
+    return msg;
+  }
   const m = err.message;
   if (
     m.includes("Received HTML") ||
@@ -43,9 +58,6 @@ function mapApiError(err: unknown): string {
     m.toLowerCase().includes("cors")
   ) {
     return "خادم التطبيق غير متاح حالياً — تحقق من إعدادات النشر أو تواصل مع الدعم.";
-  }
-  if (err instanceof ApiError && err.status === 404) {
-    return "خادم التطبيق غير متاح — يرجى التواصل مع الدعم.";
   }
   return m;
 }
