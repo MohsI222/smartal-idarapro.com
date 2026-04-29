@@ -22,4 +22,7 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY?: string;
   /** Optional override for the public-facing super admin email shown in the UI. */
   readonly VITE_SUPER_ADMIN_EMAIL?: string;
+  /** Legacy Netlify Identity flags — ignored; auth uses Supabase + API (see `netlifyIdentity.ts` stubs). */
+  readonly VITE_USE_NETLIFY_IDENTITY?: string;
+  readonly VITE_NETLIFY_IDENTITY_URL?: string;
 }

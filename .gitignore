@@ -10,3 +10,5 @@ data/uploads
 .env.*.local
 *.log
 .DS_Store
+.vercel
+.env*.local
