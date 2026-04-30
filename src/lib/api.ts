@@ -47,7 +47,8 @@ export async function api<T>(
       data = JSON.parse(text) as object;
     } catch {
       if (!res.ok) {
-        throw new ApiError(res.statusText || "Request failed", res.status);
+        const st = res.statusText?.trim();
+        throw new ApiError(st || `HTTP ${res.status}`, res.status);
       }
       throw new ApiError("Invalid JSON from API", res.status);
     }

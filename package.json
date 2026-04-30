@@ -16,7 +16,7 @@
     "db:reset": "tsx server/reset-db.ts"
   },
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",
