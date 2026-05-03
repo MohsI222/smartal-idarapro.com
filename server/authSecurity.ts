@@ -40,7 +40,13 @@ export const authAdminBootstrapLimiter = rateLimit({
  * أو غيابهما (تطبيقات أصلية / أدوات).
  */
 export function createAuthOriginGuard(): RequestHandler {
-  const explicit = (process.env.PUBLIC_APP_URL ?? process.env.VITE_PUBLIC_APP_URL ?? "")
+  const explicit = (
+    process.env.PUBLIC_APP_URL ??
+    process.env.VITE_PUBLIC_APP_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    ""
+  )
     .trim()
     .replace(/\/$/, "");
   const extra = (process.env.AUTH_ALLOWED_ORIGINS ?? "")

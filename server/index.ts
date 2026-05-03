@@ -33,8 +33,20 @@ async function fetchSupabaseUserFromAccessToken(accessToken: string): Promise<{
   email?: string;
   user_metadata?: { full_name?: string; name?: string; avatar_url?: string };
 } | null> {
-  const base = (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/$/, "");
-  const anon = (process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+  const base = (
+    process.env.SUPABASE_URL ??
+    process.env.VITE_SUPABASE_URL ??
+    process.env.NEXT_PUBLIC_SUPABASE_URL ??
+    ""
+  )
+    .trim()
+    .replace(/\/$/, "");
+  const anon = (
+    process.env.SUPABASE_ANON_KEY ??
+    process.env.VITE_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    ""
+  ).trim();
   if (!base || !anon) return null;
   const r = await fetch(`${base}/auth/v1/user`, {
     headers: {

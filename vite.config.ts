@@ -18,6 +18,8 @@ export default defineConfig(({ mode }) => {
   const baseNormalized = base.endsWith("/") ? base : `${base}/`;
 
   return {
+    /** Supabase / لوحات Next تهيئ `NEXT_PUBLIC_*` — نفتحها فالبناء كي تعمل نفس `VITE_*` على Vercel */
+    envPrefix: ["VITE_", "NEXT_PUBLIC_"],
     base: baseNormalized,
     plugins: [react(), tailwindcss()],
     optimizeDeps: {

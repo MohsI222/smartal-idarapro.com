@@ -11,7 +11,9 @@ function getSiteOrigin(): string {
   if (typeof window !== "undefined" && window.location?.origin) {
     return window.location.origin.replace(/\/$/, "");
   }
-  const envUrl = import.meta.env.VITE_PUBLIC_APP_URL as string | undefined;
+  const envUrl = (import.meta.env.VITE_PUBLIC_APP_URL ??
+    import.meta.env.NEXT_PUBLIC_APP_URL ??
+    import.meta.env.NEXT_PUBLIC_SITE_URL) as string | undefined;
   if (envUrl) return envUrl.trim().replace(/\/$/, "");
   return "https://smartal-idarapro.com";
 }

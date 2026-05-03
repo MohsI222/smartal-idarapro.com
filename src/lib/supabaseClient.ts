@@ -1,7 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const rawUrl = import.meta.env.VITE_SUPABASE_URL;
-const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const rawUrl = import.meta.env.VITE_SUPABASE_URL ?? import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+const rawKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const supabaseUrl = typeof rawUrl === "string" ? rawUrl.trim() : "";
 const supabaseAnonKey = typeof rawKey === "string" ? rawKey.trim() : "";
@@ -22,16 +22,20 @@ export const isSupabaseConfigured = Boolean(supabaseUrl) && Boolean(supabaseAnon
 
 if (import.meta.env.DEV) {
   if (!supabaseUrl) {
-    console.error("[supabase] VITE_SUPABASE_URL is missing — set it in .env (and on Vercel).");
+    console.error(
+      "[supabase] VITE_SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) is missing — set in .env / Vercel."
+    );
   } else if (!isValidUrl) {
     console.error(
-      "[supabase] VITE_SUPABASE_URL looks malformed:",
+      "[supabase] Supabase URL looks malformed:",
       supabaseUrl,
       "— expected https://<project-ref>.supabase.co"
     );
   }
   if (!supabaseAnonKey) {
-    console.error("[supabase] VITE_SUPABASE_ANON_KEY is missing — set it in .env (and on Vercel).");
+    console.error(
+      "[supabase] VITE_SUPABASE_ANON_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY) is missing — set in .env / Vercel."
+    );
   } else if (!isValidKey) {
     console.error(
       "[supabase] VITE_SUPABASE_ANON_KEY does not look like a valid Supabase key.",
@@ -43,7 +47,7 @@ if (import.meta.env.DEV) {
 }
 
 /**
- * Browser Supabase client — reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+ * Browser Supabase client — reads `VITE_*` or `NEXT_PUBLIC_*` Supabase vars (Vite build).
  *
  * Returns `null` when either env var is missing or obviously malformed so the rest
  * of the app can fall back gracefully (e.g. show a clear "Supabase not configured"

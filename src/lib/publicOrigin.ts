@@ -8,7 +8,12 @@
  * - On localhost / loopback, forces `http:` so `https://localhost` does not break dev certs.
  */
 export function getPublicOrigin(): string {
-  const explicit = import.meta.env.VITE_PUBLIC_APP_URL?.trim();
+  const explicit =
+    (
+      import.meta.env.VITE_PUBLIC_APP_URL ??
+      import.meta.env.NEXT_PUBLIC_APP_URL ??
+      import.meta.env.NEXT_PUBLIC_SITE_URL
+    )?.trim() ?? "";
   if (explicit) return explicit.replace(/\/$/, "");
 
   if (typeof window === "undefined") return "";

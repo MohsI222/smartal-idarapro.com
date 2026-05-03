@@ -20,6 +20,13 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   /** Supabase anonymous/public key for browser use. */
   readonly VITE_SUPABASE_ANON_KEY?: string;
+  /** Next.js-style alias (same as VITE_SUPABASE_URL) — useful on Vercel if you copied Supabase’s Next template. */
+  readonly NEXT_PUBLIC_SUPABASE_URL?: string;
+  /** Next.js-style anon key (same as VITE_SUPABASE_ANON_KEY). */
+  readonly NEXT_PUBLIC_SUPABASE_ANON_KEY?: string;
+  /** Next-style canonical URL (optional; browser usually uses window.location). */
+  readonly NEXT_PUBLIC_APP_URL?: string;
+  readonly NEXT_PUBLIC_SITE_URL?: string;
   /** Optional override for the public-facing super admin email shown in the UI. */
   readonly VITE_SUPER_ADMIN_EMAIL?: string;
   /** Legacy Netlify Identity flags — ignored; auth uses Supabase + API (see `netlifyIdentity.ts` stubs). */
