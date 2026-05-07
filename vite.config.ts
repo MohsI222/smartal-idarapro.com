@@ -5,22 +5,21 @@ import { defineConfig, loadEnv } from "vite";
 
 /**
  * Production — smartal-idarapro.com (or www):
- * • `VITE_BASE_PATH=/` (default): assets at `https://www.smartal-idarapro.com/assets/...`.
- * • Set `VITE_PUBLIC_APP_URL` at build time to your canonical HTTPS URL (see `.env.example`).
- * • Subpath deploy only: `VITE_BASE_PATH=/app/` and match nginx/CDN.
+ * • Production root host: **base is `/`** (default). Optional subpath only: set `VITE_BASE_PATH=/app/` and match CDN/nginx.
+ * • Set `VITE_PUBLIC_APP_URL` at build time for canonical absolute URLs (see `.env.example`).
  * • SPA: serve `dist/index.html` for non-file routes; `vercel.json` handles the rewrite.
  * • API: reverse-proxy `/api` → Node, or set `VITE_API_URL` to the full API base.
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const baseRaw = env.VITE_BASE_PATH?.trim() || "/";
-  const base = baseRaw.startsWith("/") ? baseRaw : `/${baseRaw}`;
-  const baseNormalized = base.endsWith("/") ? base : `${base}/`;
+  const subpath = env.VITE_BASE_PATH?.trim();
+  const base =
+    !subpath || subpath === "/" ? "/" : `${subpath.startsWith("/") ? subpath : `/${subpath}`}`.replace(/\/?$/, "/");
 
   return {
     /** Supabase / لوحات Next تهيئ `NEXT_PUBLIC_*` — نفتحها فالبناء كي تعمل نفس `VITE_*` على Vercel */
     envPrefix: ["VITE_", "NEXT_PUBLIC_"],
-    base: baseNormalized,
+    base,
     plugins: [react(), tailwindcss()],
     optimizeDeps: {
       include: ["jspdf", "html2canvas", "exceljs", "docx"],
