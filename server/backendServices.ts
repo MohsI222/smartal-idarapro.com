@@ -23,10 +23,10 @@ import {
   MOROCCAN_INSTITUTION_LABELS_AR,
   type MoroccanDocumentClass,
   type MoroccanInstitutionType,
-} from "../src/lib/moroccanLegalVariables.ts";
-import type { StatutsParams } from "../src/lib/companyStatuts.ts";
-import { buildStatutsDocxParagraphs } from "../src/lib/companyStatutsDocx.ts";
-import type { AppLocale } from "../src/i18n/strings.ts";
+} from "../src/lib/moroccanLegalVariables.js";
+import type { StatutsParams } from "../src/lib/companyStatuts.js";
+import { buildStatutsDocxParagraphs } from "../src/lib/companyStatutsDocx.js";
+import type { AppLocale } from "../src/i18n/strings.js";
 
 type LegalExportPayload = {
   fullName: string;
