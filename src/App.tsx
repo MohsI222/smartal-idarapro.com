@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { lazy } from "react";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { I18nProvider, useI18n } from "@/i18n/I18nProvider";
@@ -11,36 +11,78 @@ import { Login } from "@/pages/Login";
 import { Register } from "@/pages/Register";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { DashboardHome } from "@/pages/DashboardHome";
-import { Pay } from "@/pages/Pay";
-import { SuperAdminDashboard } from "@/pages/SuperAdminDashboard";
-import { HrModule } from "@/pages/modules/HrModule";
-import { LawModule } from "@/pages/modules/LawModule";
-import { AccModule } from "@/pages/modules/AccModule";
-import { EduModule } from "@/pages/modules/EduModule";
-import { Reminders } from "@/pages/Reminders";
-import { DevicesSettings } from "@/pages/DevicesSettings";
-import { VisaRadarModule } from "@/pages/modules/VisaRadarModule";
-import { GovServicesModule } from "@/pages/modules/GovServicesModule";
-import { EduPrintModule } from "@/pages/modules/EduPrintModule";
-import { TechAutoModule } from "@/pages/modules/TechAutoModule";
-import { InternalChatModule } from "@/pages/modules/InternalChatModule";
-import { CorporateAcademyModule } from "@/pages/modules/CorporateAcademyModule";
-import { BusinessToolsModule } from "@/pages/modules/BusinessToolsModule";
-import { InventoryPosModule } from "@/pages/modules/InventoryPosModule";
-import { CompanySetupModule } from "@/pages/modules/CompanySetupModule";
-import { MemberManagementModule } from "@/pages/modules/MemberManagementModule";
-import { AdminPlatformSettings } from "@/pages/AdminPlatformSettings";
-import { LegalTermsPage } from "@/pages/LegalTermsPage";
-import { SecurityPrivacyPage } from "@/pages/SecurityPrivacyPage";
-import { CguPage } from "@/pages/CguPage";
-import { TrustCharterPage } from "@/pages/TrustCharterPage";
-import { SubscriptionContractPage } from "@/pages/SubscriptionContractPage";
-import { TransportLogisticsHub } from "@/pages/modules/TransportLogisticsHub";
-import { TransportLogisticsAdmin } from "@/pages/modules/TransportLogisticsAdmin";
-import { TlDepartmentPage } from "@/pages/tl/TlDepartmentPage";
-import { TlDeptLandingRedirect } from "@/pages/tl/TlDeptLandingRedirect";
-import { SupportPage } from "@/pages/SupportPage";
 
+const Pay = lazy(() => import("@/pages/Pay").then((m) => ({ default: m.Pay })));
+const SuperAdminDashboard = lazy(() =>
+  import("@/pages/SuperAdminDashboard").then((m) => ({ default: m.SuperAdminDashboard }))
+);
+const HrModule = lazy(() => import("@/pages/modules/HrModule").then((m) => ({ default: m.HrModule })));
+const LawModule = lazy(() => import("@/pages/modules/LawModule").then((m) => ({ default: m.LawModule })));
+const AccModule = lazy(() => import("@/pages/modules/AccModule").then((m) => ({ default: m.AccModule })));
+const EduModule = lazy(() => import("@/pages/modules/EduModule").then((m) => ({ default: m.EduModule })));
+const Reminders = lazy(() => import("@/pages/Reminders").then((m) => ({ default: m.Reminders })));
+const DevicesSettings = lazy(() =>
+  import("@/pages/DevicesSettings").then((m) => ({ default: m.DevicesSettings }))
+);
+const VisaRadarModule = lazy(() =>
+  import("@/pages/modules/VisaRadarModule").then((m) => ({ default: m.VisaRadarModule }))
+);
+const GovServicesModule = lazy(() =>
+  import("@/pages/modules/GovServicesModule").then((m) => ({ default: m.GovServicesModule }))
+);
+const EduPrintModule = lazy(() =>
+  import("@/pages/modules/EduPrintModule").then((m) => ({ default: m.EduPrintModule }))
+);
+const TechAutoModule = lazy(() =>
+  import("@/pages/modules/TechAutoModule").then((m) => ({ default: m.TechAutoModule }))
+);
+const InternalChatModule = lazy(() =>
+  import("@/pages/modules/InternalChatModule").then((m) => ({ default: m.InternalChatModule }))
+);
+const CorporateAcademyModule = lazy(() =>
+  import("@/pages/modules/CorporateAcademyModule").then((m) => ({ default: m.CorporateAcademyModule }))
+);
+const BusinessToolsModule = lazy(() =>
+  import("@/pages/modules/BusinessToolsModule").then((m) => ({ default: m.BusinessToolsModule }))
+);
+const InventoryPosModule = lazy(() =>
+  import("@/pages/modules/InventoryPosModule").then((m) => ({ default: m.InventoryPosModule }))
+);
+const CompanySetupModule = lazy(() =>
+  import("@/pages/modules/CompanySetupModule").then((m) => ({ default: m.CompanySetupModule }))
+);
+const MemberManagementModule = lazy(() =>
+  import("@/pages/modules/MemberManagementModule").then((m) => ({ default: m.MemberManagementModule }))
+);
+const AdminPlatformSettings = lazy(() =>
+  import("@/pages/AdminPlatformSettings").then((m) => ({ default: m.AdminPlatformSettings }))
+);
+const LegalTermsPage = lazy(() =>
+  import("@/pages/LegalTermsPage").then((m) => ({ default: m.LegalTermsPage }))
+);
+const SecurityPrivacyPage = lazy(() =>
+  import("@/pages/SecurityPrivacyPage").then((m) => ({ default: m.SecurityPrivacyPage }))
+);
+const CguPage = lazy(() => import("@/pages/CguPage").then((m) => ({ default: m.CguPage })));
+const TrustCharterPage = lazy(() =>
+  import("@/pages/TrustCharterPage").then((m) => ({ default: m.TrustCharterPage }))
+);
+const SubscriptionContractPage = lazy(() =>
+  import("@/pages/SubscriptionContractPage").then((m) => ({ default: m.SubscriptionContractPage }))
+);
+const TransportLogisticsHub = lazy(() =>
+  import("@/pages/modules/TransportLogisticsHub").then((m) => ({ default: m.TransportLogisticsHub }))
+);
+const TransportLogisticsAdmin = lazy(() =>
+  import("@/pages/modules/TransportLogisticsAdmin").then((m) => ({ default: m.TransportLogisticsAdmin }))
+);
+const TlDepartmentPage = lazy(() =>
+  import("@/pages/tl/TlDepartmentPage").then((m) => ({ default: m.TlDepartmentPage }))
+);
+const TlDeptLandingRedirect = lazy(() =>
+  import("@/pages/tl/TlDeptLandingRedirect").then((m) => ({ default: m.TlDeptLandingRedirect }))
+);
+const SupportPage = lazy(() => import("@/pages/SupportPage").then((m) => ({ default: m.SupportPage })));
 const PublicWriterModule = lazy(() =>
   import("@/pages/modules/PublicWriterModule").then((m) => ({ default: m.PublicWriterModule }))
 );
@@ -93,10 +135,7 @@ function AppRoutes() {
           </Protected>
         }
       />
-      <Route
-        path="/education/exams"
-        element={<Navigate to="/app/edu?tab=exams" replace />}
-      />
+      <Route path="/education/exams" element={<Navigate to="/app/edu?tab=exams" replace />} />
       <Route
         path="/admin-secret-portal"
         element={
@@ -123,10 +162,7 @@ function AppRoutes() {
         <Route path="acc" element={<AccModule />} />
         <Route path="public" element={<PublicWriterModule />} />
         <Route path="edu" element={<EduModule />} />
-        <Route
-          path="education/exams"
-          element={<Navigate to="/app/edu?tab=exams" replace />}
-        />
+        <Route path="education/exams" element={<Navigate to="/app/edu?tab=exams" replace />} />
         <Route path="reminders" element={<Reminders />} />
         <Route path="devices" element={<DevicesSettings />} />
         <Route path="visa" element={<VisaRadarModule />} />
@@ -151,6 +187,21 @@ function AppRoutes() {
   );
 }
 
+function SuspensedAppRoutes() {
+  const { t } = useI18n();
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[#060d18] text-slate-400">
+          {t("common.loading")}
+        </div>
+      }
+    >
+      <AppRoutes />
+    </Suspense>
+  );
+}
+
 const routerBasename =
   import.meta.env.BASE_URL.replace(/\/$/, "") === "" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -160,7 +211,7 @@ export default function App() {
       <I18nProvider>
         <ThemeProvider>
           <AuthProvider>
-            <AppRoutes />
+            <SuspensedAppRoutes />
             <Toaster richColors position="top-center" theme="dark" />
           </AuthProvider>
         </ThemeProvider>

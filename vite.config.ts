@@ -51,7 +51,28 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes("node_modules/recharts")) return "recharts";
+            if (!id.includes("node_modules")) return undefined;
+            if (id.includes("node_modules/recharts")) return "vendor-recharts";
+            if (id.includes("node_modules/exceljs")) return "vendor-exceljs";
+            if (id.includes("node_modules/xlsx")) return "vendor-xlsx";
+            if (id.includes("node_modules/docx")) return "vendor-docx";
+            if (id.includes("node_modules/jspdf")) return "vendor-jspdf";
+            if (id.includes("node_modules/html2canvas")) return "vendor-html2canvas";
+            if (id.includes("node_modules/@zxing")) return "vendor-zxing";
+            if (id.includes("node_modules/tesseract.js")) return "vendor-tesseract";
+            if (id.includes("node_modules/@ffmpeg")) return "vendor-ffmpeg";
+            if (id.includes("node_modules/mammoth")) return "vendor-mammoth";
+            if (id.includes("node_modules/@supabase")) return "vendor-supabase";
+            if (id.includes("node_modules/lucide-react")) return "vendor-lucide";
+            if (id.includes("node_modules/@radix-ui")) return "vendor-radix";
+            if (id.includes("node_modules/sonner")) return "vendor-sonner";
+            if (
+              id.includes("/node_modules/react/") ||
+              id.includes("/node_modules/react-dom/") ||
+              id.includes("/node_modules/react-router/")
+            ) {
+              return "vendor-react";
+            }
             return undefined;
           },
         },
