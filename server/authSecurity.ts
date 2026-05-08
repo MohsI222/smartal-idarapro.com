@@ -1,6 +1,81 @@
+import type { CorsOptions } from "cors";
 import type { Express, RequestHandler } from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
+
+/** أصول معرّفة صراحة — مفيدة إذا لم تصل متغيرات VITE_* إلى دالة Vercel كما متوقع */
+const CANONICAL_APP_ORIGINS = new Set([
+  "https://smartal-idarapro.com",
+  "https://www.smartal-idarapro.com",
+]);
+
+function collectEnvOriginBases(): string[] {
+  const out: string[] = [];
+  const push = (raw?: string) => {
+    const t = raw?.trim().replace(/\/$/, "");
+    if (!t) return;
+    try {
+      const withProto = t.startsWith("http") ? t : `https://${t}`;
+      out.push(new URL(withProto).origin);
+    } catch {
+      /* ignore bad env */
+    }
+  };
+  push(process.env.PUBLIC_APP_URL);
+  push(process.env.VITE_PUBLIC_APP_URL);
+  push(process.env.NEXT_PUBLIC_APP_URL);
+  push(process.env.NEXT_PUBLIC_SITE_URL);
+  for (const part of (process.env.AUTH_ALLOWED_ORIGINS ?? "").split(",")) push(part);
+  const vu = process.env.VERCEL_URL?.trim();
+  if (vu) push(`https://${vu}`);
+  const vbu = process.env.VERCEL_BRANCH_URL?.trim();
+  if (vbu) push(`https://${vbu}`);
+  return out;
+}
+
+/**
+ * Origins allowed for CORS (credentials) and for strict auth Origin/Referer checks.
+ * Covers localhost, الإنتاج، نطاقات Vercel، والقيم المذكورة في البيئة.
+ */
+export function isTrustedBrowserOrigin(origin: string): boolean {
+  const norm = origin.trim().replace(/\/$/, "");
+  let url: URL;
+  try {
+    url = new URL(norm);
+  } catch {
+    return false;
+  }
+  if (CANONICAL_APP_ORIGINS.has(norm)) return true;
+  const host = url.hostname.toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1" || host === "[::1]") return true;
+  if (host.endsWith(".vercel.app")) return true;
+  if (host.endsWith(".vercel.live")) return true;
+  if (host === "smartal-idarapro.com" || host.endsWith(".smartal-idarapro.com")) return true;
+
+  for (const base of collectEnvOriginBases()) {
+    const b = base.replace(/\/$/, "");
+    if (norm === b || norm.startsWith(`${b}/`)) return true;
+  }
+  return false;
+}
+
+/** CORS مع المصادقة (cookies / Authorization) — يعكس Origin فقط إذا كان موثوقاً */
+export function createProductionCorsOptions(): CorsOptions {
+  return {
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      if (isTrustedBrowserOrigin(origin)) {
+        callback(null, origin);
+        return;
+      }
+      callback(null, false);
+    },
+    credentials: true,
+  };
+}
 
 /** تقليل هجمات القوة الغاشمة على مسارات المصادقة */
 export const authLoginLimiter = rateLimit({
@@ -40,20 +115,6 @@ export const authAdminBootstrapLimiter = rateLimit({
  * أو غيابهما (تطبيقات أصلية / أدوات).
  */
 export function createAuthOriginGuard(): RequestHandler {
-  const explicit = (
-    process.env.PUBLIC_APP_URL ??
-    process.env.VITE_PUBLIC_APP_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    ""
-  )
-    .trim()
-    .replace(/\/$/, "");
-  const extra = (process.env.AUTH_ALLOWED_ORIGINS ?? "")
-    .split(",")
-    .map((s) => s.trim().replace(/\/$/, ""))
-    .filter(Boolean);
-
   return (req, res, next) => {
     if (process.env.AUTH_STRICT_ORIGIN !== "true") {
       next();
@@ -65,29 +126,17 @@ export function createAuthOriginGuard(): RequestHandler {
     }
     const origin = String(req.headers.origin ?? "").trim().replace(/\/$/, "");
     const referer = String(req.headers.referer ?? "").trim();
-    const host = String(req.headers.host ?? "").trim();
 
     if (!origin && !referer) {
       next();
       return;
     }
 
-    const candidates: string[] = [];
-    if (explicit) candidates.push(explicit);
-    candidates.push(...extra);
-    if (host) {
-      candidates.push(`http://${host}`, `https://${host}`);
-    }
-
-    const okOrigin =
-      !origin ||
-      candidates.some((c) => c && (origin === c || origin.startsWith(c + "/")));
+    const okOrigin = !origin || isTrustedBrowserOrigin(origin);
     let okReferer = !referer;
-    if (referer && !okReferer) {
+    if (referer) {
       try {
-        const u = new URL(referer);
-        const refBase = `${u.protocol}//${u.host}`.replace(/\/$/, "");
-        okReferer = candidates.some((c) => c && (refBase === c || refBase.startsWith(c + "/")));
+        okReferer = isTrustedBrowserOrigin(new URL(referer).origin);
       } catch {
         okReferer = false;
       }

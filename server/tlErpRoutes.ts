@@ -52,39 +52,43 @@ export function computeVehicleAlert(expectedIso: string, entryIso: string | null
   return { alert_level: "red", delay_minutes: delayMin };
 }
 
-function maybeCreateIncident(
+async function maybeCreateIncident(
   userId: string,
   refId: string,
   severity: "orange" | "red",
   summary: string,
   detail: string
-) {
-  const row = db
+): Promise<void> {
+  const row = (await db
     .prepare(
       `SELECT id FROM tl_incidents WHERE user_id = ? AND ref_kind = 'vehicle' AND ref_id = ? AND severity = ?`
     )
-    .get(userId, refId, severity) as { id: string } | undefined;
+    .get(userId, refId, severity)) as { id: string } | undefined;
   if (row) return;
-  db.prepare(
+  await db.prepare(
     `INSERT INTO tl_incidents (id, user_id, ref_kind, ref_id, severity, summary, detail) VALUES (?, ?, 'vehicle', ?, ?, ?, ?)`
   ).run(randomUUID(), userId, refId, severity, summary, detail);
 }
 
-function recalcVehicleRow(userId: string, logId: string, data: {
-  expected_entry_at: string;
-  entry_at: string | null;
-  marked_success: number;
-}) {
+async function recalcVehicleRow(
+  userId: string,
+  logId: string,
+  data: {
+    expected_entry_at: string;
+    entry_at: string | null;
+    marked_success: number;
+  }
+): Promise<void> {
   const { alert_level, delay_minutes } = computeVehicleAlert(data.expected_entry_at, data.entry_at);
   /** بعد «نجاح الدخول» تُعرض الحالة خضراء في الجدول، مع الإبقاء على دقائق التأخير للتقرير */
   const level = data.marked_success ? "green" : alert_level;
-  db.prepare(
+  await db.prepare(
     `UPDATE tl_vehicle_logs SET alert_level = ?, delay_minutes = ? WHERE id = ? AND user_id = ?`
   ).run(level, delay_minutes, logId, userId);
 
   if (data.entry_at && !data.marked_success) {
     if (alert_level === "orange") {
-      maybeCreateIncident(
+      await maybeCreateIncident(
         userId,
         logId,
         "orange",
@@ -92,7 +96,7 @@ function recalcVehicleRow(userId: string, logId: string, data: {
         `التأخير: ${delay_minutes} دقيقة`
       );
     } else if (alert_level === "red") {
-      maybeCreateIncident(
+      await maybeCreateIncident(
         userId,
         logId,
         "red",
@@ -123,12 +127,12 @@ function messageTargetsFor(from: RowWorker, all: RowWorker[]): string[] {
 export function registerTlErpRoutes(
   app: express.Application,
   authMiddleware: express.RequestHandler,
-  moduleAllowed: (userId: string, mod: string) => boolean,
+  moduleAllowed: (userId: string, mod: string) => Promise<boolean>,
   files?: TlFilesConfig
 ) {
-  const gate: express.RequestHandler = (req, res, next) => {
+  const gate: express.RequestHandler = async (req, res, next) => {
     const uid = (req as express.Request & { userId: string }).userId;
-    if (!moduleAllowed(uid, "transport_logistics")) {
+    if (!(await moduleAllowed(uid, "transport_logistics"))) {
       res.status(403).json({ error: "وحدة النقل واللوجستيك غير مفعّلة في اشتراكك" });
       return;
     }
@@ -137,14 +141,14 @@ export function registerTlErpRoutes(
 
   const authGate = [authMiddleware, gate] as express.RequestHandler[];
 
-  app.get("/api/tl/resolve-magic", ...authGate, (req, res) => {
+  app.get("/api/tl/resolve-magic", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const token = String((req.query.token as string) ?? "").trim();
     if (!token) {
       res.status(400).json({ error: "token_required" });
       return;
     }
-    const w = db
+    const w = await db
       .prepare(`SELECT * FROM tl_workers WHERE user_id = ? AND magic_token = ?`)
       .get(userId, token) as RowWorker | undefined;
     if (!w) {
@@ -154,16 +158,16 @@ export function registerTlErpRoutes(
     res.json({ worker: w });
   });
 
-  app.get("/api/tl/workers", ...authGate, (req, res) => {
+  app.get("/api/tl/workers", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const dept = (req.query.department as string) || "";
     const q = dept
-      ? db.prepare(`SELECT * FROM tl_workers WHERE user_id = ? AND department = ? ORDER BY full_name`).all(userId, dept)
-      : db.prepare(`SELECT * FROM tl_workers WHERE user_id = ? ORDER BY department, full_name`).all(userId);
+      ? await db.prepare(`SELECT * FROM tl_workers WHERE user_id = ? AND department = ? ORDER BY full_name`).all(userId, dept)
+      : await db.prepare(`SELECT * FROM tl_workers WHERE user_id = ? ORDER BY department, full_name`).all(userId);
     res.json({ workers: q });
   });
 
-  app.post("/api/tl/workers", ...authGate, (req, res) => {
+  app.post("/api/tl/workers", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const b = req.body as Partial<RowWorker>;
     if (!b.full_name?.trim() || !b.employee_id?.trim() || !b.department?.trim()) {
@@ -172,7 +176,7 @@ export function registerTlErpRoutes(
     }
     const id = randomUUID();
     const magic = randomBytes(18).toString("hex");
-    db.prepare(
+    await db.prepare(
       `INSERT INTO tl_workers (id, user_id, full_name, employee_id, center, role_title, department, hierarchy_role, reports_to_worker_id, magic_token)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
@@ -187,20 +191,20 @@ export function registerTlErpRoutes(
       b.reports_to_worker_id?.trim() || null,
       magic
     );
-    const row = db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
+    const row = await db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
     res.json({ worker: row });
   });
 
-  app.patch("/api/tl/workers/:id", ...authGate, (req, res) => {
+  app.patch("/api/tl/workers/:id", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const id = paramString(req.params.id);
     const b = req.body as Partial<RowWorker>;
-    const cur = db.prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`).get(id, userId) as RowWorker | undefined;
+    const cur = await db.prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`).get(id, userId) as RowWorker | undefined;
     if (!cur) {
       res.status(404).json({ error: "غير موجود" });
       return;
     }
-    db.prepare(
+    await db.prepare(
       `UPDATE tl_workers SET full_name = ?, employee_id = ?, center = ?, role_title = ?, department = ?, hierarchy_role = ?, reports_to_worker_id = ?
        WHERE id = ? AND user_id = ?`
     ).run(
@@ -214,45 +218,45 @@ export function registerTlErpRoutes(
       id,
       userId
     );
-    const row = db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
+    const row = await db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
     res.json({ worker: row });
   });
 
-  app.post("/api/tl/workers/:id/regenerate-magic", ...authGate, (req, res) => {
+  app.post("/api/tl/workers/:id/regenerate-magic", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const id = paramString(req.params.id);
     const magic = randomBytes(18).toString("hex");
-    const r = db.prepare(`UPDATE tl_workers SET magic_token = ? WHERE id = ? AND user_id = ?`).run(magic, id, userId);
+    const r = await db.prepare(`UPDATE tl_workers SET magic_token = ? WHERE id = ? AND user_id = ?`).run(magic, id, userId);
     if (r.changes === 0) {
       res.status(404).json({ error: "غير موجود" });
       return;
     }
-    const row = db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
+    const row = await db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
     res.json({ worker: row, magic_token: magic });
   });
 
-  app.delete("/api/tl/workers/:id", ...authGate, (req, res) => {
+  app.delete("/api/tl/workers/:id", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    db.prepare(`DELETE FROM tl_workers WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
+    await db.prepare(`DELETE FROM tl_workers WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
     res.json({ ok: true });
   });
 
-  app.get("/api/tl/vehicles", ...authGate, (req, res) => {
+  app.get("/api/tl/vehicles", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const department = String(req.query.department ?? "");
     if (!isVehicleDept(department)) {
       res.status(400).json({ error: "department_invalid" });
       return;
     }
-    const rows = db
+    const rows = await db
       .prepare(
-        `SELECT * FROM tl_vehicle_logs WHERE user_id = ? AND department = ? ORDER BY datetime(expected_entry_at) DESC`
+        `SELECT * FROM tl_vehicle_logs WHERE user_id = ? AND department = ? ORDER BY expected_entry_at DESC`
       )
       .all(userId, department);
     res.json({ logs: rows });
   });
 
-  app.post("/api/tl/vehicles", ...authGate, (req, res) => {
+  app.post("/api/tl/vehicles", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const b = req.body as Record<string, unknown>;
     const department = String(b.department ?? "");
@@ -272,7 +276,7 @@ export function registerTlErpRoutes(
         : new Date().toISOString();
     const entry_at = b.entry_at ? String(b.entry_at) : null;
     const marked_success = b.marked_success ? 1 : 0;
-    db.prepare(
+    await db.prepare(
       `INSERT INTO tl_vehicle_logs (
         id, user_id, department, vehicle_id, driver_name, driver_phone, driver_id_doc, vehicle_kind,
         expected_entry_at, entry_at, exit_at, passenger_count, seat_count, cargo_count, box_count,
@@ -297,19 +301,19 @@ export function registerTlErpRoutes(
       marked_success,
       b.notes != null ? String(b.notes) : null
     );
-    recalcVehicleRow(userId, id, {
+    await recalcVehicleRow(userId, id, {
       expected_entry_at,
       entry_at,
       marked_success,
     });
-    const row = db.prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ?`).get(id);
+    const row = await db.prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ?`).get(id);
     res.json({ log: row });
   });
 
-  app.patch("/api/tl/vehicles/:id", ...authGate, (req, res) => {
+  app.patch("/api/tl/vehicles/:id", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const id = paramString(req.params.id);
-    const cur = db
+    const cur = await db
       .prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ? AND user_id = ?`)
       .get(id, userId) as Record<string, unknown> | undefined;
     if (!cur) {
@@ -323,7 +327,7 @@ export function registerTlErpRoutes(
           ? "bus"
           : "truck"
         : String(cur.vehicle_kind);
-    db.prepare(
+    await db.prepare(
       `UPDATE tl_vehicle_logs SET
         vehicle_id = ?, driver_name = ?, driver_phone = ?, driver_id_doc = ?, vehicle_kind = ?,
         expected_entry_at = ?, entry_at = ?, exit_at = ?, passenger_count = ?, seat_count = ?,
@@ -347,40 +351,40 @@ export function registerTlErpRoutes(
       id,
       userId
     );
-    const updated = db.prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ?`).get(id) as {
+    const updated = await db.prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ?`).get(id) as {
       expected_entry_at: string;
       entry_at: string | null;
       marked_success: number;
     };
-    recalcVehicleRow(userId, id, updated);
-    const row = db.prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ?`).get(id);
+    await recalcVehicleRow(userId, id, updated);
+    const row = await db.prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ?`).get(id);
     res.json({ log: row });
   });
 
-  app.delete("/api/tl/vehicles/:id", ...authGate, (req, res) => {
+  app.delete("/api/tl/vehicles/:id", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    db.prepare(`DELETE FROM tl_vehicle_logs WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
+    await db.prepare(`DELETE FROM tl_vehicle_logs WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
     res.json({ ok: true });
   });
 
-  app.get("/api/tl/ops", ...authGate, (req, res) => {
+  app.get("/api/tl/ops", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const department = String(req.query.department ?? "");
     if (!isOpsDept(department)) {
       res.status(400).json({ error: "department_invalid" });
       return;
     }
-    const rows = db
+    const rows = await db
       .prepare(
         `SELECT o.*, w.full_name as worker_full_name FROM tl_ops_logs o
          JOIN tl_workers w ON w.id = o.worker_id
-         WHERE o.user_id = ? AND o.department = ? ORDER BY datetime(o.log_time) DESC`
+         WHERE o.user_id = ? AND o.department = ? ORDER BY o.log_time DESC`
       )
       .all(userId, department);
     res.json({ logs: rows });
   });
 
-  app.post("/api/tl/ops", ...authGate, (req, res) => {
+  app.post("/api/tl/ops", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const b = req.body as Record<string, unknown>;
     const department = String(b.department ?? "");
@@ -389,13 +393,13 @@ export function registerTlErpRoutes(
       return;
     }
     const worker_id = String(b.worker_id ?? "");
-    const wk = db.prepare(`SELECT id FROM tl_workers WHERE id = ? AND user_id = ? AND department = ?`).get(worker_id, userId, department);
+    const wk = await db.prepare(`SELECT id FROM tl_workers WHERE id = ? AND user_id = ? AND department = ?`).get(worker_id, userId, department);
     if (!wk) {
       res.status(400).json({ error: "الموظف غير موجود في هذا القسم" });
       return;
     }
     const id = randomUUID();
-    db.prepare(
+    await db.prepare(
       `INSERT INTO tl_ops_logs (id, user_id, department, worker_id, log_time, quantity, delay_reason, target_pct)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
@@ -408,22 +412,22 @@ export function registerTlErpRoutes(
       String(b.delay_reason ?? ""),
       Math.min(100, Math.max(0, Number(b.target_pct ?? 100)))
     );
-    const row = db
+    const row = await db
       .prepare(`SELECT o.*, w.full_name as worker_full_name FROM tl_ops_logs o JOIN tl_workers w ON w.id = o.worker_id WHERE o.id = ?`)
       .get(id);
     res.json({ log: row });
   });
 
-  app.patch("/api/tl/ops/:id", ...authGate, (req, res) => {
+  app.patch("/api/tl/ops/:id", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const id = paramString(req.params.id);
-    const cur = db.prepare(`SELECT * FROM tl_ops_logs WHERE id = ? AND user_id = ?`).get(id, userId) as Record<string, unknown> | undefined;
+    const cur = await db.prepare(`SELECT * FROM tl_ops_logs WHERE id = ? AND user_id = ?`).get(id, userId) as Record<string, unknown> | undefined;
     if (!cur) {
       res.status(404).json({ error: "غير موجود" });
       return;
     }
     const b = req.body as Record<string, unknown>;
-    db.prepare(
+    await db.prepare(
       `UPDATE tl_ops_logs SET log_time = ?, quantity = ?, delay_reason = ?, target_pct = ? WHERE id = ? AND user_id = ?`
     ).run(
       b.log_time !== undefined ? String(b.log_time) : String(cur.log_time),
@@ -433,109 +437,109 @@ export function registerTlErpRoutes(
       id,
       userId
     );
-    const row = db
+    const row = await db
       .prepare(`SELECT o.*, w.full_name as worker_full_name FROM tl_ops_logs o JOIN tl_workers w ON w.id = o.worker_id WHERE o.id = ?`)
       .get(id);
     res.json({ log: row });
   });
 
-  app.delete("/api/tl/ops/:id", ...authGate, (req, res) => {
+  app.delete("/api/tl/ops/:id", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    db.prepare(`DELETE FROM tl_ops_logs WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
+    await db.prepare(`DELETE FROM tl_ops_logs WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
     res.json({ ok: true });
   });
 
-  app.get("/api/tl/incidents", ...authGate, (_req, res) => {
+  app.get("/api/tl/incidents", ...authGate, async (_req, res) => {
     const userId = (_req as express.Request & { userId: string }).userId;
-    const rows = db
-      .prepare(`SELECT * FROM tl_incidents WHERE user_id = ? ORDER BY datetime(created_at) DESC`)
+    const rows = await db
+      .prepare(`SELECT * FROM tl_incidents WHERE user_id = ? ORDER BY created_at DESC`)
       .all(userId);
     res.json({ incidents: rows });
   });
 
-  app.delete("/api/tl/incidents/:id", ...authGate, (req, res) => {
+  app.delete("/api/tl/incidents/:id", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    db.prepare(`DELETE FROM tl_incidents WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
+    await db.prepare(`DELETE FROM tl_incidents WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
     res.json({ ok: true });
   });
 
-  app.get("/api/tl/messages", ...authGate, (req, res) => {
+  app.get("/api/tl/messages", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const workerId = String(req.query.worker_id ?? "");
     if (!workerId) {
       res.status(400).json({ error: "worker_id_required" });
       return;
     }
-    const wk = db.prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`).get(workerId, userId) as RowWorker | undefined;
+    const wk = await db.prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`).get(workerId, userId) as RowWorker | undefined;
     if (!wk) {
       res.status(404).json({ error: "worker_not_found" });
       return;
     }
-    const all = db.prepare(`SELECT * FROM tl_workers WHERE user_id = ?`).all(userId) as RowWorker[];
+    const all = await db.prepare(`SELECT * FROM tl_workers WHERE user_id = ?`).all(userId) as RowWorker[];
     const allowed = new Set(messageTargetsFor(wk, all));
-    const inbox = db
+    const inbox = await db
       .prepare(
         `SELECT m.*, fw.full_name as from_name, tw.full_name as to_name FROM tl_messages m
          JOIN tl_workers fw ON fw.id = m.from_worker_id
          JOIN tl_workers tw ON tw.id = m.to_worker_id
          WHERE m.user_id = ? AND (m.to_worker_id = ? OR m.from_worker_id = ?)
-         ORDER BY datetime(m.created_at) DESC`
+         ORDER BY m.created_at DESC`
       )
       .all(userId, workerId, workerId);
     res.json({ messages: inbox, allowedRecipientIds: [...allowed] });
   });
 
-  app.get("/api/tl/messages/eligible/:fromWorkerId", ...authGate, (req, res) => {
+  app.get("/api/tl/messages/eligible/:fromWorkerId", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const fromWorkerId = paramString(req.params.fromWorkerId);
-    const wk = db.prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`).get(fromWorkerId, userId) as RowWorker | undefined;
+    const wk = await db.prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`).get(fromWorkerId, userId) as RowWorker | undefined;
     if (!wk) {
       res.status(404).json({ error: "worker_not_found" });
       return;
     }
-    const all = db.prepare(`SELECT * FROM tl_workers WHERE user_id = ?`).all(userId) as RowWorker[];
+    const all = await db.prepare(`SELECT * FROM tl_workers WHERE user_id = ?`).all(userId) as RowWorker[];
     const ids = messageTargetsFor(wk, all);
     if (ids.length === 0) {
       res.json({ recipients: [] });
       return;
     }
     const ph = ids.map(() => "?").join(",");
-    const people = db
+    const people = await db
       .prepare(`SELECT id, full_name, hierarchy_role, department FROM tl_workers WHERE user_id = ? AND id IN (${ph})`)
       .all(userId, ...ids);
     res.json({ recipients: people });
   });
 
-  app.post("/api/tl/messages", ...authGate, (req, res) => {
+  app.post("/api/tl/messages", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const b = req.body as { from_worker_id?: string; to_worker_id?: string; body?: string };
     if (!b.from_worker_id || !b.to_worker_id || !b.body?.trim()) {
       res.status(400).json({ error: "بيانات ناقصة" });
       return;
     }
-    const from = db
+    const from = await db
       .prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`)
       .get(b.from_worker_id, userId) as RowWorker | undefined;
     if (!from) {
       res.status(404).json({ error: "from_not_found" });
       return;
     }
-    const to = db.prepare(`SELECT id FROM tl_workers WHERE id = ? AND user_id = ?`).get(b.to_worker_id, userId);
+    const to = await db.prepare(`SELECT id FROM tl_workers WHERE id = ? AND user_id = ?`).get(b.to_worker_id, userId);
     if (!to) {
       res.status(404).json({ error: "to_not_found" });
       return;
     }
-    const all = db.prepare(`SELECT * FROM tl_workers WHERE user_id = ?`).all(userId) as RowWorker[];
+    const all = await db.prepare(`SELECT * FROM tl_workers WHERE user_id = ?`).all(userId) as RowWorker[];
     const allowed = messageTargetsFor(from, all);
     if (!allowed.includes(b.to_worker_id)) {
       res.status(403).json({ error: "لا يمكن الإرسال خارج سلسلة الإدارية المسموحة" });
       return;
     }
     const id = randomUUID();
-    db.prepare(
+    await db.prepare(
       `INSERT INTO tl_messages (id, user_id, from_worker_id, to_worker_id, body) VALUES (?, ?, ?, ?, ?)`
     ).run(id, userId, b.from_worker_id, b.to_worker_id, b.body.trim());
-    const row = db
+    const row = await db
       .prepare(
         `SELECT m.*, fw.full_name as from_name, tw.full_name as to_name FROM tl_messages m
          JOIN tl_workers fw ON fw.id = m.from_worker_id
@@ -562,7 +566,7 @@ export function registerTlErpRoutes(
       "/api/tl/messages/with-attachment",
       ...authGate,
       runMulter,
-      (req, res) => {
+      async (req, res) => {
         const userId = (req as express.Request & { userId: string }).userId;
         const file = (req as express.Request & { file?: Express.Multer.File }).file;
         const body = (req.body as { from_worker_id?: string; to_worker_id?: string; body?: string }) ?? {};
@@ -582,7 +586,7 @@ export function registerTlErpRoutes(
           res.status(400).json({ error: "ملف ناقص" });
           return;
         }
-        const from = db
+        const from = await db
           .prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`)
           .get(body.from_worker_id, userId) as RowWorker | undefined;
         if (!from) {
@@ -594,7 +598,7 @@ export function registerTlErpRoutes(
           res.status(404).json({ error: "from_not_found" });
           return;
         }
-        const to = db.prepare(`SELECT id FROM tl_workers WHERE id = ? AND user_id = ?`).get(body.to_worker_id, userId);
+        const to = await db.prepare(`SELECT id FROM tl_workers WHERE id = ? AND user_id = ?`).get(body.to_worker_id, userId);
         if (!to) {
           try {
             fs.unlinkSync(file.path);
@@ -604,7 +608,7 @@ export function registerTlErpRoutes(
           res.status(404).json({ error: "to_not_found" });
           return;
         }
-        const all = db.prepare(`SELECT * FROM tl_workers WHERE user_id = ?`).all(userId) as RowWorker[];
+        const all = await db.prepare(`SELECT * FROM tl_workers WHERE user_id = ?`).all(userId) as RowWorker[];
         const allowed = messageTargetsFor(from, all);
         if (!allowed.includes(body.to_worker_id)) {
           try {
@@ -619,7 +623,7 @@ export function registerTlErpRoutes(
         const id = randomUUID();
         const original = file.originalname || "attachment";
         const mime = file.mimetype || "application/octet-stream";
-        db.prepare(
+        await db.prepare(
           `INSERT INTO tl_messages (id, user_id, from_worker_id, to_worker_id, body, attachment_original_name, attachment_stored_path, attachment_mime)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
@@ -632,7 +636,7 @@ export function registerTlErpRoutes(
           safeDiskName,
           mime
         );
-        const row = db
+        const row = await db
           .prepare(
             `SELECT m.*, fw.full_name as from_name, tw.full_name as to_name FROM tl_messages m
              JOIN tl_workers fw ON fw.id = m.from_worker_id
@@ -643,10 +647,10 @@ export function registerTlErpRoutes(
       }
     );
 
-    app.get("/api/tl/messages/:id/attachment", authMiddleware, gate, (req, res) => {
+    app.get("/api/tl/messages/:id/attachment", authMiddleware, gate, async (req, res) => {
       const userId = (req as express.Request & { userId: string }).userId;
       const id = paramString(req.params.id);
-      const row = db
+      const row = await db
         .prepare(`SELECT * FROM tl_messages WHERE id = ? AND user_id = ?`)
         .get(id, userId) as {
         attachment_stored_path: string | null;

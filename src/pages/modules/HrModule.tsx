@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, startTransition } from "react";
 import {
   Bar,
   BarChart,
@@ -66,8 +66,10 @@ export function HrModule() {
       api<{ employees: Employee[] }>("/hr/employees", { token }),
       api<{ metrics: typeof metrics }>("/hr/metrics", { token }),
     ]);
-    setEmployees(e.employees);
-    setMetrics(m.metrics as MetricRow[]);
+    startTransition(() => {
+      setEmployees(e.employees);
+      setMetrics(m.metrics as MetricRow[]);
+    });
   }, [token, allowed]);
 
   useEffect(() => {

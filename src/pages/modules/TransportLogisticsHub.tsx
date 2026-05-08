@@ -51,7 +51,8 @@ export function TransportLogisticsHub() {
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {TL_DEPT_SLUGS.map((slug) => {
-          const pwaUrl = `${origin}/dept/${slug}`;
+          const pwaQs = slug === "transport" || slug === "logistics" ? "?pwa=1" : "";
+          const pwaUrl = `${origin}/dept/${slug}${pwaQs}`;
           return (
             <div
               key={slug}
@@ -64,7 +65,7 @@ export function TransportLogisticsHub() {
                   <p className="text-xs text-slate-500 line-clamp-2">{t("tl.standaloneHint")}</p>
                   <div className="flex flex-col gap-2 pt-1">
                     <Button asChild size="sm" className="w-full bg-[#0052CC] hover:bg-[#004099]">
-                      <Link to={`/dept/${slug}`}>{t("tl.openStandalone")}</Link>
+                      <Link to={`/dept/${slug}${pwaQs}`}>{t("tl.openStandalone")}</Link>
                     </Button>
                     <Button
                       asChild

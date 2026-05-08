@@ -19,7 +19,8 @@ export function TlDeptLandingRedirect({ slug }: { slug: TlDeptSlug }) {
     );
   }
 
-  const target = `/dept/${slug}`;
+  const pwaQs = slug === "transport" || slug === "logistics" ? "?pwa=1" : "";
+  const target = `/dept/${slug}${pwaQs}`;
   if (!token) {
     return <Navigate to={`/login?next=${encodeURIComponent(target)}`} replace />;
   }

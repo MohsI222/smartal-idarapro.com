@@ -11,12 +11,15 @@ interface ImportMetaEnv {
   readonly VITE_PUBLIC_APP_URL?: string;
   /** Optional: URL path the app is served under (e.g. `/app/`). Must start with `/`. */
   readonly VITE_BASE_PATH?: string;
+  /** اضبطها لـ `1` لإجبار استخدام `VITE_API_URL` حتى لو كان دوميناً مختلفاً عن الصفحة (معاينات خاصة). */
+  readonly VITE_API_CROSS_ORIGIN?: string;
   /**
-   * Optional API origin for production when the SPA and API share one domain via reverse proxy — leave unset to use `/api`.
-   * For a different host, set the full prefix without trailing slash, e.g. `https://api.example.com/api`.
+   * أصل الـ API: نفس الدومين أو رابط كامل. بدون `/api` يُضاف تلقائياً (انظر `getApiUrlPrefix`).
+   * على معاينات Vercel يُفضّل تركها فارغة، أو لن يُستخدم الرابط إذا غيّر عن منشأ الصفحة (إلا عند VITE_API_CROSS_ORIGIN).
    */
   readonly VITE_API_URL?: string;
-  /** Supabase project URL (client-side; use anon key only). */
+  /** في `npm run dev`: `1` يفرض استخدام `VITE_API_URL` بدل الـ proxy المحلي */
+  readonly VITE_API_FORCE_REMOTE?: string;
   readonly VITE_SUPABASE_URL?: string;
   /** Supabase anonymous/public key for browser use. */
   readonly VITE_SUPABASE_ANON_KEY?: string;

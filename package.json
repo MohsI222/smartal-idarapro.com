@@ -9,11 +9,12 @@
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "vite build",
-    "start": "NODE_OPTIONS=--experimental-sqlite tsx server/index.ts",
+    "start": "tsx server/index.ts",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "db:reset": "tsx server/reset-db.ts"
+    "db:reset": "tsx server/reset-db.ts",
+    "db:schema": "tsx server/db-init.ts"
   },
   "engines": {
     "node": "22.x"
@@ -41,6 +42,7 @@
     "dotenv": "^16.6.1",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
+    "express-async-errors": "^3.1.1",
     "express-rate-limit": "^7.5.0",
     "file-saver": "^2.0.5",
     "helmet": "^8.1.0",
@@ -51,6 +53,7 @@
     "mammoth": "^1.12.0",
     "multer": "^1.4.5-lts.1",
     "pdf-parse": "^1.1.4",
+    "pg": "^8.20.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.1",
@@ -69,6 +72,7 @@
     "@types/multer": "^1.4.12",
     "@types/node": "^22.10.5",
     "@types/pdf-parse": "^1.1.4",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@types/uuid": "^10.0.0",

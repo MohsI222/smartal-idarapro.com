@@ -3,8 +3,10 @@
  * تشغيل: npm run db:reset
  */
 import "dotenv/config";
+import { initDatabase } from "./db.js";
 import { ensureSuperAdmin, purgeAllUserData } from "./seed.js";
 
-purgeAllUserData();
-ensureSuperAdmin();
+await initDatabase();
+await purgeAllUserData();
+await ensureSuperAdmin();
 console.log("[idara] اكتملت إعادة ضبط قاعدة البيانات.");

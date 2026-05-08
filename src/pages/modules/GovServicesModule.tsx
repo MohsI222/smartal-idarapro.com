@@ -1,5 +1,5 @@
 /**
- * Official / utility links are plain <a href="..."> only — no prefetch, no fetch, no embedding.
+ * روابط رسمية — فتح في متصفح خارجي عبر `openExternalUrl` (أنسب لـ PWA).
  */
 import { Link } from "react-router-dom";
 import {
@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { openExternalUrl } from "@/lib/openExternalUrl";
 
 type GovItem = {
   id: string;
@@ -51,14 +52,14 @@ const ESSENTIAL_ITEMS: GovItem[] = [
     labelKey: "gov.casier",
     icon: Fingerprint,
     accent: "from-slate-600/40 to-slate-800/30",
-    href: "https://www.justice.gov.ma/",
+    href: "https://www.casierjudiciaire.ma/fr",
   },
   {
     id: "ae",
     labelKey: "gov.autoEntrepreneur",
     icon: Briefcase,
     accent: "from-emerald-500/30 to-emerald-800/20",
-    href: "https://www.portail-autoentrepreneur.ma/accueil.aspx",
+    href: "https://www.portail-autoentrepreneur.ma/",
   },
   {
     id: "dgi",
@@ -90,7 +91,7 @@ const GATEWAY_UTILITIES: GatewayTile[] = [
     id: "onee",
     labelKey: "gov.util.onee",
     stepsKey: "gov.util.oneeSteps",
-    href: "https://www.onee.ma/fr",
+    href: "https://www.one.ma/fr",
     icon: PlugZap,
     accent: "from-cyan-500/35 to-[#0052CC]/30",
   },
@@ -133,7 +134,7 @@ const GATEWAY_DOCS: GatewayTile[] = [
     id: "civil",
     labelKey: "gov.doc.civil",
     stepsKey: "gov.doc.civilSteps",
-    href: "https://www.interieur.gov.ma/",
+    href: "https://www.etatcivilinterieur.gov.ma/",
     icon: FileText,
     accent: "from-amber-500/30 to-rose-800/20",
   },
@@ -251,6 +252,7 @@ export function GovServicesModule() {
                 href={item.href}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={(e) => openExternalUrl(item.href, e)}
                 className="text-right rounded-2xl border border-slate-800/80 bg-[#0a1628]/60 p-1 hover:border-[#0052CC] hover:bg-[#0a1628] hover:shadow-[0_8px_30px_rgba(0,82,204,0.12)] transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-[#FF8C00]/50 focus:ring-offset-2 focus:ring-offset-[#050a12] idara-animate-in active:scale-[0.98]"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
@@ -293,6 +295,7 @@ function GatewayGrid({
             href={item.href}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => openExternalUrl(item.href, e)}
             className="group rounded-2xl border border-slate-700/80 bg-[#050a12]/50 hover:border-[#FF8C00]/50 hover:bg-[#0a1628]/90 transition-all duration-300 p-4 flex gap-4 text-right items-start idara-animate-in"
             style={{ animationDelay: `${i * 40}ms` }}
           >

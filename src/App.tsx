@@ -128,13 +128,15 @@ function AppRoutes() {
       <Route path="/transport" element={<TlDeptLandingRedirect slug="transport" />} />
       <Route path="/utilities" element={<TlDeptLandingRedirect slug="utilities" />} />
       <Route
-        path="/dept/:dept"
+        path="/dept"
         element={
           <Protected>
-            <TlDepartmentPage />
+            <AppShell />
           </Protected>
         }
-      />
+      >
+        <Route path=":dept" element={<TlDepartmentPage />} />
+      </Route>
       <Route path="/education/exams" element={<Navigate to="/app/edu?tab=exams" replace />} />
       <Route
         path="/admin-secret-portal"
