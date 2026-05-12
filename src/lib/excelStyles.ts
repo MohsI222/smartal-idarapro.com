@@ -1,10 +1,11 @@
 import type { Cell, Row, Worksheet } from "exceljs";
+import { APP_BRANDING, hexToExcelArgb } from "@/config/branding";
 
-/** ألوان هوية المنصة — متوافقة مع Excel و Excel Online */
-export const HEADER_FILL_ARGB = "FF003876";
+/** ألوان هوية المنصة — من `config/branding.ts`، متوافقة مع Excel و Excel Online */
+export const HEADER_FILL_ARGB = hexToExcelArgb(APP_BRANDING.accentHex);
 export const HEADER_FONT_ARGB = "FFFFFFFF";
 export const TITLE_FILL_ARGB = "FFE0E7EF";
-export const ACCENT_BORDER_ARGB = "FF94A3B8";
+export const ACCENT_BORDER_ARGB = hexToExcelArgb(APP_BRANDING.primaryHex);
 export const ZEBRA_FILL_ARGB = "FFF8FAFC";
 
 const edge = { style: "thin" as const, color: { argb: ACCENT_BORDER_ARGB } };

@@ -1,7 +1,7 @@
 /**
  * Production site origin for Supabase OAuth PKCE and email-confirmation redirects.
  * Redirects must be allowlisted in Supabase: Authentication → URL Configuration → Redirect URLs
- * (e.g. `https://smartal-idarapro.com/auth/callback` and your `*.vercel.app` preview URLs).
+ * (e.g. `https://www.smartal-idarapro.com/auth/callback`, apex + `smartal-idara.com` if used, and `*.vercel.app` previews).
  *
  * - In the browser: `window.location.origin` so the app works on the custom domain
  *   and on Vercel preview deployments (e.g. `https://my-app.vercel.app`).
@@ -15,7 +15,7 @@ function getSiteOrigin(): string {
     import.meta.env.NEXT_PUBLIC_APP_URL ??
     import.meta.env.NEXT_PUBLIC_SITE_URL) as string | undefined;
   if (envUrl) return envUrl.trim().replace(/\/$/, "");
-  return "https://smartal-idarapro.com";
+  return "https://www.smartal-idarapro.com";
 }
 
 /** Use this or `getAuthCallbackUrl` — do not hardcode the production domain (breaks Vercel previews). */

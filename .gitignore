@@ -12,3 +12,4 @@ data/uploads
 .DS_Store
 .vercel
 .env*.local
+supabase/.temp/

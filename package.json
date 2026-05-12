@@ -14,7 +14,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "db:reset": "tsx server/reset-db.ts",
-    "db:schema": "tsx server/db-init.ts"
+    "db:schema": "tsx server/db-init.ts",
+    "verify:local": "tsx scripts/verify-local-login.ts",
+    "vercel:purge-push": "bash scripts/vercel-purge-and-push-env.sh"
   },
   "engines": {
     "node": "22.x"

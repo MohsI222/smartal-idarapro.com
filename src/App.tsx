@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { lazy, Suspense } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { lazy, Suspense, useEffect } from "react";
+import { brandingCssVars } from "@/config/branding";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { I18nProvider, useI18n } from "@/i18n/I18nProvider";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
@@ -99,6 +100,7 @@ const LawyerPortalModule = lazy(() =>
 function Protected({ children }: { children: ReactNode }) {
   const { token, loading } = useAuth();
   const { t } = useI18n();
+  const location = useLocation();
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#060d18] text-slate-400">
@@ -106,7 +108,11 @@ function Protected({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) {
+    const next = `${location.pathname}${location.search}`;
+    const qs = next && next !== "/" ? `?next=${encodeURIComponent(next)}` : "";
+    return <Navigate to={`/login${qs}`} replace />;
+  }
   return <>{children}</>;
 }
 
@@ -207,12 +213,24 @@ function SuspensedAppRoutes() {
 const routerBasename =
   import.meta.env.BASE_URL.replace(/\/$/, "") === "" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
 
+function BrandingCssVars() {
+  useEffect(() => {
+    const el = document.documentElement;
+    const vars = brandingCssVars();
+    for (const [k, v] of Object.entries(vars)) {
+      el.style.setProperty(k, v);
+    }
+  }, []);
+  return null;
+}
+
 export default function App() {
   return (
     <BrowserRouter basename={routerBasename}>
       <I18nProvider>
         <ThemeProvider>
           <AuthProvider>
+            <BrandingCssVars />
             <SuspensedAppRoutes />
             <Toaster richColors position="top-center" theme="dark" />
           </AuthProvider>

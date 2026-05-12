@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Bus,
@@ -27,7 +28,13 @@ const DEPT_ICONS: Record<TlDeptSlug, ReactNode> = {
 
 export function TransportLogisticsHub() {
   const { t } = useI18n();
-  const origin = getPublicOrigin();
+  /** نفس منشأ الصفحة إن وُجد (يتفادى اختلاف www/apex عن VITE_PUBLIC_APP_URL عند نسخ الرابط أو فتح الـ manifest). */
+  const shareOrigin = useMemo(() => {
+    if (typeof window !== "undefined") {
+      return window.location.origin.replace(/\/$/, "");
+    }
+    return getPublicOrigin().replace(/\/$/, "");
+  }, []);
 
   return (
     <div className="space-y-8 max-w-5xl pb-16">
@@ -51,8 +58,8 @@ export function TransportLogisticsHub() {
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {TL_DEPT_SLUGS.map((slug) => {
-          const pwaQs = slug === "transport" || slug === "logistics" ? "?pwa=1" : "";
-          const pwaUrl = `${origin}/dept/${slug}${pwaQs}`;
+          const pwaQs = "?pwa=1";
+          const pwaUrl = `${shareOrigin}/dept/${slug}${pwaQs}`;
           return (
             <div
               key={slug}
@@ -73,7 +80,11 @@ export function TransportLogisticsHub() {
                       variant="outline"
                       className="w-full border-white/15 text-xs gap-1"
                     >
-                      <a href={`/manifest-tl-${slug}.webmanifest`} target="_blank" rel="noreferrer">
+                      <a
+                        href={`${shareOrigin}/manifest-tl-${slug}.webmanifest`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         <Link2 className="size-3" />
                         PWA manifest
                       </a>

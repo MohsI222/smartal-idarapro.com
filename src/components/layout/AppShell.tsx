@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Home,
   LayoutDashboard,
+  Link2,
   LogOut,
   MessageCircle,
   PanelLeftClose,
@@ -271,6 +272,23 @@ export function AppShell() {
               >
                 <LayoutDashboard className="size-5 shrink-0" />
                 {!collapsed && <span>{t("nav.admin")}</span>}
+              </NavLink>
+            )}
+            {user?.role !== "superadmin" && isPrimaryAdminClient(user?.email, user?.name) && (
+              <NavLink
+                to="/app/admin/platform"
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium mt-3 border transition-all duration-200",
+                    collapsed && "justify-center px-2",
+                    isActive
+                      ? "bg-[#0052CC] text-white border-[#0052CC] idara-sidebar-active"
+                      : "border-[#FF8C00]/30 text-[#FF8C00] hover:bg-white/5"
+                  )
+                }
+              >
+                <Link2 className="size-5 shrink-0" />
+                {!collapsed && <span>{t("nav.adminPlatform")}</span>}
               </NavLink>
             )}
           </nav>

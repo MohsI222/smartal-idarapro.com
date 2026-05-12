@@ -399,6 +399,22 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                     }
                     placeholder={t("hr.enterprise.dismissPlaceholder")}
                   />
+                  <div className="mt-2 max-w-md">
+                    <AiGenerateButton
+                      module="hrContract"
+                      variant="outline"
+                      context={{
+                        docKind: "dismissal_grounds",
+                        employeeName: dismissForm.employeeName,
+                        employeeId: dismissForm.employeeId,
+                        dateNotice: dismissForm.dateNotice,
+                        groundsHint: dismissForm.grounds,
+                      }}
+                      onGenerated={(text) =>
+                        setDismissForm((f) => ({ ...f, grounds: text.slice(0, 8000) }))
+                      }
+                    />
+                  </div>
                   <div className="flex flex-wrap gap-2 mt-3">
                     <Button
                       type="button"
@@ -464,6 +480,17 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                 value={rulesText}
                 onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setRulesText(e.target.value)}
               />
+              <div className="max-w-md">
+                <AiGenerateButton
+                  module="hrContract"
+                  variant="outline"
+                  context={{
+                    docKind: "internal_rules_polish",
+                    rulesExcerpt: rulesText.slice(0, 4000),
+                  }}
+                  onGenerated={(text) => setRulesText(text.slice(0, 12000))}
+                />
+              </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 <Field
                   label={t("auth.fullName")}

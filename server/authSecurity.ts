@@ -7,6 +7,8 @@ import helmet from "helmet";
 const CANONICAL_APP_ORIGINS = new Set([
   "https://smartal-idarapro.com",
   "https://www.smartal-idarapro.com",
+  "https://smartal-idara.com",
+  "https://www.smartal-idara.com",
 ]);
 
 function collectEnvOriginBases(): string[] {
@@ -51,6 +53,7 @@ export function isTrustedBrowserOrigin(origin: string): boolean {
   if (host.endsWith(".vercel.app")) return true;
   if (host.endsWith(".vercel.live")) return true;
   if (host === "smartal-idarapro.com" || host.endsWith(".smartal-idarapro.com")) return true;
+  if (host === "smartal-idara.com" || host.endsWith(".smartal-idara.com")) return true;
 
   for (const base of collectEnvOriginBases()) {
     const b = base.replace(/\/$/, "");

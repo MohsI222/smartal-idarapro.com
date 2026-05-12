@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./loadEnv.js";
 import "express-async-errors";
 import cors from "cors";
 import express from "express";
@@ -209,10 +209,26 @@ const app = express();
 app.use(vercelApiUrlRestore);
 applySecurityMiddleware(app);
 app.use(cors(createProductionCorsOptions()));
+
+/** يعمل بدون انتظار قاعدة البيانات — للتحقق أن السيرفر يستمع وأن البروكسي يصل */
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, service: "smart-al-idara-pro" });
+});
+
 const dbReady = (async () => {
   await initDatabase();
   await ensureSuperAdmin();
 })();
+
+app.get("/api/health/db", async (_req, res, next) => {
+  try {
+    await dbReady;
+    await db.prepare("SELECT 1 AS o").get();
+    res.json({ ok: true, db: true });
+  } catch (e) {
+    next(e);
+  }
+});
 
 app.use(async (_req, _res, next) => {
   try {
@@ -279,6 +295,26 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
   } catch (e) {
     next(e);
   }
+}
+
+async function platformSettingsEditor(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const role = (req as express.Request & { role: string }).role;
+  if (role === "superadmin") {
+    next();
+    return;
+  }
+  const userId = (req as express.Request & { userId: string }).userId;
+  const u = (await db.prepare("SELECT email, name FROM users WHERE id = ?").get(userId)) as
+    | { email: string; name: string }
+    | undefined;
+  if (
+    u &&
+    (u.email?.trim().toLowerCase() === SUPER_ADMIN_EMAIL || isPrimaryAdminUser(u.email, u.name))
+  ) {
+    next();
+    return;
+  }
+  res.status(403).json({ error: "صلاحيات المشرف العام فقط" });
 }
 
 function superAdminOnly(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -1686,22 +1722,44 @@ function mockAiText(
     return `Auto-draft: party ${name}, ${city}${amount ? `, amount ${amount} MAD` : ""}. Notarial review required.`;
   }
   if (module === "exam") {
-    if (locale.startsWith("ar")) return `سؤال مقترح حول «${name}» — يُخصص للمستوى والمادة حسب جدولك.`;
-    if (locale.startsWith("fr")) return `Question suggérée sur « ${name} » — adaptez au niveau et à la matière.`;
-    if (locale === "es") return `Pregunta sugerida sobre «${name}» — adapte nivel y asignatura.`;
-    return `Suggested question on "${name}" — adapt to level and subject.`;
+    const subj = ctx.subject || name || "المادة";
+    const lvl = ctx.level || "";
+    const line = locale.startsWith("ar")
+      ? `أسئلة مقترحة (إرشادية) في «${subj}»${lvl ? ` — المستوى: ${lvl}` : ""} — وفق إطار 51.17؛ راجع المنسق البيداغوجي.`
+      : locale.startsWith("fr")
+        ? `Questions indicatives — « ${subj} »${lvl ? `, niveau : ${lvl}` : ""} — cadre 51.17 ; relecture pédagogique requise.`
+        : `Sample assessment items for "${subj}"${lvl ? ` (level: ${lvl})` : ""} — align to Morocco framework; pedagogical review required.`;
+    return `${line}\n1) … (5 نقط)\n2) … (5 نقط)\n3) … (10 نقط)\n4) … (10 نقط)`;
   }
   if (module === "legalAi") {
+    const who = ctx.fullName || name;
+    const subj = ctx.requestType || ctx.requestTypeLabel || "";
     if (locale.startsWith("ar"))
-      return `مسودة إرشادية (المملكة المغربية): يُذكر الطرف ${name} بـ ${city}. يُستند إلى التشريع المغربي الجاري به العمل؛ يُراجع النص قبل الإيداع.`;
+      return `مسودة إرشادية (المملكة المغربية): الموضوع: ${subj || "طلب إداري"}. يُذكر صاحب الطلب ${who}${ctx.address ? `، العنوان: ${ctx.address}` : ""}. يُستند إلى التشريع المغربي الجاري به العمل؛ يُراجع النص قبل الإيداع.`;
     if (locale.startsWith("fr"))
-      return `Ébauche indicative (Royaume du Maroc) : partie ${name}, ${city}. Fondée sur le droit marocain en vigueur ; révision avant dépôt.`;
+      return `Ébauche indicative (Royaume du Maroc) : objet ${subj || "demande administrative"}, partie ${who}. Droit marocain en vigueur ; révision avant dépôt.`;
     if (locale === "es")
-      return `Borrador orientativo (Reino de Marruecos): parte ${name}, ${city}. Basado en la legislación marroquí vigente; revisión antes del depósito.`;
-    return `Indicative draft (Kingdom of Morocco): party ${name}, ${city}. Grounded in applicable Moroccan law; review before filing.`;
+      return `Borrador orientativo (Reino de Marruecos): asunto ${subj || "solicitud"}, parte ${who}. Legislación marroquí aplicable; revisión antes del depósito.`;
+    return `Indicative draft (Kingdom of Morocco): matter ${subj || "administrative request"}, party ${who}. Grounded in applicable Moroccan law; review before filing.`;
   }
   if (module === "hrContract") {
     const emp = ctx.employee || ctx.name || "—";
+    if (ctx.docKind === "dismissal_grounds") {
+      const hint = (ctx.groundsHint || "").trim() || "—";
+      if (locale.startsWith("ar"))
+        return `مسودة أسس فصل إرشادية (المغرب): توسيع الملاحظات الموجزة أدناه إلى صياغة رسمية محايدة تتوافق مع أحكام مدونة الشغل؛ دون إحداث وقائع غير مذكورة. ملاحظات: ${hint}. يُراجع من المحامي.`;
+      if (locale.startsWith("fr"))
+        return `Motifs de licenciement (Maroc) : à partir de ces notes factuelles, rédiger un texte formel et sobre, cadre Code du travail ; n’inventez pas de faits. Notes : ${hint}. Révision juridique requise.`;
+      return `Morocco dismissal grounds draft: expand factual notes into formal, code-grounded language; do not invent facts. Notes: ${hint}. Legal review required.`;
+    }
+    if (ctx.docKind === "internal_rules_polish") {
+      const raw = (ctx.rulesExcerpt || "").trim().slice(0, 2000) || "—";
+      if (locale.startsWith("ar"))
+        return `العناية بالنص الداخلي للمؤسسة: حوّل النقاط أدناه إلى فق رات لائحة داخلية بلغة إدارية عربية فصحى مناسبة للشركات في المغرب، دون مخالفة ظاهرة لمدونة الشغل. المصدر: ${raw}`;
+      if (locale.startsWith("fr"))
+        return `Règlement intérieur (Maroc) : reformuler le texte brut en articles/clauses lisibles, ton professionnel, droit marocain du travail en tête. Texte : ${raw}`;
+      return `Internal work rules (Morocco): rewrite the following bullet/notes into clear policy clauses; professional tone. Source: ${raw}`;
+    }
     if (locale.startsWith("ar"))
       return `مسودة عقد عمل (مغرب): بين ${ctx.employer || "المشغّل"} والموظف ${emp} — المسمى ${ctx.jobTitle || "—"}، الأجر ${ctx.salaryGross || "—"} درهم، نوع ${ctx.contractType || "CDI"}. يُراجع لدى المحامي قبل التوقيع.`;
     if (locale.startsWith("fr"))
@@ -1725,9 +1783,26 @@ function buildAiPrompt(module: string, locale: string, ctx: Record<string, strin
   const json = JSON.stringify(ctx);
   const moroccanLaw =
     "Ground the draft in Moroccan law in force: Constitution (2011). Cite and apply as relevant: Dahir 1-58-250 (Code of Civil Procedure) for civil matters; Moroccan criminal procedure codes for penal matters; Law 03-12 (administrative justice); specialized codes and dahirs. Ensure wording supports formal admissibility (form and substance) before Moroccan courts and administrations.";
+  const labourMorocco =
+    "Ground the text in the Moroccan Labour Code (Book One of Dahir 1-03-19 as amended), CNSS/AMO rules where relevant, legal working hours, trial periods, and applicable collective agreements. Do not fabricate facts. Recommend legal review before signature.";
+  const educationMorocco =
+    "Align with Morocco Framework Law 51.17 on education and training and official competency frameworks where relevant. Use clear formal language suitable for classroom assessment; include numbered questions and suggested marks when appropriate. No markdown.";
   const base = `You are a legal and administrative drafting assistant for the Kingdom of Morocco (Smart Al-Idara Pro). Module: ${module}. Locale: ${locale}. User data (JSON): ${json}. Produce concise formal text in the user's language only, no markdown, max 400 words.`;
+
   if (module === "law" || module === "public" || module === "legalAi") {
-    return `${base} ${moroccanLaw}`;
+    return `${base} ${moroccanLaw} If existingDraft or userNotes is present, refine and complete the request body for filing — preserve factual data; do not duplicate the formal recipient line unnecessarily; use structured paragraphs.`;
+  }
+  if (module === "exam") {
+    return `You are an expert Moroccan teacher / pedagogy assessor. Locale: ${locale}. User data (JSON): ${json}. ${educationMorocco} Output numbered exam questions (plain text only). If subject or level is provided, match difficulty. Prefer 4–8 items unless context asks otherwise. Max 650 words.`;
+  }
+  if (module === "hrContract") {
+    if (ctx.docKind === "dismissal_grounds") {
+      return `You are an HR and labour-law writing assistant (Morocco). Locale: ${locale}. JSON: ${json}. Expand groundsHint into formal termination grounds: neutral, factual tone; categories under the Labour Code (serious misconduct, economic, etc.) only as hypotheses if they fit the notes — never invent incidents. Max 320 words. Plain text.`;
+    }
+    if (ctx.docKind === "internal_rules_polish") {
+      return `You are drafting internal company policy prose for Morocco. Locale: ${locale}. JSON: ${json}. Rewrite rulesExcerpt into coherent numbered articles suitable for internal handbook; professional tone; respect Labour Code minima. Max 500 words. Plain text.`;
+    }
+    return `${base} ${labourMorocco} Deliver a single complete employment contract body with numbered articles where helpful.`;
   }
   if (module === "mediaLab") {
     const fmt = ctx.format;
@@ -1772,7 +1847,8 @@ app.post("/api/ai/generate", authMiddleware, async (req, res) => {
       return;
     }
   }
-  const maxTokens = module === "mediaLab" ? 420 : 900;
+  const maxTokens =
+    module === "mediaLab" ? 420 : module === "exam" || module === "hrContract" ? 1400 : module === "legalAi" ? 1200 : 900;
   const key = process.env.OPENAI_API_KEY;
   if (key) {
     try {
@@ -1888,7 +1964,7 @@ app.get("/api/settings/public", async (_req, res) => {
   res.json({ settings });
 });
 
-app.put("/api/settings/platform", authMiddleware, superAdminOnly, async (req, res) => {
+app.put("/api/settings/platform", authMiddleware, platformSettingsEditor, async (req, res) => {
   const body = req.body as Record<string, unknown>;
   if (!body || typeof body !== "object") {
     res.status(400).json({ error: "بيانات ناقصة" });
@@ -2470,6 +2546,42 @@ app.post("/api/media/enhance-image", authMiddleware, upload.single("image"), asy
       /* ignore */
     }
   }
+});
+
+app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  const errObj = err && typeof err === "object" ? (err as Record<string, unknown>) : null;
+  const code = errObj && typeof errObj.code === "string" ? errObj.code : "";
+  const msg = err instanceof Error ? err.message : String(err);
+  const lowerMsg = msg.toLowerCase();
+
+  if (
+    code === "28P01" ||
+    code === "28000" ||
+    lowerMsg.includes("password authentication failed") ||
+    lowerMsg.includes("no password supplied")
+  ) {
+    console.error("[api] database auth failed:", code || msg, req.method, req.path);
+    res.status(503).json({
+      error:
+        "فشل الاتصال بقاعدة البيانات — تحقق من كلمة مرور Postgres في Supabase Settings → Database، وحدّث DATABASE_URL و DIRECT_URL في .env ثم أعد تشغيل npm run dev",
+    });
+    return;
+  }
+
+  if (code === "ETIMEDOUT" || code === "ECONNREFUSED" || msg.includes("timeout") || msg.includes("نتهت مهلة")) {
+    console.error("[api] database unreachable:", code || msg, req.method, req.path);
+    res.status(503).json({
+      error:
+        "قاعدة البيانات غير متاحة — تحقق من DATABASE_URL / DIRECT_URL، الشبكة، أو نفّذ: npm run db:schema",
+    });
+    return;
+  }
+  console.error("[api]", err);
+  res.status(500).json({ error: "Internal Server Error" });
 });
 
 const PORT = Number(process.env.PORT ?? 4000);

@@ -10,12 +10,36 @@ import { downloadXlsxWorkbook } from "@/lib/excelDownload";
 import { buildPdfTableHtml, exportSmartAlIdaraPdfPreferBackend } from "@/lib/pdfExport";
 import * as XLSX from "xlsx";
 import { useI18n } from "@/i18n/I18nProvider";
+import { toast } from "sonner";
 
 const STORAGE = "idara_exam_grid";
 
 type ExamRow = { section: string; question: string; marks: string };
 
 type ExamGenProps = { embedded?: boolean };
+
+function applyGeneratedExamQuestions(text: string, prev: ExamRow[]): ExamRow[] {
+  const lines = text
+    .split(/\n/)
+    .map((l) => l.replace(/^\s*\d+[\.\):\-]\s*/, "").trim())
+    .filter((l) => l.length > 3);
+  if (!lines.length) return prev;
+  const next = [...prev];
+  let li = 0;
+  const defaultSection = next[0]?.section || "";
+  const defaultMarks = next[0]?.marks || "5";
+  for (let i = 0; i < next.length && li < lines.length; i++) {
+    if (!next[i].question.trim()) {
+      next[i] = { ...next[i], question: lines[li].slice(0, 2000) };
+      li++;
+    }
+  }
+  while (li < lines.length && next.length < 48) {
+    next.push({ section: defaultSection, question: lines[li].slice(0, 2000), marks: defaultMarks });
+    li++;
+  }
+  return next;
+}
 
 export function ExamGeneratorModule({ embedded = false }: ExamGenProps) {
   const { t, locale, isRtl } = useI18n();
@@ -56,7 +80,25 @@ export function ExamGeneratorModule({ embedded = false }: ExamGenProps) {
 
   const persist = () => {
     localStorage.setItem(`${STORAGE}_${uid}`, JSON.stringify(rows));
+    toast.success(t("common.saved"));
   };
+
+  const applyAiToRows = (text: string) => {
+    setRows((prev) => applyGeneratedExamQuestions(text, prev));
+  };
+
+  const examAiContext = useMemo(
+    () => ({
+      subject: rows[0]?.section || "",
+      level: "",
+      seedQuestion: rows
+        .map((r) => r.question.trim())
+        .filter(Boolean)
+        .join(" | ")
+        .slice(0, 500),
+    }),
+    [rows]
+  );
 
   const update = (i: number, patch: Partial<ExamRow>) => {
     setRows((prev) => {
@@ -132,6 +174,11 @@ export function ExamGeneratorModule({ embedded = false }: ExamGenProps) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <AiGenerateButton
+            module="exam"
+            context={examAiContext}
+            onGenerated={(text) => applyAiToRows(text)}
+          />
           <Button variant="default" onClick={persist}>
             <Save className="size-4" />
             {t("common.save")}
@@ -152,10 +199,8 @@ export function ExamGeneratorModule({ embedded = false }: ExamGenProps) {
         <div className="flex flex-wrap gap-2">
           <AiGenerateButton
             module="exam"
-            context={{ name: rows[0]?.question || t("exam.colQuestion"), subject: rows[0]?.section || "" }}
-            onGenerated={(text) => {
-              if (rows.length) update(0, { question: text.slice(0, 2000) });
-            }}
+            context={examAiContext}
+            onGenerated={(text) => applyAiToRows(text)}
           />
           <Button variant="default" size="sm" onClick={persist}>
             <Save className="size-4" />

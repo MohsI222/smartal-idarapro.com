@@ -15,7 +15,7 @@ interface ImportMetaEnv {
   readonly VITE_API_CROSS_ORIGIN?: string;
   /**
    * أصل الـ API: نفس الدومين أو رابط كامل. بدون `/api` يُضاف تلقائياً (انظر `getApiUrlPrefix`).
-   * على معاينات Vercel يُفضّل تركها فارغة، أو لن يُستخدم الرابط إذا غيّر عن منشأ الصفحة (إلا عند VITE_API_CROSS_ORIGIN).
+   * إن وُجد رابط مطلق لمضيف يخالف الصفحة (مثلاً معاينة Vercel + `VITE_API_URL` للإنتاج)، يُستعمل `/api` على نفس الصفحة ما لم تُضبط `VITE_API_CROSS_ORIGIN=1`.
    */
   readonly VITE_API_URL?: string;
   /** في `npm run dev`: `1` يفرض استخدام `VITE_API_URL` بدل الـ proxy المحلي */

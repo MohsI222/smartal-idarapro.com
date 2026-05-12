@@ -3,40 +3,14 @@ import * as XLSX from "xlsx";
 import { postBackendXlsxStream } from "@/lib/backendExportClient";
 import { applyBordersToRange, styleDataRow, styleHeaderRow, styleTitleRow } from "@/lib/excelStyles";
 import { ensureExportLibrariesReady } from "@/lib/exportLibraries";
+import { APP_BRANDING } from "@/config/branding";
+import { sanitizeSheetName, sheetToAoa } from "@/services/fileService";
 
 /**
  * تنزيل ‎.xlsx‎ عبر ExcelJS (Office Open XML متوافق مع Excel و Google Sheets).
  * يُحوَّل من مصنف SheetJS عند التصدير؛ الاستيراد يبقى بـ xlsx كما هو.
  */
-export function sanitizeSheetName(name: string): string {
-  const s = name.replace(/[:\\/?*\[\]]/g, "_").trim() || "Sheet1";
-  return s.length > 31 ? s.slice(0, 31) : s;
-}
-
-export function sheetToAoa(ws: XLSX.WorkSheet): (string | number | null)[][] {
-  const ref = ws["!ref"];
-  if (!ref) return [];
-  const range = XLSX.utils.decode_range(ref);
-  const rows: (string | number | null)[][] = [];
-  for (let R = range.s.r; R <= range.e.r; ++R) {
-    const row: (string | number | null)[] = [];
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const addr = XLSX.utils.encode_cell({ r: R, c: C });
-      const cell = ws[addr];
-      if (!cell) {
-        row.push("");
-        continue;
-      }
-      if (cell.t === "n") row.push(cell.v as number);
-      else if (cell.t === "b") row.push(cell.v ? 1 : 0);
-      else if (cell.t === "d")
-        row.push(cell.v instanceof Date ? cell.v.toISOString().slice(0, 10) : String(cell.v));
-      else row.push(cell.w ?? String(cell.v ?? ""));
-    }
-    rows.push(row);
-  }
-  return rows;
-}
+export { sanitizeSheetName, sheetToAoa } from "@/services/fileService";
 
 function firstRowLooksLikeHeader(firstRow: (string | number | null)[], hasSecondRow: boolean): boolean {
   if (!hasSecondRow || firstRow.length === 0) return false;
@@ -50,11 +24,11 @@ function firstRowLooksLikeHeader(firstRow: (string | number | null)[], hasSecond
 async function workbookToExcelJsBuffer(wb: XLSX.WorkBook): Promise<Uint8Array> {
   await ensureExportLibrariesReady();
   const xbook = new ExcelJS.Workbook();
-  xbook.creator = "Smart Al-Idara Pro";
-  xbook.lastModifiedBy = "Smart Al-Idara Pro";
+  xbook.creator = APP_BRANDING.businessName;
+  xbook.lastModifiedBy = APP_BRANDING.businessName;
   xbook.created = new Date();
   xbook.modified = new Date();
-  xbook.company = "Smart Al-Idara Pro";
+  xbook.company = APP_BRANDING.businessName;
 
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];

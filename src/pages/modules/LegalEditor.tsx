@@ -27,6 +27,7 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
+import { AiGenerateButton } from "@/components/AiGenerateButton";
 import { OcrScanner, parseMoroccanIdHints } from "@/components/OcrScanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -66,6 +67,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { toWesternDigits } from "@/lib/utils";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { toast } from "sonner";
 
 const STORAGE_KEY = "legal_editor_form";
 
@@ -301,10 +303,11 @@ export function LegalEditor() {
   const handleSave = useCallback(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+      toast.success(t("common.saved"));
     } catch {
       /* ignore */
     }
-  }, [form]);
+  }, [form, t]);
 
   const requestTypeLabel = useMemo(() => {
     const raw =
@@ -730,6 +733,29 @@ export function LegalEditor() {
                 >
                   {t("legalAi.regenerateDraft")}
                 </Button>
+                <AiGenerateButton
+                  module="legalAi"
+                  className="max-w-[220px]"
+                  context={{
+                    fullName: form.fullName,
+                    nationalId: form.nationalId,
+                    address: form.address,
+                    phone: form.phone,
+                    email: form.email,
+                    formalRecipientLine: form.formalRecipientLine,
+                    recipientEntity: form.recipientEntity,
+                    serviceCenter: serviceCenterLabel,
+                    requestType: requestTypeLabel,
+                    documentDate: documentDateDisplay,
+                    institutionType: form.institutionTypeId,
+                    documentClass: form.documentClassId,
+                    existingDraft: form.requestDetails.slice(0, 2800),
+                  }}
+                  onGenerated={(text) => {
+                    setRequestBodyManual(true);
+                    setForm((f) => ({ ...f, requestDetails: text.slice(0, 16000) }));
+                  }}
+                />
               </div>
             </div>
             <p className="text-xs text-slate-500 font-medium leading-relaxed">{t("legalAi.autoDraftHint")}</p>

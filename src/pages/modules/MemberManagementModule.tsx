@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OcrScanner } from "@/components/OcrScanner";
+import { QuickOfficeBar } from "@/components/office/QuickOfficeBar";
 import { parseMoroccanIdHints } from "@/lib/moroccanIdOcrParse";
 import { parseMemberExcelFileSync, writeMemberExcelFile } from "@/lib/memberMgmtExcel";
 import { loadMemberMgmt, saveMemberMgmt } from "@/lib/memberMgmtStorage";
@@ -40,8 +41,11 @@ import {
   startOfToday,
   type MemberMgmtSetup,
   type MemberRow,
+  memberStatusLabel,
   type OrgKind,
 } from "@/lib/memberMgmtTypes";
+import { exportBrandedTableDocx, withFileToast } from "@/services/fileService";
+import { toast } from "sonner";
 
 const ORG_ORDER: OrgKind[] = ["organization", "institute", "center"];
 
@@ -213,17 +217,52 @@ export function MemberManagementModule() {
   };
 
   const importExcel = async (file: File) => {
-    const buf = await file.arrayBuffer();
-    const rows = parseMemberExcelFileSync(buf);
-    if (!rows.length) {
-      window.alert(t("memberMgmt.importNoRows"));
+    await withFileToast(async () => {
+      const buf = await file.arrayBuffer();
+      const rows = parseMemberExcelFileSync(buf);
+      if (!rows.length) {
+        toast.message(t("memberMgmt.importNoRows"));
+        return;
+      }
+      setMembers((prev) => [...prev, ...rows]);
+      toast.success(t("memberMgmt.importedCount", { count: formatNumber(rows.length) }));
+    }, t("auth.errGeneric"));
+  };
+
+  const handleProWord = useCallback(async () => {
+    if (!members.length) {
+      toast.message(t("memberMgmt.emptyTable"));
       return;
     }
-    setMembers((prev) => [...prev, ...rows]);
-    window.alert(
-      t("memberMgmt.importedCount", { count: formatNumber(rows.length) })
+    await withFileToast(
+      () =>
+        exportBrandedTableDocx({
+          title: setup?.name ?? t("memberMgmt.subtitle"),
+          rows: [
+            [
+              t("memberMgmt.colFullName"),
+              t("memberMgmt.colNationalId"),
+              t("memberMgmt.colMembership"),
+              t("memberMgmt.colRegDate"),
+              t("memberMgmt.colEndDate"),
+              t("memberMgmt.colAmount"),
+              t("memberMgmt.colStatus"),
+            ],
+            ...members.map((m) => [
+              m.fullName,
+              m.nationalId,
+              m.membershipNo,
+              m.regDate,
+              m.endDate,
+              String(m.amountDh),
+              memberStatusLabel(m) === "Paid" ? t("memberMgmt.paidStatus") : t("memberMgmt.unpaidStatus"),
+            ]),
+          ],
+          fileName: `members-pro-${Date.now()}.docx`,
+        }),
+      t("auth.errGeneric")
     );
-  };
+  }, [members, setup?.name, t]);
 
   const handleExportExcel = useCallback(() => {
     setExportPreparing(true);
@@ -503,6 +542,17 @@ export function MemberManagementModule() {
 
         {/* Toolbar */}
         <div className={cn("flex flex-col gap-3 p-4 md:flex-row md:flex-wrap md:items-center", GLASS)}>
+          <QuickOfficeBar
+            onProfessionalExcel={handleExportExcel}
+            onProfessionalWord={handleProWord}
+            disabledExcel={exportPreparing}
+            disabledWord={exportPreparing}
+            labels={{
+              quickGrid: t("fileUi.quickGrid"),
+              exportExcel: t("fileUi.proExcel"),
+              exportWord: t("fileUi.proWord"),
+            }}
+          />
           <Button
             type="button"
             onClick={openNewMember}

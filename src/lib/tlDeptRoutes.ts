@@ -1,10 +1,13 @@
-/** مسارات PWA لأقسام النقل واللوجستيك — بدون كروم لوحة المدير إن وُضعت تحت نفس الـ layout */
-export const TL_PWA_DEPT_PREFIXES = ["/dept/transport", "/dept/logistics"] as const;
+import { TL_DEPT_SLUGS } from "@/lib/tlApi";
 
+/** مسارات PWA لجميع أقسام TL (نقل، لوجستيك، إنتاج، جودة، إلخ) — واجهة موظف دون الشريط الكامل للوحة المدير */
+export const TL_PWA_DEPT_PREFIXES = TL_DEPT_SLUGS.map((slug) => `/dept/${slug}`);
+
+/** واجهة أقسام TL — بدون شريط لوحة التحكم الكاملة */
 export function isDeptTransportShellHiddenPath(pathname: string): boolean {
   const pathOnly = pathname.split("?")[0].trim();
   const p = pathOnly.replace(/\/$/, "") || "/";
-  return p === "/dept/transport" || p.startsWith("/dept/transport/");
+  return isTlTransportLogisticsDeptPath(p);
 }
 
 export function isTlTransportLogisticsDeptPath(pathname: string): boolean {
@@ -13,5 +16,5 @@ export function isTlTransportLogisticsDeptPath(pathname: string): boolean {
 }
 
 export function isTlPwaFocusDeptSlug(dept: string | null | undefined): boolean {
-  return dept === "transport" || dept === "logistics";
+  return Boolean(dept && (TL_DEPT_SLUGS as readonly string[]).includes(dept));
 }

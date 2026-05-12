@@ -1,7 +1,8 @@
 /**
  * API base للـ fetch: نفس المضيف → `/api` (مع `VITE_BASE_PATH` إن وُجد).
  * • التطوير (`npm run dev`): افتراضياً `/api` عبر proxy نحو Express على :4000 — يتجاهل `VITE_API_URL` ما لم تُضبط `VITE_API_FORCE_REMOTE=1`.
- * • الإنتاج (بناء Vite): يُستعمل `VITE_API_URL` إن وُجد (يُكمَّل بـ `/api`) لنفس الدومين أو الإنتاج.
+ * • الإنتاج: إن كان `VITE_API_URL` يشير إلى دومين آخر (معاينة، أو خطأ **www مقابل بدون www**)
+ *   يُستعمل `/api` على **نفس منشأ الصفحة** حتى لا تفشل طلبات CORS (preflight لا يقبل إعادة التوجيه).
  */
 function viteBasePrefix(): string {
   const b = (import.meta.env.BASE_URL || "/").replace(/\/+$/, "") || "";
@@ -23,8 +24,18 @@ export function normalizeApiUrlRoot(raw: string): string {
   return s;
 }
 
+/** خطأ نسخ شائع في متغيرات البيئة (.com.th بدلاً من .com) لدومين المشروع */
+function sanitizeViteApiUrlRaw(raw: string): string {
+  const t = raw.trim();
+  if (!t) return t;
+  if (/smartal-idara/i.test(t) && /\.com\.th\b/i.test(t)) {
+    return t.replace(/\.com\.th\b/gi, ".com");
+  }
+  return t;
+}
+
 function envApiPrefixFromVite(): string | null {
-  const raw = import.meta.env.VITE_API_URL?.trim();
+  const raw = sanitizeViteApiUrlRaw(import.meta.env.VITE_API_URL?.trim() ?? "");
   if (!raw) return null;
   if (!/^https?:\/\//i.test(raw)) {
     let p = raw.replace(/\/+$/, "");
@@ -32,6 +43,30 @@ function envApiPrefixFromVite(): string | null {
     return p.startsWith("/") ? p : `/${p}`;
   }
   return normalizeApiUrlRoot(raw);
+}
+
+function stripLeadingWww(hostname: string): string {
+  return hostname.replace(/^www\./i, "").toLowerCase();
+}
+
+/**
+ * الصفحة على www والـ API مضبوط على apex (أو العكس) ⇒ منشآن مختلفان لسياسة المتصفّح:
+ * طلبات fetch تعرّض لإعادة توجيه على OPTIONS فتفشل (Redirect not allowed for preflight).
+ */
+function isApexWwwOnlyMismatch(apiOrigin: string, pageOrigin: string): boolean {
+  try {
+    const a = new URL(apiOrigin);
+    const p = new URL(pageOrigin);
+    if (a.origin === p.origin) return false;
+    return stripLeadingWww(a.hostname) === stripLeadingWww(p.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function apiAbsoluteOrigin(fromEnvEndsWithApi: string): string {
+  const root = fromEnvEndsWithApi.replace(/\/api\/?$/i, "").replace(/\/+$/, "");
+  return new URL(root).origin;
 }
 
 /**
@@ -48,8 +83,33 @@ export function getApiUrlPrefix(): string {
   }
 
   const fromEnv = envApiPrefixFromVite();
-  if (fromEnv) return fromEnv;
-  return sameOriginApiPrefix();
+  if (!fromEnv) {
+    return sameOriginApiPrefix();
+  }
+
+  if (typeof window !== "undefined" && /^https?:\/\//i.test(fromEnv)) {
+    try {
+      const apiOrigin = apiAbsoluteOrigin(fromEnv);
+      const pageOrigin = window.location.origin;
+
+      if (isApexWwwOnlyMismatch(apiOrigin, pageOrigin)) {
+        return sameOriginApiPrefix();
+      }
+
+      if (apiOrigin !== pageOrigin) {
+        const allowCross =
+          import.meta.env.VITE_API_CROSS_ORIGIN === "1" ||
+          import.meta.env.VITE_API_CROSS_ORIGIN === "true";
+        if (!allowCross) {
+          return sameOriginApiPrefix();
+        }
+      }
+    } catch {
+      /* اسقط إلى fromEnv */
+    }
+  }
+
+  return fromEnv;
 }
 
 export class ApiError extends Error {

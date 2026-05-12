@@ -12,6 +12,9 @@ import { defineConfig, loadEnv } from "vite";
  */
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  const apiProxyTarget =
+    env.API_PROXY_TARGET?.trim() ||
+    `http://127.0.0.1:${String(env.SERVER_PORT || env.PORT || "4000").replace(/\D/g, "") || "4000"}`;
   const subpath = env.VITE_BASE_PATH?.trim();
   const base =
     !subpath || subpath === "/" ? "/" : `${subpath.startsWith("/") ? subpath : `/${subpath}`}`.replace(/\/?$/, "/");
@@ -32,14 +35,14 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       strictPort: true,
       proxy: {
-        "/api": { target: "http://localhost:4000", changeOrigin: true },
+        "/api": { target: apiProxyTarget, changeOrigin: true },
       },
     },
     preview: {
       port: 4173,
       strictPort: false,
       proxy: {
-        "/api": { target: "http://localhost:4000", changeOrigin: true },
+        "/api": { target: apiProxyTarget, changeOrigin: true },
       },
     },
     build: {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, startTransition, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Barcode,
@@ -46,6 +46,12 @@ import {
   readDocumentActivity,
   type DocumentActivityEntry,
 } from "@/lib/documentActivityLog";
+import { QuickOfficeBar } from "@/components/office/QuickOfficeBar";
+import { exportBrandedTableDocx, withFileToast } from "@/services/fileService";
+
+const OfficeDocumentsCard = lazy(() =>
+  import("@/components/office/OfficeDocumentsCard").then((m) => ({ default: m.OfficeDocumentsCard }))
+);
 
 type FinancialSummary = {
   docCount: number;
@@ -100,25 +106,27 @@ export function DashboardHome() {
     return () => window.removeEventListener("idara-doc-activity", onAct);
   }, []);
 
-  const welcome = t("dashboard.welcome").replace(
-    "{name}",
-    user?.name ?? t("dashboard.guestName")
+  const welcome = useMemo(
+    () =>
+      t("dashboard.welcome").replace("{name}", user?.name ?? t("dashboard.guestName")),
+    [t, user?.name]
   );
 
-  const referralUrl =
-    typeof window !== "undefined"
-      ? `${getPublicOrigin()}/register?ref=${encodeURIComponent(user?.referral_code ?? user?.id ?? "guest")}`
-      : "";
+  const referralUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return `${getPublicOrigin()}/register?ref=${encodeURIComponent(user?.referral_code ?? user?.id ?? "guest")}`;
+  }, [user?.referral_code, user?.id]);
 
-  const copyReferral = async () => {
+  const copyReferral = useCallback(async () => {
+    if (!referralUrl) return;
     try {
       await navigator.clipboard.writeText(referralUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      startTransition(() => setCopied(true));
+      window.setTimeout(() => startTransition(() => setCopied(false)), 2000);
     } catch {
-      setCopied(false);
+      startTransition(() => setCopied(false));
     }
-  };
+  }, [referralUrl]);
 
   const loadData = useCallback(async () => {
     if (!token) return;
@@ -154,7 +162,7 @@ export function DashboardHome() {
     branding.socialTwitter,
   ]);
 
-  const saveBranding = async () => {
+  const saveBranding = useCallback(async () => {
     if (!token) return;
     setSavingBrand(true);
     try {
@@ -175,22 +183,22 @@ export function DashboardHome() {
     } finally {
       setSavingBrand(false);
     }
-  };
+  }, [token, branding]);
 
-  const onLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onLogoFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f || !f.type.startsWith("image/")) return;
     const reader = new FileReader();
     reader.onload = () => {
       const data = String(reader.result ?? "");
       if (data.startsWith("data:image") && data.length < 500_000) {
-        setBranding((b) => ({ ...b, logoDataUrl: data }));
+        startTransition(() => setBranding((b) => ({ ...b, logoDataUrl: data })));
       }
     };
     reader.readAsDataURL(f);
-  };
+  }, []);
 
-  const runExportPdf = async () => {
+  const runExportPdf = useCallback(async () => {
     if (!summary) return;
     await exportDashboardPdf(
       {
@@ -220,7 +228,7 @@ export function DashboardHome() {
         fileName: `dashboard-${Date.now()}.pdf`,
       }
     );
-  };
+  }, [summary, branding, t, isRtl, locale]);
 
   const runExportExcelSync = async () => {
     if (!summary) return;
@@ -281,6 +289,26 @@ export function DashboardHome() {
     }
   };
 
+  const runProfessionalWord = useCallback(async () => {
+    if (!summary) return;
+    await withFileToast(
+      () =>
+        exportBrandedTableDocx({
+          title: t("dashboard.financialTitle"),
+          rows: [
+            [t("dashboard.docCount"), String(summary.docCount)],
+            [t("dashboard.revenueToday"), String(summary.todayRevenue)],
+            [t("dashboard.revenueHour"), String(summary.hourRevenue)],
+            [t("dashboard.profitToday"), String(summary.todayNetProfit)],
+            [t("dashboard.profitHour"), String(summary.hourNetProfit)],
+            [t("dashboard.statDownloadsCount"), String(summary.salesCount)],
+          ],
+          fileName: `dashboard-pro-${Date.now()}.docx`,
+        }),
+      t("auth.errGeneric")
+    );
+  }, [summary, t]);
+
   const runExportExcel = () => {
     if (!summary) return;
     void exportDashboardExcel(
@@ -308,11 +336,14 @@ export function DashboardHome() {
     ).catch(() => undefined);
   };
 
-  const chartData =
-    summary?.chart.map((c) => ({
-      ...c,
-      label: c.day.slice(5),
-    })) ?? [];
+  const chartData = useMemo(
+    () =>
+      summary?.chart.map((c) => ({
+        ...c,
+        label: c.day.slice(5),
+      })) ?? [],
+    [summary]
+  );
 
   return (
     <div className="space-y-8">
@@ -348,6 +379,18 @@ export function DashboardHome() {
                 {t("dashboard.inventoryRadarLink")}
               </Link>
             </div>
+            <div className="flex flex-col gap-3 w-full sm:w-auto">
+              <QuickOfficeBar
+                onProfessionalExcel={runExportExcel}
+                onProfessionalWord={runProfessionalWord}
+                disabledExcel={!summary}
+                disabledWord={!summary}
+                labels={{
+                  quickGrid: t("fileUi.quickGrid"),
+                  exportExcel: t("fileUi.proExcel"),
+                  exportWord: t("fileUi.proWord"),
+                }}
+              />
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -404,6 +447,7 @@ export function DashboardHome() {
                   </Button>
                 </>
               )}
+            </div>
             </div>
           </div>
 
@@ -540,6 +584,21 @@ export function DashboardHome() {
           )}
         </CardContent>
       </Card>
+
+      <Suspense
+        fallback={
+          <div className="rounded-xl border border-white/10 bg-[#0a1628]/60 p-6 text-sm text-slate-400">{t("common.loading")}</div>
+        }
+      >
+        <OfficeDocumentsCard
+          title={t("fileUi.officeHubTitle")}
+          subtitle={t("fileUi.officeHubSubtitle")}
+          uploadLabel={t("fileUi.upload")}
+          previewLabel={t("fileUi.refreshPreview")}
+          saveLabel={t("fileUi.saveLocal")}
+          stashTitle={t("fileUi.savedList")}
+        />
+      </Suspense>
 
       <Card className="border-white/10 bg-white/5 backdrop-blur-xl">
         <CardContent className="p-4 md:p-6 space-y-4">

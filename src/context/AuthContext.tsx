@@ -39,8 +39,15 @@ function mapApiError(err: unknown): string {
     if (st === 401 || st === 400 || st === 403 || st === 422 || st === 429) {
       return msg;
     }
-    if (st === 404) {
-      return "خادم التطبيق غير متاح — يرجى التواصل مع الدعم.";
+    if (st === 500 || st === 502 || st === 504) {
+      const lower = (msg || "").toLowerCase();
+      if (lower.includes("internal server error") || msg === "") {
+        return "خطأ في الخادم — تحقق من اتصال قاعدة البيانات والمتغيرات على الخادم.";
+      }
+      return msg;
+    }
+    if (st === 503) {
+      return msg.includes("قاعدة البيانات") ? msg : "الخادم مشغول أو قاعدة البيانات غير متاحة — حاول لاحقاً.";
     }
     if (msg.includes("Received HTML") || msg.includes("VITE_API_URL")) {
       return "خادم التطبيق غير متاح حالياً — تحقق من إعدادات النشر أو تواصل مع الدعم.";
@@ -57,6 +64,9 @@ function mapApiError(err: unknown): string {
     m.includes("Network request failed") ||
     m.toLowerCase().includes("cors")
   ) {
+    if (import.meta.env.DEV) {
+      return "الخادم الخلفي غير يعمل أو البروكسي لا يصل — نفّذ من الجذر: npm run dev (يجب أن يعمل Express على المنفذ 4000 وليس vite وحده).";
+    }
     return "خادم التطبيق غير متاح حالياً — تحقق من إعدادات النشر أو تواصل مع الدعم.";
   }
   return m;
@@ -233,6 +243,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const fp = getDeviceFingerprint();
     const deviceLabel = typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "";
 
+    const persistSession = async (res: { token: string; user: User }) => {
+      localStorage.setItem(TOKEN_KEY, res.token);
+      setToken(res.token);
+      setUser(res.user);
+      const primaryAdminSession =
+        res.user.role === "superadmin" ||
+        res.user.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL ||
+        res.user.name?.toUpperCase().includes("MOUTAOUAKIL");
+      if (primaryAdminSession) {
+        localStorage.setItem(AUTO_ADMIN_KEY, "1");
+      }
+      await refresh();
+    };
+
+    const postLegacyLogin = () =>
+      api<{ token: string; user: User }>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          password,
+          rememberMe: Boolean(rememberMe),
+          deviceFingerprint: fp,
+          deviceLabel,
+        }),
+      });
+
+    /** على localhost: جرّب الخادم المحلي أولاً (مستخدمون في Postgres) لتفادي «Failed to fetch» من Supabase فقط */
+    if (import.meta.env.DEV) {
+      try {
+        const res = await postLegacyLogin();
+        await persistSession(res);
+        return;
+      } catch (e) {
+        if (!(e instanceof ApiError && e.status === 401)) {
+          throw new Error(mapApiError(e));
+        }
+        if (!isSupabaseConfigured || !supabase) {
+          throw new Error(mapApiError(e));
+        }
+      }
+    }
+
     if (isSupabaseConfigured && supabase) {
       const sb = await supabase.auth.signInWithPassword({
         email: email.trim(),
@@ -241,17 +293,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (sb.data.session?.access_token) {
         try {
           const res = await exchangeSupabaseSessionForIdara(sb.data.session.access_token);
-          localStorage.setItem(TOKEN_KEY, res.token);
-          setToken(res.token);
-          setUser(res.user);
-          const primaryAdminSession =
-            res.user.role === "superadmin" ||
-            res.user.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL ||
-            res.user.name?.toUpperCase().includes("MOUTAOUAKIL");
-          if (primaryAdminSession) {
-            localStorage.setItem(AUTO_ADMIN_KEY, "1");
-          }
-          await refresh();
+          await persistSession(res);
           return;
         } catch (apiErr) {
           throw new Error(mapApiError(apiErr));
@@ -266,7 +308,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!maybeLegacy) {
           throw new Error(mapSupabaseAuthError(sb.error.message));
         }
-        /* حسابات قديمة في الخادم فقط — إعادة المحاولة عبر /auth/login */
+        if (import.meta.env.DEV) {
+          throw new Error("بريد أو كلمة مرور خاطئة");
+        }
+        /* إنتاج: حسابات قديمة في الخادم فقط — إعادة المحاولة عبر /auth/login */
       } else {
         throw new Error(
           "لم يتم إنشاء جلسة. تحقق من تأكيد البريد الإلكتروني أو كلمة المرور."
@@ -275,27 +320,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const res = await api<{ token: string; user: User }>("/auth/login", {
-        method: "POST",
-        body: JSON.stringify({
-          email,
-          password,
-          rememberMe: Boolean(rememberMe),
-          deviceFingerprint: fp,
-          deviceLabel,
-        }),
-      });
-      localStorage.setItem(TOKEN_KEY, res.token);
-      setToken(res.token);
-      setUser(res.user);
-      const primaryAdminSession =
-        res.user.role === "superadmin" ||
-        res.user.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL ||
-        res.user.name?.toUpperCase().includes("MOUTAOUAKIL");
-      if (primaryAdminSession) {
-        localStorage.setItem(AUTO_ADMIN_KEY, "1");
-      }
-      await refresh();
+      const res = await postLegacyLogin();
+      await persistSession(res);
     } catch (apiErr) {
       throw new Error(mapApiError(apiErr));
     }

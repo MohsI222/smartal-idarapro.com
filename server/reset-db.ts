@@ -2,7 +2,7 @@
  * مسح كل الحسابات ثم إنشاء مشرف عام واحد (من admin-config / .env).
  * تشغيل: npm run db:reset
  */
-import "dotenv/config";
+import "./loadEnv.js";
 import { initDatabase } from "./db.js";
 import { ensureSuperAdmin, purgeAllUserData } from "./seed.js";
 
