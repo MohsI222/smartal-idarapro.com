@@ -1,5 +1,4 @@
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
+// Load `jspdf` and `jspdf-autotable` dynamically where needed to reduce bundle size
 import arabicPersianReshaper from "arabic-persian-reshaper";
 import { fetchBackendPrintHtml } from "@/lib/backendExportClient";
 import { buildOfficialDocumentFullHtml } from "@/lib/legalApplicationPrint";
@@ -40,7 +39,7 @@ function arrayBufferToBinaryString(buf: ArrayBuffer): string {
 
 let fontLoadPromise: Promise<void> | null = null;
 
-function ensureArabicFontLoaded(doc: jsPDF): Promise<void> {
+function ensureArabicFontLoaded(doc: any): Promise<void> {
   if (fontLoadPromise) return fontLoadPromise;
   fontLoadPromise = (async () => {
     const res = await fetch(NOTO_NASKH_AR_TTF_URL);
@@ -121,6 +120,11 @@ export async function exportMemberMgmtJsPdf(opts: {
 }): Promise<void> {
   const { setup, members, fileNameBase } = opts;
 
+  const { jsPDF } = await import("jspdf");
+  // `jspdf-autotable` augments the jsPDF instance; load it dynamically
+  const autoTableModule = await import("jspdf-autotable");
+  const autoTable = (autoTableModule && (autoTableModule as any).default) || autoTableModule;
+
   const doc = new jsPDF({
     orientation: "landscape",
     unit: "mm",
@@ -173,7 +177,7 @@ export async function exportMemberMgmtJsPdf(opts: {
     [cellText("لا توجد بيانات"), "", "", "", "", "", ""],
   ];
 
-  autoTable(doc, {
+  autoTable(doc as any, {
     startY: 26,
     head,
     body: body.length ? body : emptyRow,

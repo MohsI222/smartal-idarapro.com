@@ -16,7 +16,8 @@
     "db:reset": "tsx server/reset-db.ts",
     "db:schema": "tsx server/db-init.ts",
     "verify:local": "tsx scripts/verify-local-login.ts",
-    "vercel:purge-push": "bash scripts/vercel-purge-and-push-env.sh"
+    "vercel:purge-push": "bash scripts/vercel-purge-and-push-env.sh",
+    "optimize:images": "node scripts/optimize-images.js"
   },
   "engines": {
     "node": "22.x"
@@ -80,6 +81,10 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
+    "imagemin": "^9.0.1",
+    "imagemin-mozjpeg": "^10.0.0",
+    "imagemin-pngquant": "^10.0.0",
+    "imagemin-svgo": "^12.0.0",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.2",
     "typescript": "~5.7.2",

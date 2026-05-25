@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, api, getApiUrlPrefix } from "@/lib/api";
-import { isPrimaryAdminClient } from "@/lib/adminClient";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { Link } from "react-router-dom";
@@ -33,13 +32,13 @@ function buildSettingsRecord(raw: Record<string, string> | undefined): Record<st
 }
 
 export function AdminPlatformSettings() {
-  const { token, user } = useAuth();
+  const { token, isAdmin } = useAuth();
   const { t } = useI18n();
   const [settings, setSettings] = useState<Record<string, string>>(() => buildSettingsRecord({}));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const canEdit = user?.role === "superadmin" || isPrimaryAdminClient(user?.email, user?.name);
+  const canEdit = Boolean(isAdmin);
 
   const load = useCallback(async () => {
     setLoading(true);

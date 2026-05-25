@@ -21,8 +21,8 @@ import {
   buildDismissalNoticeHtml,
   buildEmploymentContractHtml,
   buildInternalRulesAckHtml,
+  buildPayrollSlipHtml,
   buildReturnToWorkHtml,
-  buildSalarySocialHtml,
   buildWorkCertificateHtml,
   type HrBranding,
 } from "@/lib/hrEnterpriseHtml";
@@ -49,6 +49,28 @@ type AbsenceRow = {
   reason: string;
 };
 
+function minutesFromTime(value: string): number | null {
+  const [h, m] = value.split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+function analyzeAttendance(scheduledStart: string, actualCheckIn: string) {
+  const scheduled = minutesFromTime(scheduledStart);
+  const actual = minutesFromTime(actualCheckIn);
+  if (scheduled === null || actual === null) return { minutesLate: 0, absent: !actualCheckIn, late: false };
+  const minutesLate = Math.max(0, actual - scheduled);
+  return { minutesLate, absent: minutesLate >= 240, late: minutesLate >= 10 };
+}
+
+function payrollFromGross(gross: string) {
+  const grossSalary = Math.max(0, Number(gross) || 0);
+  const cnss = Math.min(grossSalary, 6000) * 0.0448;
+  const amo = grossSalary * 0.0226;
+  const netSalary = Math.max(0, grossSalary - cnss - amo);
+  return { grossSalary, cnss, amo, netSalary };
+}
+
 function pdfLang(locale: AppLocale): string {
   if (locale.startsWith("ar")) return "ar";
   if (locale === "fr") return "fr";
@@ -73,6 +95,10 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
     reason: "",
   });
   const [returnDate, setReturnDate] = useState(() => todayIsoLocal());
+  const [attendanceAi, setAttendanceAi] = useState({
+    scheduledStart: "09:00",
+    actualCheckIn: "09:00",
+  });
 
   const [dismissForm, setDismissForm] = useState({
     employeeName: "",
@@ -125,6 +151,11 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
     mutual: "",
     mutualId: "",
   });
+  const salaryCalc = useMemo(() => payrollFromGross(certSalary.gross), [certSalary.gross]);
+  const attendanceCalc = useMemo(
+    () => analyzeAttendance(attendanceAi.scheduledStart, attendanceAi.actualCheckIn),
+    [attendanceAi.actualCheckIn, attendanceAi.scheduledStart]
+  );
 
   const loadBranding = useCallback(async () => {
     if (!token) return;
@@ -296,6 +327,37 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                 {t("hr.enterprise.addAbsence")}
               </Button>
 
+              <div className="rounded-xl border border-fuchsia-400/30 bg-fuchsia-500/10 p-4 shadow-[0_0_28px_rgba(217,70,239,0.18)]">
+                <div className="flex items-center gap-2 text-sm font-bold text-fuchsia-100">
+                  <ClipboardList className="size-4 text-fuchsia-300" />
+                  {t("hr.enterprise.aiAttendanceTitle")}
+                </div>
+                <div className="mt-3 grid sm:grid-cols-3 gap-3">
+                  <Field
+                    label={t("hr.enterprise.scheduledStart")}
+                    type="time"
+                    value={attendanceAi.scheduledStart}
+                    onChange={(v) => setAttendanceAi((f) => ({ ...f, scheduledStart: v }))}
+                  />
+                  <Field
+                    label={t("hr.enterprise.actualCheckIn")}
+                    type="time"
+                    value={attendanceAi.actualCheckIn}
+                    onChange={(v) => setAttendanceAi((f) => ({ ...f, actualCheckIn: v }))}
+                  />
+                  <div className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-sm">
+                    <div className="text-slate-400">{t("hr.enterprise.attendanceStatus")}</div>
+                    <div className={cn("mt-1 font-bold", attendanceCalc.late ? "text-amber-300" : "text-emerald-300")}>
+                      {attendanceCalc.absent
+                        ? t("hr.enterprise.absenceWarning")
+                        : attendanceCalc.late
+                          ? t("hr.enterprise.lateWarning").replace("{minutes}", String(attendanceCalc.minutesLate))
+                          : t("hr.enterprise.onTime")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {absences.length > 0 && (
                 <div className="overflow-x-auto rounded-lg border border-slate-800 text-sm">
                   <table className="w-full">
@@ -336,6 +398,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                     <Button
                       type="button"
                       size="sm"
+                      className="border-cyan-300/70 bg-cyan-400/15 text-cyan-50 shadow-[0_0_22px_rgba(34,211,238,0.35)] hover:bg-cyan-300/25"
                       onClick={() =>
                         void exportPdf(
                           buildReturnToWorkHtml({
@@ -360,6 +423,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                       type="button"
                       size="sm"
                       variant="outline"
+                      className="border-cyan-300/70 bg-cyan-400/10 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.28)] hover:bg-cyan-300/20"
                       onClick={() =>
                         void exportWord(
                           buildReturnToWorkHtml({
@@ -420,7 +484,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                       type="button"
                       size="sm"
                       variant="destructive"
-                      className="bg-red-900/80"
+                      className="bg-red-900/80 shadow-[0_0_18px_rgba(248,113,113,0.28)]"
                       onClick={() =>
                         void exportPdf(
                           buildDismissalNoticeHtml({
@@ -484,6 +548,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                 <AiGenerateButton
                   module="hrContract"
                   variant="outline"
+                  className="border-fuchsia-300/70 bg-fuchsia-400/10 text-fuchsia-100 shadow-[0_0_22px_rgba(217,70,239,0.35)] hover:bg-fuchsia-300/20"
                   context={{
                     docKind: "internal_rules_polish",
                     rulesExcerpt: rulesText.slice(0, 4000),
@@ -512,6 +577,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
+                  className="border-cyan-300/70 bg-cyan-400/15 text-cyan-50 shadow-[0_0_22px_rgba(34,211,238,0.35)] hover:bg-cyan-300/25"
                   onClick={() =>
                     void exportPdf(
                       buildInternalRulesAckHtml({
@@ -533,6 +599,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                 <Button
                   type="button"
                   variant="outline"
+                  className="border-cyan-300/70 bg-cyan-400/10 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.28)] hover:bg-cyan-300/20"
                   onClick={() =>
                     void exportWord(
                       buildInternalRulesAckHtml({
@@ -618,6 +685,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
               </div>
               <AiGenerateButton
                 module="hrContract"
+                className="border-fuchsia-300/70 bg-fuchsia-400/10 text-fuchsia-100 shadow-[0_0_22px_rgba(217,70,239,0.35)] hover:bg-fuchsia-300/20"
                 context={{
                   employer: contractCtx.employerName || defaultEmployer,
                   employee: contractCtx.employeeName,
@@ -642,6 +710,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
+                  className="border-cyan-300/70 bg-cyan-400/15 text-cyan-50 shadow-[0_0_22px_rgba(34,211,238,0.35)] hover:bg-cyan-300/25"
                   onClick={() =>
                     void exportPdf(
                       buildEmploymentContractHtml({
@@ -660,6 +729,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                 <Button
                   type="button"
                   variant="outline"
+                  className="border-cyan-300/70 bg-cyan-400/10 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.28)] hover:bg-cyan-300/20"
                   onClick={() =>
                     void exportWord(
                       buildEmploymentContractHtml({
@@ -719,6 +789,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                 <Button
                   type="button"
                   size="sm"
+                  className="border-cyan-300/70 bg-cyan-400/15 text-cyan-50 shadow-[0_0_22px_rgba(34,211,238,0.35)] hover:bg-cyan-300/25"
                   onClick={() =>
                     void exportPdf(
                       buildWorkCertificateHtml({
@@ -742,6 +813,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                   type="button"
                   size="sm"
                   variant="outline"
+                  className="border-cyan-300/70 bg-cyan-400/10 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.28)] hover:bg-cyan-300/20"
                   onClick={() =>
                     void exportWord(
                       buildWorkCertificateHtml({
@@ -812,52 +884,61 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                   onChange={(v) => setCertSalary((f) => ({ ...f, mutualId: v }))}
                 />
               </div>
+              <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm shadow-[0_0_28px_rgba(52,211,153,0.18)]">
+                <div className="font-bold text-emerald-100">{t("hr.enterprise.autoDeductions")}</div>
+                <div className="mt-2 grid sm:grid-cols-4 gap-2 text-slate-200">
+                  <span>Brut: {salaryCalc.grossSalary.toFixed(2)} MAD</span>
+                  <span>CNSS: {salaryCalc.cnss.toFixed(2)} MAD</span>
+                  <span>AMO: {salaryCalc.amo.toFixed(2)} MAD</span>
+                  <span className="font-bold text-emerald-200">{t("hr.enterprise.netSalary")}: {salaryCalc.netSalary.toFixed(2)} MAD</span>
+                </div>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   size="sm"
+                  className="border-cyan-300/70 bg-cyan-400/15 text-cyan-50 shadow-[0_0_22px_rgba(34,211,238,0.35)] hover:bg-cyan-300/25"
                   onClick={() =>
                     void exportPdf(
-                      buildSalarySocialHtml({
+                      buildPayrollSlipHtml({
                         branding,
                         employeeName: certSalary.employeeName || "—",
                         employeeId: certSalary.employeeId || "—",
                         period: certSalary.period || "—",
-                        grossSalary: certSalary.gross || "—",
-                        cnssNumber: certSalary.cnss || "—",
-                        amoNumber: certSalary.amo || "—",
-                        mutualName: certSalary.mutual || "—",
-                        mutualId: certSalary.mutualId || "—",
+                        grossSalary: salaryCalc.grossSalary,
+                        cnss: salaryCalc.cnss,
+                        amo: salaryCalc.amo,
+                        netSalary: salaryCalc.netSalary,
                         dir,
                         locale: appLocale,
                       }),
-                      "salary-social-slip"
+                      "fiche-de-paie"
                     )
                   }
                 >
                   <Download className="size-4" />
-                  {t("hr.enterprise.pdfSalary")}
+                  {t("hr.enterprise.salarySlipTitle")}
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
+                  className="border-cyan-300/70 bg-cyan-400/10 text-cyan-100 shadow-[0_0_18px_rgba(34,211,238,0.28)] hover:bg-cyan-300/20"
                   onClick={() =>
                     void exportWord(
-                      buildSalarySocialHtml({
+                      buildPayrollSlipHtml({
                         branding,
                         employeeName: certSalary.employeeName || "—",
                         employeeId: certSalary.employeeId || "—",
                         period: certSalary.period || "—",
-                        grossSalary: certSalary.gross || "—",
-                        cnssNumber: certSalary.cnss || "—",
-                        amoNumber: certSalary.amo || "—",
-                        mutualName: certSalary.mutual || "—",
-                        mutualId: certSalary.mutualId || "—",
+                        grossSalary: salaryCalc.grossSalary,
+                        cnss: salaryCalc.cnss,
+                        amo: salaryCalc.amo,
+                        netSalary: salaryCalc.netSalary,
                         dir,
                         locale: appLocale,
                       }),
-                      "salary-social"
+                      "fiche-de-paie"
                     )
                   }
                 >

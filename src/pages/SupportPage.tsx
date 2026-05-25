@@ -15,7 +15,7 @@ type Msg = {
 };
 
 export function SupportPage() {
-  const { token, user } = useAuth();
+  const { token, isAdmin } = useAuth();
   const { t, isRtl, formatNumber } = useI18n();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
@@ -66,7 +66,7 @@ export function SupportPage() {
             <p className="text-sm text-slate-400">{t("support.subtitle")}</p>
           </div>
         </div>
-        {user?.role === "superadmin" && (
+        {isAdmin && (
           <Button variant="outline" className="border-[#0052CC]/50 shrink-0" asChild>
             <Link to="/app/admin">{t("nav.admin")}</Link>
           </Button>

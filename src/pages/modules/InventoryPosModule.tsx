@@ -85,6 +85,8 @@ const RETAIL_TYPES = [
   "bookstore",
   "cafe",
   "hardware",
+  "company",
+  "laboratory",
   "retail",
 ] as const;
 
@@ -1677,4 +1679,3 @@ export function InventoryPosModule() {
     </div>
   );
 }
-

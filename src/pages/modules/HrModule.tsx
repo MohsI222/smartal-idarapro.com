@@ -56,11 +56,8 @@ export function HrModule() {
   const [metricDrafts, setMetricDrafts] = useState<Record<string, MetricRow>>({});
   const [form, setForm] = useState({
     name: "",
+    national_id: "",
     employee_id: "",
-    role: "",
-    salary: "",
-    contract_type: "CDI",
-    contract_end: "",
   });
   const load = useCallback(async () => {
     if (!token || !allowed) return;
@@ -143,20 +140,18 @@ export function HrModule() {
       token,
       body: JSON.stringify({
         name: form.name,
+        national_id: form.national_id,
         employee_id: form.employee_id,
-        role: form.role,
-        salary: Number(form.salary),
-        contract_type: form.contract_type,
-        contract_end: form.contract_end || undefined,
+        role: "—",
+        salary: 0,
+        contract_type: "CDI",
+        contract_end: undefined,
       }),
     });
     setForm({
       name: "",
+      national_id: "",
       employee_id: "",
-      role: "",
-      salary: "",
-      contract_type: "CDI",
-      contract_end: "",
     });
     await load();
   };
@@ -305,11 +300,11 @@ export function HrModule() {
             }}
           />
           <div className="flex flex-wrap gap-2 justify-end">
-            <Button variant="outline" onClick={exportExcel}>
+            <Button className="border-cyan-300/70 bg-cyan-400/10 text-cyan-100 shadow-[0_0_22px_rgba(34,211,238,0.35)] hover:bg-cyan-300/20" variant="outline" onClick={exportExcel}>
               <FileSpreadsheet className="size-4" />
               {t("pdf.exportCsv")}
             </Button>
-            <Button variant="secondary" onClick={() => void exportPdf()}>
+            <Button className="border-cyan-300/70 bg-cyan-400/15 text-cyan-50 shadow-[0_0_24px_rgba(34,211,238,0.42)] hover:bg-cyan-300/25" variant="secondary" onClick={() => void exportPdf()}>
               <Download className="size-4" />
               {t("pdf.export")}
             </Button>
@@ -355,42 +350,22 @@ export function HrModule() {
                 onChange={(v) => setForm((f) => ({ ...f, name: v }))}
               />
               <Field
-                label={t("tbl.empId")}
+                label={t("hr.labelCin")}
+                value={form.national_id}
+                onChange={(v) => setForm((f) => ({ ...f, national_id: v }))}
+              />
+              <Field
+                label={t("hr.labelWorkNumber")}
                 value={form.employee_id}
                 onChange={(v) => setForm((f) => ({ ...f, employee_id: v }))}
               />
-              <Field
-                label={t("tbl.role")}
-                value={form.role}
-                onChange={(v) => setForm((f) => ({ ...f, role: v }))}
-              />
-              <Field
-                label={t("hr.labelSalaryMad")}
-                value={form.salary}
-                onChange={(v) => setForm((f) => ({ ...f, salary: v }))}
-                type="number"
-              />
-              <div>
-                <Label>{t("hr.labelContractType")}</Label>
-                <select
-                  className="mt-1 flex h-10 w-full rounded-xl border border-slate-700 bg-slate-900/50 px-3 text-sm"
-                  value={form.contract_type}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, contract_type: e.target.value }))
-                  }
-                >
-                  <option value="CDI">CDI</option>
-                  <option value="CDD">CDD</option>
-                </select>
-              </div>
-              <Field
-                label={t("hr.labelContractEndOptional")}
-                value={form.contract_end}
-                onChange={(v) => setForm((f) => ({ ...f, contract_end: v }))}
-                type="date"
-              />
               <div className="sm:col-span-2 lg:col-span-3">
-                <Button onClick={() => void addEmployee()}>{t("hr.saveEmployee")}</Button>
+                <Button
+                  className="bg-emerald-400 text-emerald-950 shadow-[0_0_26px_rgba(52,211,153,0.65)] hover:bg-emerald-300"
+                  onClick={() => void addEmployee()}
+                >
+                  {t("hr.saveEmployee")}
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -496,7 +471,7 @@ export function HrModule() {
                         <Button
                           size="sm"
                           variant="secondary"
-                          className="w-full"
+                          className="w-full bg-emerald-400 text-emerald-950 shadow-[0_0_18px_rgba(52,211,153,0.45)] hover:bg-emerald-300"
                           onClick={() => void saveEmployeeRow(e.id)}
                         >
                           {t("common.saveRow")}
@@ -605,7 +580,7 @@ export function HrModule() {
                           <Button
                             size="sm"
                             variant="secondary"
-                            className="w-full"
+                            className="w-full bg-emerald-400 text-emerald-950 shadow-[0_0_18px_rgba(52,211,153,0.45)] hover:bg-emerald-300"
                             onClick={() => void saveMetricRow(m.id)}
                           >
                             {t("common.saveRow")}
@@ -629,6 +604,7 @@ export function HrModule() {
             onExtracted={(text) => {
               const hints = parseMoroccanIdHints(text);
               if (hints.fullName) setForm((f) => ({ ...f, name: hints.fullName ?? f.name }));
+              if (hints.cin) setForm((f) => ({ ...f, national_id: hints.cin ?? f.national_id }));
               window.alert(
                 hints.raw.slice(0, 400) + (hints.raw.length > 400 ? "…" : "")
               );

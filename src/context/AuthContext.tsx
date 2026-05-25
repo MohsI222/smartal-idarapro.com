@@ -143,6 +143,8 @@ type AuthContextValue = {
   isApproved: boolean;
   subscriptionExpired: boolean;
   approvedModules: string[];
+  /** True when the user is superadmin or matches the primary admin client identity */
+  isAdmin: boolean;
   subscriptionDaysRemaining: number | null;
   subscriptionExpiryUrgent: boolean;
   /** 7 / 3 / 1 day notices for paid subs (null if N/A) */
@@ -414,7 +416,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [trialActive]);
 
   const subscriptionDaysRemaining = useMemo(() => {
-    if (user?.role === "superadmin" || isPrimaryAdminClient(user?.email, user?.name)) {
+    if (isAdmin) {
       return null;
     }
     if (trialActive) return null;
@@ -431,7 +433,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [subscriptionDaysRemaining]);
 
   const subscriptionExpiryNotice = useMemo((): "7" | "3" | "1" | null => {
-    if (user?.role === "superadmin" || isPrimaryAdminClient(user?.email, user?.name)) return null;
+    if (isAdmin) return null;
     if (trialActive) return null;
     const d = subscriptionDaysRemaining;
     if (d === null || d < 0) return null;
@@ -442,7 +444,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [subscriptionDaysRemaining, trialActive, user]);
 
   const subscriptionCountdown = useMemo(() => {
-    if (user?.role === "superadmin" || isPrimaryAdminClient(user?.email, user?.name)) return null;
+    if (isAdmin) return null;
     let endIso: string | null | undefined;
     if (trialActive && user?.trial_ends_at) endIso = user.trial_ends_at;
     else if (subscription?.status === "approved" && subscription.ends_at) endIso = subscription.ends_at;
@@ -460,9 +462,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, trialActive, subscription, nowTick]);
 
   const accountLocked = Boolean(user?.account_locked);
-
   const subscriptionExpired = useMemo(() => {
-    if (user?.role === "superadmin" || isPrimaryAdminClient(user?.email, user?.name)) {
+    if (isAdmin) {
       return false;
     }
     if (trialActive) return false;
@@ -474,8 +475,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return t <= Date.now();
   }, [subscription, user, trialActive]);
 
+  const isAdmin = useMemo(() => {
+    return (
+      Boolean(user && user.role === "superadmin") ||
+      Boolean(isPrimaryAdminClient(user?.email, user?.name)) ||
+      (user?.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL)
+    );
+  }, [user]);
+
   const isApproved = useMemo(() => {
-    if (user?.role === "superadmin" || isPrimaryAdminClient(user?.email, user?.name)) {
+    if (isAdmin) {
       return true;
     }
     if (trialActive) return true;
@@ -485,7 +494,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [subscription, subscriptionExpired, user, trialActive]);
 
   const approvedModules: string[] = useMemo(() => {
-    if (user?.role === "superadmin" || isPrimaryAdminClient(user?.email, user?.name)) {
+    if (isAdmin) {
       return [...ALL_SAAS_MODULE_IDS];
     }
     const visaOk = Boolean(user?.visa_unlock_approved);
@@ -521,6 +530,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isApproved,
     subscriptionExpired,
     approvedModules,
+    isAdmin,
     subscriptionDaysRemaining,
     subscriptionExpiryUrgent,
     subscriptionExpiryNotice,

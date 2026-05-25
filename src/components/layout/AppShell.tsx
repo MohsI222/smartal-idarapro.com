@@ -55,6 +55,7 @@ export function AppShell() {
     accountLocked,
     subscription,
     trialActive,
+    isAdmin,
   } = useAuth();
   const { t, isRtl, formatNumber } = useI18n();
   const { theme, toggleTheme } = useTheme();
@@ -157,21 +158,13 @@ export function AppShell() {
     pathname === "/app/support" ||
     pathname === "/app/devices" ||
     pathname === "/app/pay";
-  const blockForAccountLock =
-    accountLocked &&
-    user?.role !== "superadmin" &&
-    !isPrimaryAdminClient(user?.email, user?.name) &&
-    !allowWhenLocked;
+  const blockForAccountLock = accountLocked && !isAdmin && !allowWhenLocked;
 
   if (blockForAccountLock) {
     return <AccountLockedScreen />;
   }
 
-  const blockForExpiry =
-    subscriptionExpired &&
-    user?.role !== "superadmin" &&
-    !isPrimaryAdminClient(user?.email, user?.name) &&
-    !allowWhenExpired;
+  const blockForExpiry = subscriptionExpired && !isAdmin && !allowWhenExpired;
 
   if (blockForExpiry) {
     return <SubscriptionExpiredScreen />;
@@ -362,7 +355,7 @@ export function AppShell() {
                   <span className="text-xs font-semibold truncate w-full text-left">
                     {user?.name ?? "—"}
                   </span>
-                  {user?.role === "superadmin" && (
+                  {isAdmin && (
                     <span className="text-[9px] font-bold text-[#FF8C00]/90 truncate w-full">
                       {t("admin.roleGeneralManager")}
                     </span>
@@ -435,7 +428,7 @@ export function AppShell() {
 
         <StockRadarTicker />
 
-        {user?.role !== "superadmin" && !isPrimaryAdminClient(user?.email, user?.name) && (
+            {!isAdmin && (
           <div className="px-4 md:px-8 pt-3 space-y-2">
             {subscriptionCountdown && (
               <div className="rounded-xl border border-sky-500/45 bg-sky-950/30 px-4 py-2.5 text-sm text-sky-100">

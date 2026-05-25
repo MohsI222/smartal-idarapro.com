@@ -182,6 +182,90 @@ export function buildSalarySocialHtml(params: {
   return shell(params.branding, title, params.dir, body);
 }
 
+export function buildPayrollSlipHtml(params: {
+  branding: HrBranding;
+  employeeName: string;
+  employeeId: string;
+  period: string;
+  grossSalary: number;
+  cnss: number;
+  amo: number;
+  netSalary: number;
+  dir: "rtl" | "ltr";
+  locale: string;
+}): string {
+  const title =
+    params.locale.startsWith("ar")
+      ? "شهادة الأجرة"
+      : params.locale.startsWith("fr")
+        ? "Fiche de paie"
+        : params.locale.startsWith("es")
+          ? "Nómina"
+          : "Salary slip";
+  const money = (n: number) =>
+    `${new Intl.NumberFormat(params.locale, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(n)} MAD`;
+  const labels = params.locale.startsWith("ar")
+    ? {
+        employee: "الأجير",
+        period: "الفترة",
+        gross: "الأجر الإجمالي",
+        cnss: "اقتطاع CNSS",
+        amo: "اقتطاع AMO",
+        net: "الصافي للأداء",
+        note: "حساب تلقائي إرشادي للاقتطاعات القانونية. يرجى مراجعته مع المحاسب قبل الاعتماد النهائي.",
+      }
+    : params.locale.startsWith("fr")
+      ? {
+          employee: "Salarié",
+          period: "Période",
+          gross: "Salaire brut",
+          cnss: "Retenue CNSS",
+          amo: "Retenue AMO",
+          net: "Net à payer",
+          note: "Calcul automatique indicatif des retenues légales. À valider avec le comptable avant usage officiel.",
+        }
+      : params.locale.startsWith("es")
+        ? {
+            employee: "Empleado",
+            period: "Período",
+            gross: "Salario bruto",
+            cnss: "Deducción CNSS",
+            amo: "Deducción AMO",
+            net: "Neto a pagar",
+            note: "Cálculo automático orientativo de deducciones legales. Validar con contabilidad antes del uso oficial.",
+          }
+        : {
+            employee: "Employee",
+            period: "Period",
+            gross: "Gross salary",
+            cnss: "CNSS deduction",
+            amo: "AMO deduction",
+            net: "Net payable",
+            note: "Automatic indicative statutory deduction calculation. Validate with accounting before official use.",
+          };
+  const rows = [
+    [labels.employee, `${params.employeeName} (${params.employeeId})`],
+    [labels.period, params.period],
+    [labels.gross, money(params.grossSalary)],
+    [labels.cnss, money(params.cnss)],
+    [labels.amo, money(params.amo)],
+    [labels.net, money(params.netSalary)],
+  ];
+  const tr = rows
+    .map(([a, b], index) => {
+      const strong = index === rows.length - 1;
+      return `<tr><td style="border:1px solid #cbd5e1;padding:10px;background:${strong ? "#ecfeff" : "#f8fafc"};font-weight:800;">${escapeHtmlPdf(a)}</td><td style="border:1px solid #cbd5e1;padding:10px;font-weight:${strong ? "800" : "500"};">${escapeHtmlPdf(b)}</td></tr>`;
+    })
+    .join("");
+  const body =
+    `<table style="width:100%;border-collapse:collapse;font-size:13px;">${tr}</table>` +
+    `<p style="margin-top:14px;font-size:11px;color:#64748b;">${escapeHtmlPdf(labels.note)}</p>`;
+  return shell(params.branding, title, params.dir, body);
+}
+
 export function buildInternalRulesAckHtml(params: {
   branding: HrBranding;
   employeeName: string;

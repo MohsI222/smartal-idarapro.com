@@ -2,6 +2,7 @@ import {
   Bell,
   Building2,
   Calculator,
+  FlaskConical,
   Gavel,
   GraduationCap,
   LayoutGrid,
@@ -26,6 +27,8 @@ export type SectionId =
   | "inventory"
   | "members"
   | "company"
+  | "commercial_company"
+  | "laboratory"
   | "academy"
   | "gov"
   | "legal_ai"
@@ -136,6 +139,24 @@ export const SECTIONS: SectionDef[] = [
     color: "text-sky-400",
     price: "—",
     path: "/app/company",
+  },
+  {
+    id: "commercial_company",
+    titleKey: "section.commercial_company.title",
+    shortTitleKey: "section.commercial_company.short",
+    icon: Building2,
+    color: "text-lime-300",
+    price: "—",
+    path: "/app/company?sector=commercial-industrial",
+  },
+  {
+    id: "laboratory",
+    titleKey: "section.laboratory.title",
+    shortTitleKey: "section.laboratory.short",
+    icon: FlaskConical,
+    color: "text-cyan-300",
+    price: "—",
+    path: "/app/media-lab?sector=laboratory",
   },
   {
     id: "academy",

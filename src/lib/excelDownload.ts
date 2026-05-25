@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+// ExcelJS is large — import dynamically when needed to keep bundles small
 import * as XLSX from "xlsx";
 import { postBackendXlsxStream } from "@/lib/backendExportClient";
 import { applyBordersToRange, styleDataRow, styleHeaderRow, styleTitleRow } from "@/lib/excelStyles";
@@ -23,6 +23,8 @@ function firstRowLooksLikeHeader(firstRow: (string | number | null)[], hasSecond
 
 async function workbookToExcelJsBuffer(wb: XLSX.WorkBook): Promise<Uint8Array> {
   await ensureExportLibrariesReady();
+  const ExcelJSMod = (await import("exceljs")) as any;
+  const ExcelJS = ExcelJSMod?.default ?? ExcelJSMod;
   const xbook = new ExcelJS.Workbook();
   xbook.creator = APP_BRANDING.businessName;
   xbook.lastModifiedBy = APP_BRANDING.businessName;
