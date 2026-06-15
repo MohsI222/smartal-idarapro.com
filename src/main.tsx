@@ -5,8 +5,10 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import { scheduleExportLibrariesWarmup } from "@/lib/exportLibraries";
+import { injectSpeedInsights } from "@vercel/speed-insights";
 
 scheduleExportLibrariesWarmup();
+injectSpeedInsights();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
