@@ -11,6 +11,7 @@ import { buildPdfTableHtml, exportSmartAlIdaraPdfPreferBackend } from "@/lib/pdf
 import * as XLSX from "xlsx";
 import { useI18n } from "@/i18n/I18nProvider";
 import { ExamGeneratorModule } from "@/pages/modules/ExamGeneratorModule";
+import { toast } from "sonner";
 
 const STORAGE_KEY = "idara_edu_schedule_rows";
 
@@ -76,6 +77,7 @@ export function EduModule() {
 
   const saveToStorage = () => {
     localStorage.setItem(`${STORAGE_KEY}_${uid}`, JSON.stringify(rows));
+    toast.success(t("common.saved"));
   };
 
   const updateRow = (i: number, patch: Partial<ScheduleRow>) => {

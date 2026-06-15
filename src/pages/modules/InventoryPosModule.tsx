@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
@@ -207,20 +207,24 @@ export function InventoryPosModule() {
           branding: { activityType?: string; companyName?: string; logoDataUrl?: string };
         }>("/user/branding", { token }),
       ]);
-      setProducts(p.products);
-      setInvoices(inv.invoices);
-      if (br.branding) {
-        const act = br.branding.activityType || "retail";
-        setBrandingPrefs({
-          activityType: act,
-          companyName: br.branding.companyName || "",
-          logoDataUrl: br.branding.logoDataUrl || "",
-        });
-        setNewProduct((n) => ({ ...n, retail_type: act }));
-      }
+      startTransition(() => {
+        setProducts(p.products);
+        setInvoices(inv.invoices);
+        if (br.branding) {
+          const act = br.branding.activityType || "retail";
+          setBrandingPrefs({
+            activityType: act,
+            companyName: br.branding.companyName || "",
+            logoDataUrl: br.branding.logoDataUrl || "",
+          });
+          setNewProduct((n) => ({ ...n, retail_type: act }));
+        }
+      });
     } catch {
-      setProducts([]);
-      setInvoices([]);
+      startTransition(() => {
+        setProducts([]);
+        setInvoices([]);
+      });
     } finally {
       setLoading(false);
     }

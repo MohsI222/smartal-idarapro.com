@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, startTransition } from "react";
 import {
   Bar,
   BarChart,
@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { AlertTriangle, Download, FileSpreadsheet, Users } from "lucide-react";
+import { QuickOfficeBar } from "@/components/office/QuickOfficeBar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { Link } from "react-router-dom";
 import { Lock } from "lucide-react";
 import { HrEnterpriseSuite } from "@/components/hr/HrEnterpriseSuite";
+import { exportBrandedTableDocx, withFileToast } from "@/services/fileService";
 
 type Employee = {
   id: string;
@@ -66,8 +68,10 @@ export function HrModule() {
       api<{ employees: Employee[] }>("/hr/employees", { token }),
       api<{ metrics: typeof metrics }>("/hr/metrics", { token }),
     ]);
-    setEmployees(e.employees);
-    setMetrics(m.metrics as MetricRow[]);
+    startTransition(() => {
+      setEmployees(e.employees);
+      setMetrics(m.metrics as MetricRow[]);
+    });
   }, [token, allowed]);
 
   useEffect(() => {
@@ -233,6 +237,36 @@ export function HrModule() {
     downloadXlsxWorkbook(wb, `hr-export-${Date.now()}.xlsx`);
   };
 
+  const exportHrWord = async () => {
+    if (!employees.length) return;
+    await withFileToast(
+      () =>
+        exportBrandedTableDocx({
+          title: t("hr.title"),
+          rows: [
+            [
+              t("tbl.name"),
+              t("tbl.empId"),
+              t("tbl.role"),
+              t("tbl.salary"),
+              t("tbl.contract"),
+              t("tbl.contractEnd"),
+            ],
+            ...employees.map((e) => [
+              e.name,
+              e.employee_id,
+              e.role,
+              String(e.salary),
+              e.contract_type,
+              e.contract_end ?? "—",
+            ]),
+          ],
+          fileName: `hr-pro-${Date.now()}.docx`,
+        }),
+      t("auth.errGeneric")
+    );
+  };
+
   if (!allowed) {
     return (
       <div className="rounded-2xl border border-orange-500/30 p-8 text-center space-y-4">
@@ -258,15 +292,28 @@ export function HrModule() {
             <p className="text-slate-400 text-sm">{t("hr.moduleSubtitle")}</p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={exportExcel}>
-            <FileSpreadsheet className="size-4" />
-            {t("pdf.exportCsv")}
-          </Button>
-          <Button variant="secondary" onClick={() => void exportPdf()}>
-            <Download className="size-4" />
-            {t("pdf.export")}
-          </Button>
+        <div className="flex flex-col gap-2 items-end">
+          <QuickOfficeBar
+            onProfessionalExcel={exportExcel}
+            onProfessionalWord={() => void exportHrWord()}
+            disabledExcel={employees.length === 0 && metrics.length === 0}
+            disabledWord={employees.length === 0}
+            labels={{
+              quickGrid: t("fileUi.quickGrid"),
+              exportExcel: t("fileUi.proExcel"),
+              exportWord: t("fileUi.proWord"),
+            }}
+          />
+          <div className="flex flex-wrap gap-2 justify-end">
+            <Button variant="outline" onClick={exportExcel}>
+              <FileSpreadsheet className="size-4" />
+              {t("pdf.exportCsv")}
+            </Button>
+            <Button variant="secondary" onClick={() => void exportPdf()}>
+              <Download className="size-4" />
+              {t("pdf.export")}
+            </Button>
+          </div>
         </div>
       </div>
 

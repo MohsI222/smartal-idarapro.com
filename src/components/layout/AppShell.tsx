@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Home,
   LayoutDashboard,
+  Link2,
   LogOut,
   MessageCircle,
   PanelLeftClose,
@@ -33,8 +34,12 @@ import { AccountLockedScreen } from "@/components/AccountLockedScreen";
 import { SubscriptionExpiredScreen } from "@/components/SubscriptionExpiredScreen";
 import { OFFICIAL_WHATSAPP_DIGITS } from "@/constants/contact";
 import { isPrimaryAdminClient } from "@/lib/adminClient";
+import { isDeptTransportShellHiddenPath } from "@/lib/tlDeptRoutes";
 import { useGlobalDomDigitLatinize } from "@/hooks/useGlobalDomDigitLatinize";
 
+/**
+ * Layout للوحة `/app/*`؛ مسار يبدأ بـ `/dept/transport` يُعرض عبر `TlDepartmentPage` بدون الشريط الجانبي أو شريط المدير.
+ */
 export function AppShell() {
   const { pathname } = useLocation();
   const {
@@ -71,13 +76,16 @@ export function AppShell() {
       setHeaderLogo(null);
       return;
     }
+    if (isDeptTransportShellHiddenPath(pathname)) {
+      return;
+    }
     void api<{ branding: { logoDataUrl?: string } }>("/user/branding", { token })
       .then((r) => {
         const u = r.branding?.logoDataUrl;
         setHeaderLogo(typeof u === "string" && u.startsWith("data:image") ? u : null);
       })
       .catch(() => setHeaderLogo(null));
-  }, [token, user?.id]);
+  }, [token, user?.id, pathname]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -169,6 +177,15 @@ export function AppShell() {
     return <SubscriptionExpiredScreen />;
   }
 
+  /** قسم النقل/اللوجستيك (PWA موظف): لا Sidebar ولا شريط البحث/المشرف — الهوية تُجلب داخل TlDepartmentPage عبر VITE_API_URL */
+  if (isDeptTransportShellHiddenPath(pathname)) {
+    return (
+      <div className="min-h-screen bg-[#050a12] text-[#e2e8f0]" dir={isRtl ? "rtl" : "ltr"}>
+        <Outlet />
+      </div>
+    );
+  }
+
   return (
     <div
       data-app-shell
@@ -255,6 +272,23 @@ export function AppShell() {
               >
                 <LayoutDashboard className="size-5 shrink-0" />
                 {!collapsed && <span>{t("nav.admin")}</span>}
+              </NavLink>
+            )}
+            {user?.role !== "superadmin" && isPrimaryAdminClient(user?.email, user?.name) && (
+              <NavLink
+                to="/app/admin/platform"
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium mt-3 border transition-all duration-200",
+                    collapsed && "justify-center px-2",
+                    isActive
+                      ? "bg-[#0052CC] text-white border-[#0052CC] idara-sidebar-active"
+                      : "border-[#FF8C00]/30 text-[#FF8C00] hover:bg-white/5"
+                  )
+                }
+              >
+                <Link2 className="size-5 shrink-0" />
+                {!collapsed && <span>{t("nav.adminPlatform")}</span>}
               </NavLink>
             )}
           </nav>
@@ -378,8 +412,10 @@ export function AppShell() {
                     type="button"
                     className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-400 hover:bg-red-500/10"
                     onClick={() => {
-                      logout();
-                      navigate("/login");
+                      window.setTimeout(() => {
+                        logout();
+                        navigate("/login");
+                      }, 0);
                     }}
                   >
                     <LogOut className="size-4" />

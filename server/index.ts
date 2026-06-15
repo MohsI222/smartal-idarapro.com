@@ -1,4 +1,5 @@
-import "dotenv/config";
+import "./loadEnv.js";
+import "express-async-errors";
 import cors from "cors";
 import express from "express";
 import fs from "node:fs";
@@ -6,12 +7,12 @@ import multer from "multer";
 import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import sharp from "sharp";
-import { registerBackendServices } from "./backendServices.ts";
-import { registerBase44StudioRoutes } from "./base44Studio.ts";
-import { registerTlErpRoutes } from "./tlErpRoutes.ts";
+import { registerBackendServices } from "./backendServices.js";
+import { registerBase44StudioRoutes } from "./base44Studio.js";
+import { registerTlErpRoutes } from "./tlErpRoutes.js";
 import { getTlUploadRoot, getUploadDir } from "./paths.js";
 import { randomUUID } from "node:crypto";
-import { db } from "./db.js";
+import { db, initDatabase } from "./db.js";
 import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto.js";
 import { ensureSuperAdmin, genReferralCode } from "./seed.js";
 import {
@@ -21,9 +22,11 @@ import {
   authRegisterLimiter,
   authSupabaseOauthLimiter,
   createAuthOriginGuard,
-} from "./authSecurity.js";
+  createProductionCorsOptions,
+} from "./middleware.js";
 import { sanitizeEmail, sanitizeUserDisplayName } from "./stringUtil.js";
 import { paramString } from "./reqParams.js";
+import { vercelApiUrlRestore } from "./vercelUrlMiddleware.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -32,8 +35,20 @@ async function fetchSupabaseUserFromAccessToken(accessToken: string): Promise<{
   email?: string;
   user_metadata?: { full_name?: string; name?: string; avatar_url?: string };
 } | null> {
-  const base = (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim().replace(/\/$/, "");
-  const anon = (process.env.SUPABASE_ANON_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
+  const base = (
+    process.env.SUPABASE_URL ??
+    process.env.VITE_SUPABASE_URL ??
+    process.env.NEXT_PUBLIC_SUPABASE_URL ??
+    ""
+  )
+    .trim()
+    .replace(/\/$/, "");
+  const anon = (
+    process.env.SUPABASE_ANON_KEY ??
+    process.env.VITE_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    ""
+  ).trim();
   if (!base || !anon) return null;
   const r = await fetch(`${base}/auth/v1/user`, {
     headers: {
@@ -81,10 +96,10 @@ const TRIAL_MODULE_IDS = new Set([
   "reminders",
 ]);
 
-function userHasActiveTrial(userId: string): boolean {
-  const u = db.prepare("SELECT trial_ends_at FROM users WHERE id = ?").get(userId) as
-    | { trial_ends_at: string | null }
-    | undefined;
+async function userHasActiveTrial(userId: string): Promise<boolean> {
+  const u = (await db
+    .prepare("SELECT trial_ends_at FROM users WHERE id = ?")
+    .get(userId)) as { trial_ends_at: string | null } | undefined;
   if (!u?.trial_ends_at) return false;
   const t = new Date(u.trial_ends_at).getTime();
   return Number.isFinite(t) && t > Date.now();
@@ -111,8 +126,6 @@ const uploadTl = multer({
     else cb(new Error("file_type"));
   },
 });
-
-ensureSuperAdmin();
 
 /** GPT-4o vision — استخراج أصناف من صورة فاتورة / يدوي (يتطلب OPENAI_API_KEY) */
 async function extractReceiptWithOpenAiVision(
@@ -193,8 +206,39 @@ async function extractReceiptWithOpenAiVision(
 }
 
 const app = express();
+app.use(vercelApiUrlRestore);
 applySecurityMiddleware(app);
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors(createProductionCorsOptions()));
+
+/** يعمل بدون انتظار قاعدة البيانات — للتحقق أن السيرفر يستمع وأن البروكسي يصل */
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, service: "smart-al-idara-pro" });
+});
+
+const dbReady = (async () => {
+  await initDatabase();
+  await ensureSuperAdmin();
+})();
+
+app.get("/api/health/db", async (_req, res, next) => {
+  try {
+    await dbReady;
+    await db.prepare("SELECT 1 AS o").get();
+    res.json({ ok: true, db: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+app.use(async (_req, _res, next) => {
+  try {
+    await dbReady;
+    next();
+  } catch (e) {
+    next(e);
+  }
+});
+
 const authOriginGuard = createAuthOriginGuard();
 app.use("/api/auth", authOriginGuard);
 app.use(express.json({ limit: "12mb" }));
@@ -207,39 +251,70 @@ const uploadMemory = multer({
 
 const MAX_DEVICES = 3;
 
-function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const h = req.headers.authorization;
-  const token = h?.startsWith("Bearer ") ? h.slice(7) : null;
-  if (!token) {
-    res.status(401).json({ error: "غير مصرح" });
-    return;
-  }
-  const p = verifyToken(token);
-  if (!p) {
-    res.status(401).json({ error: "جلسة منتهية" });
-    return;
-  }
-  (req as express.Request & { userId: string; role: string }).userId = p.sub;
-  (req as express.Request & { userId: string; role: string }).role = p.role;
+async function authMiddleware(req: express.Request, res: express.Response, next: express.NextFunction) {
+  try {
+    const h = req.headers.authorization;
+    const token = h?.startsWith("Bearer ") ? h.slice(7) : null;
+    if (!token) {
+      res.status(401).json({ error: "غير مصرح" });
+      return;
+    }
+    const p = verifyToken(token);
+    if (!p) {
+      res.status(401).json({ error: "جلسة منتهية" });
+      return;
+    }
+    const rowOk = (await db.prepare("SELECT 1 AS o FROM users WHERE id = ?").get(p.sub)) as
+      | { o: number }
+      | undefined;
+    if (!rowOk) {
+      res.status(401).json({ error: "جلسة غير صالحة — أعد تسجيل الدخول", code: "SESSION_STALE" });
+      return;
+    }
+    (req as express.Request & { userId: string; role: string }).userId = p.sub;
+    (req as express.Request & { userId: string; role: string }).role = p.role;
 
-  if (p.role !== "superadmin") {
-    const urow = db
-      .prepare("SELECT account_locked FROM users WHERE id = ?")
-      .get(p.sub) as { account_locked: number } | undefined;
-    if (urow?.account_locked) {
-      const path = req.path;
-      const method = req.method;
-      const allowed =
-        path === "/api/me" ||
-        (path === "/api/support/messages" && (method === "GET" || method === "POST"));
-      if (!allowed) {
-        res.status(403).json({ error: "account_locked", code: "ACCOUNT_LOCKED" });
-        return;
+    if (p.role !== "superadmin") {
+      const urow = (await db
+        .prepare("SELECT account_locked FROM users WHERE id = ?")
+        .get(p.sub)) as { account_locked: number } | undefined;
+      if (urow?.account_locked) {
+        const path = req.path;
+        const method = req.method;
+        const allowed =
+          path === "/api/me" ||
+          (path === "/api/support/messages" && (method === "GET" || method === "POST"));
+        if (!allowed) {
+          res.status(403).json({ error: "account_locked", code: "ACCOUNT_LOCKED" });
+          return;
+        }
       }
     }
-  }
 
-  next();
+    next();
+  } catch (e) {
+    next(e);
+  }
+}
+
+async function platformSettingsEditor(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const role = (req as express.Request & { role: string }).role;
+  if (role === "superadmin") {
+    next();
+    return;
+  }
+  const userId = (req as express.Request & { userId: string }).userId;
+  const u = (await db.prepare("SELECT email, name FROM users WHERE id = ?").get(userId)) as
+    | { email: string; name: string }
+    | undefined;
+  if (
+    u &&
+    (u.email?.trim().toLowerCase() === SUPER_ADMIN_EMAIL || isPrimaryAdminUser(u.email, u.name))
+  ) {
+    next();
+    return;
+  }
+  res.status(403).json({ error: "صلاحيات المشرف العام فقط" });
 }
 
 function superAdminOnly(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -251,7 +326,7 @@ function superAdminOnly(req: express.Request, res: express.Response, next: expre
   next();
 }
 
-app.post("/api/auth/register", authRegisterLimiter, (req, res) => {
+app.post("/api/auth/register", authRegisterLimiter, async (req, res) => {
   const { email, password, name, deviceFingerprint, deviceLabel, referralCode, ref, startTrial } =
     req.body as {
       email?: string;
@@ -280,20 +355,22 @@ app.post("/api/auth/register", authRegisterLimiter, (req, res) => {
       .toUpperCase();
     let referredBy: string | null = null;
     if (refRaw.length > 0) {
-      const refUser = db
+      const refUser = await db
         .prepare("SELECT id FROM users WHERE referral_code = ? OR id = ?")
         .get(refRaw, refRaw) as { id: string } | undefined;
       if (refUser && refUser.id !== id) referredBy = refUser.id;
     }
-    const code = genReferralCode();
-    const trialIso =
-      startTrial === true ? new Date(Date.now() + 5 * 86400000).toISOString() : null;
-    db.prepare(
+    const code = await genReferralCode();
+    const trialExplicitOff = startTrial === false;
+    const trialIso = trialExplicitOff
+      ? null
+      : new Date(Date.now() + 5 * 86400000).toISOString();
+    await db.prepare(
       `INSERT INTO users (id, email, password_hash, name, role, referred_by, referral_code, trial_ends_at, trial_balance) VALUES (?, ?, ?, ?, 'user', ?, ?, ?, ?)`
     ).run(id, emailSafe, hashPassword(password), nameSafe, referredBy, code, trialIso, DEFAULT_TRIAL_BALANCE);
     if (deviceFingerprint) {
-      db.prepare(
-        `INSERT INTO devices (id, user_id, fingerprint, label, last_seen) VALUES (?, ?, ?, ?, datetime('now'))`
+      await db.prepare(
+        `INSERT INTO devices (id, user_id, fingerprint, label, last_seen) VALUES (?, ?, ?, ?, NOW())`
       ).run(randomUUID(), id, deviceFingerprint, deviceLabel ?? null);
     }
     const token = signToken({ sub: id, role: "user" });
@@ -302,7 +379,7 @@ app.post("/api/auth/register", authRegisterLimiter, (req, res) => {
       "Smart Al-Idara Pro — تسجيل جديد",
       `البريد: ${emailLower}`,
       referredBy ? `بكود إحالة (مرجع)` : "",
-      startTrial ? "تجربة 5 أيام: مفعّلة" : "",
+      !trialExplicitOff ? "تجربة 5 أيام: مفعّلة" : "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -353,7 +430,7 @@ app.post("/api/auth/supabase-oauth", authSupabaseOauthLimiter, async (req, res) 
     String(meta.full_name ?? meta.name ?? emailRaw.split("@")[0] ?? "مستخدم")
   ) || "مستخدم";
 
-  let user = db.prepare("SELECT * FROM users WHERE email = ?").get(emailRaw) as
+  let user = await db.prepare("SELECT * FROM users WHERE email = ?").get(emailRaw) as
     | {
         id: string;
         email: string;
@@ -373,19 +450,21 @@ app.post("/api/auth/supabase-oauth", authSupabaseOauthLimiter, async (req, res) 
       .toUpperCase();
     let referredBy: string | null = null;
     if (refRaw.length > 0) {
-      const refUser = db
+      const refUser = await db
         .prepare("SELECT id FROM users WHERE referral_code = ? OR id = ?")
         .get(refRaw, refRaw) as { id: string } | undefined;
       if (refUser && refUser.id !== id) referredBy = refUser.id;
     }
-    const code = genReferralCode();
-    const trialIso =
-      startTrial === true ? new Date(Date.now() + 5 * 86400000).toISOString() : null;
+    const code = await genReferralCode();
+    const trialExplicitOff = startTrial === false;
+    const trialIso = trialExplicitOff
+      ? null
+      : new Date(Date.now() + 5 * 86400000).toISOString();
     try {
-      db.prepare(
+      await db.prepare(
         `INSERT INTO users (id, email, password_hash, name, role, referred_by, referral_code, trial_ends_at, trial_balance) VALUES (?, ?, ?, ?, 'user', ?, ?, ?, ?)`
       ).run(id, emailRaw, hashPassword(randomUUID()), name, referredBy, code, trialIso, DEFAULT_TRIAL_BALANCE);
-      user = db.prepare("SELECT * FROM users WHERE id = ?").get(id) as typeof user;
+      user = await db.prepare("SELECT * FROM users WHERE id = ?").get(id) as typeof user;
     } catch (e) {
       console.error("[supabase-oauth insert]", e);
       res.status(500).json({ error: "تعذر إنشاء الحساب" });
@@ -404,13 +483,13 @@ app.post("/api/auth/supabase-oauth", authSupabaseOauthLimiter, async (req, res) 
     isPrimaryAdminUser(user.email, user.name);
 
   if (deviceFingerprint) {
-    const existing = db
+    const existing = await db
       .prepare("SELECT id FROM devices WHERE user_id = ? AND fingerprint = ?")
       .get(user.id, deviceFingerprint) as { id: string } | undefined;
     if (!existing) {
       if (!bypassDeviceLimit) {
-        const count = db
-          .prepare("SELECT COUNT(*) as c FROM devices WHERE user_id = ?")
+        const count = await db
+          .prepare("SELECT COUNT(*)::int as c FROM devices WHERE user_id = ?")
           .get(user.id) as { c: number };
         if (count.c >= MAX_DEVICES) {
           res.status(403).json({
@@ -420,11 +499,11 @@ app.post("/api/auth/supabase-oauth", authSupabaseOauthLimiter, async (req, res) 
           return;
         }
       }
-      db.prepare(
-        `INSERT INTO devices (id, user_id, fingerprint, label, last_seen) VALUES (?, ?, ?, ?, datetime('now'))`
+      await db.prepare(
+        `INSERT INTO devices (id, user_id, fingerprint, label, last_seen) VALUES (?, ?, ?, ?, NOW())`
       ).run(randomUUID(), user.id, deviceFingerprint, deviceLabel ?? null);
     } else {
-      db.prepare(`UPDATE devices SET last_seen = datetime('now') WHERE id = ?`).run(existing.id);
+      await db.prepare(`UPDATE devices SET last_seen = NOW() WHERE id = ?`).run(existing.id);
     }
   }
 
@@ -456,7 +535,7 @@ app.post("/api/auth/supabase-oauth", authSupabaseOauthLimiter, async (req, res) 
   });
 });
 
-app.post("/api/auth/login", authLoginLimiter, (req, res) => {
+app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
   const { email, password, deviceFingerprint, deviceLabel, rememberMe } = req.body as {
     email?: string;
     password?: string;
@@ -469,7 +548,7 @@ app.post("/api/auth/login", authLoginLimiter, (req, res) => {
     res.status(400).json({ error: "بيانات ناقصة" });
     return;
   }
-  const user = db
+  const user = await db
     .prepare("SELECT * FROM users WHERE email = ?")
     .get(emailSafe) as
     | {
@@ -492,13 +571,13 @@ app.post("/api/auth/login", authLoginLimiter, (req, res) => {
     isPrimaryAdminUser(user.email, user.name);
 
   if (deviceFingerprint) {
-    const existing = db
+    const existing = await db
       .prepare("SELECT id FROM devices WHERE user_id = ? AND fingerprint = ?")
       .get(user.id, deviceFingerprint) as { id: string } | undefined;
     if (!existing) {
       if (!bypassDeviceLimit) {
-        const count = db
-          .prepare("SELECT COUNT(*) as c FROM devices WHERE user_id = ?")
+        const count = await db
+          .prepare("SELECT COUNT(*)::int as c FROM devices WHERE user_id = ?")
           .get(user.id) as { c: number };
         if (count.c >= MAX_DEVICES) {
           res.status(403).json({
@@ -508,11 +587,11 @@ app.post("/api/auth/login", authLoginLimiter, (req, res) => {
           return;
         }
       }
-      db.prepare(
-        `INSERT INTO devices (id, user_id, fingerprint, label, last_seen) VALUES (?, ?, ?, ?, datetime('now'))`
+      await db.prepare(
+        `INSERT INTO devices (id, user_id, fingerprint, label, last_seen) VALUES (?, ?, ?, ?, NOW())`
       ).run(randomUUID(), user.id, deviceFingerprint, deviceLabel ?? null);
     } else {
-      db.prepare(`UPDATE devices SET last_seen = datetime('now') WHERE id = ?`).run(existing.id);
+      await db.prepare(`UPDATE devices SET last_seen = NOW() WHERE id = ?`).run(existing.id);
     }
   }
 
@@ -546,7 +625,7 @@ app.post("/api/auth/login", authLoginLimiter, (req, res) => {
  * تسجيل دخول المشرف بدون كلمة مرور — يتطلب تطابق ADMIN_BOOTSTRAP_KEY (الخادم فقط).
  * يُستدعى من المتصفح الموثوق عند تفعيل VITE_ADMIN_BOOTSTRAP_KEY.
  */
-app.post("/api/auth/admin-bootstrap", authAdminBootstrapLimiter, (req, res) => {
+app.post("/api/auth/admin-bootstrap", authAdminBootstrapLimiter, async (req, res) => {
   const expected = process.env.ADMIN_BOOTSTRAP_KEY?.trim();
   if (!expected || expected.length < 16) {
     res.status(404).json({ error: "غير مفعّل" });
@@ -557,7 +636,7 @@ app.post("/api/auth/admin-bootstrap", authAdminBootstrapLimiter, (req, res) => {
     res.status(403).json({ error: "مرفوض" });
     return;
   }
-  const user = db
+  const user = await db
     .prepare("SELECT id, email, name, role, whatsapp, trial_balance FROM users WHERE email = ?")
     .get(SUPER_ADMIN_EMAIL) as
     | {
@@ -593,26 +672,32 @@ app.post("/api/auth/admin-bootstrap", authAdminBootstrapLimiter, (req, res) => {
   });
 });
 
-app.get("/api/me", authMiddleware, (req, res) => {
+app.get("/api/me", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const user = db
+  const user = await db
     .prepare(
       `SELECT id, email, name, role, whatsapp, referral_code, trial_ends_at, visa_unlock_approved, visa_unlock_requested_at, account_locked, trial_balance FROM users WHERE id = ?`
     )
-    .get(userId) as {
-    id: string;
-    email: string;
-    name: string;
-    role: string;
-    whatsapp: string | null;
-    referral_code: string | null;
-    trial_ends_at: string | null;
-    visa_unlock_approved: number;
-    visa_unlock_requested_at: string | null;
-    account_locked: number;
-    trial_balance?: number;
-  };
-  const sub = db
+    .get(userId) as
+    | {
+        id: string;
+        email: string;
+        name: string;
+        role: string;
+        whatsapp: string | null;
+        referral_code: string | null;
+        trial_ends_at: string | null;
+        visa_unlock_approved: number;
+        visa_unlock_requested_at: string | null;
+        account_locked: number;
+        trial_balance?: number;
+      }
+    | undefined;
+  if (!user) {
+    res.status(401).json({ error: "المستخدم غير موجود", code: "USER_NOT_FOUND" });
+    return;
+  }
+  const sub = await db
     .prepare(
       `SELECT id, plan_id, modules, payment_method, status, created_at, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
     )
@@ -627,7 +712,7 @@ app.get("/api/me", authMiddleware, (req, res) => {
         ends_at: string | null;
       }
     | undefined;
-  const devices = db
+  const devices = await db
     .prepare("SELECT id, fingerprint, label, last_seen FROM devices WHERE user_id = ?")
     .all(userId) as { id: string; fingerprint: string; label: string | null; last_seen: string }[];
 
@@ -674,10 +759,10 @@ const emptyBranding = (): StoredBranding => ({
   socialTwitter: "",
 });
 
-function getStoredBranding(userId: string): StoredBranding {
-  const row = db
+async function getStoredBranding(userId: string): Promise<StoredBranding> {
+  const row = (await db
     .prepare("SELECT value FROM app_settings WHERE key = ?")
-    .get(brandingSettingsKey(userId)) as { value: string } | undefined;
+    .get(brandingSettingsKey(userId))) as { value: string } | undefined;
   if (!row?.value) return emptyBranding();
   try {
     const branding = JSON.parse(row.value) as Record<string, unknown>;
@@ -696,14 +781,14 @@ function getStoredBranding(userId: string): StoredBranding {
   }
 }
 
-app.get("/api/user/branding", authMiddleware, (req, res) => {
+app.get("/api/user/branding", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  res.json({ branding: getStoredBranding(userId) });
+  res.json({ branding: await getStoredBranding(userId) });
 });
 
-app.put("/api/user/branding", authMiddleware, (req, res) => {
+app.put("/api/user/branding", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const prev = getStoredBranding(userId);
+  const prev = await getStoredBranding(userId);
   const b = req.body as {
     companyName?: string;
     activityType?: string;
@@ -736,26 +821,27 @@ app.put("/api/user/branding", authMiddleware, (req, res) => {
     socialLinkedin: b.socialLinkedin !== undefined ? soc(b.socialLinkedin) : prev.socialLinkedin,
     socialTwitter: b.socialTwitter !== undefined ? soc(b.socialTwitter) : prev.socialTwitter,
   });
-  db.prepare(
-    `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))`
+  await db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`
   ).run(brandingSettingsKey(userId), payload);
   res.json({ ok: true });
 });
 
-app.get("/api/dashboard/financial-summary", authMiddleware, (req, res) => {
+app.get("/api/dashboard/financial-summary", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const lawyerC = (
-    db.prepare("SELECT COUNT(*) as c FROM lawyer_cases WHERE user_id = ?").get(userId) as { c: number }
+    await db.prepare("SELECT COUNT(*)::int as c FROM lawyer_cases WHERE user_id = ?").get(userId) as { c: number }
   ).c;
   const accC = (
-    db.prepare("SELECT COUNT(*) as c FROM accountant_reports WHERE user_id = ?").get(userId) as { c: number }
+    await db.prepare("SELECT COUNT(*)::int as c FROM accountant_reports WHERE user_id = ?").get(userId) as { c: number }
   ).c;
   const invC = (
-    db.prepare("SELECT COUNT(*) as c FROM pos_invoices WHERE user_id = ?").get(userId) as { c: number }
+    await db.prepare("SELECT COUNT(*)::int as c FROM pos_invoices WHERE user_id = ?").get(userId) as { c: number }
   ).c;
   const docCount = lawyerC + accC + invC;
 
-  const invoices = db
+  const invoices = await db
     .prepare(
       "SELECT total, paid, created_at, lines_json FROM pos_invoices WHERE user_id = ? ORDER BY created_at DESC LIMIT 500"
     )
@@ -817,14 +903,14 @@ app.get("/api/dashboard/financial-summary", authMiddleware, (req, res) => {
   });
 });
 
-app.post("/api/devices/remove", authMiddleware, (req, res) => {
+app.post("/api/devices/remove", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const { deviceId } = req.body as { deviceId?: string };
   if (!deviceId) {
     res.status(400).json({ error: "معرف الجهاز مطلوب" });
     return;
   }
-  const r = db.prepare("DELETE FROM devices WHERE id = ? AND user_id = ?").run(deviceId, userId);
+  const r = await db.prepare("DELETE FROM devices WHERE id = ? AND user_id = ?").run(deviceId, userId);
   if (r.changes === 0) {
     res.status(404).json({ error: "الجهاز غير موجود" });
     return;
@@ -836,7 +922,7 @@ app.post(
   "/api/subscription/request",
   authMiddleware,
   upload.single("receipt"),
-  (req, res) => {
+  async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const { plan_id, payment_method, modules, billing_period } = req.body as {
       plan_id?: string;
@@ -857,10 +943,10 @@ app.post(
     const bp = billing_period === "yearly" ? "yearly" : "monthly";
     const receiptPath = file ? file.path : null;
     const id = randomUUID();
-    db.prepare(
+    await db.prepare(
       `INSERT INTO subscriptions (id, user_id, plan_id, modules, payment_method, receipt_path, status, billing_period) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`
     ).run(id, userId, plan_id, modules, payment_method, receiptPath, bp);
-    const u = db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
+    const u = await db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
     const msg = [
       "Smart Al-Idara Pro — طلب اشتراك",
       `البريد: ${u?.email ?? ""}`,
@@ -873,18 +959,18 @@ app.post(
 );
 
 /** طلب تفعيل رادار التأشيرة (Premium +100 درهم) — ينتظر موافقة الأدمن */
-app.post("/api/visa/request-unlock", authMiddleware, (req, res) => {
+app.post("/api/visa/request-unlock", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const u = db.prepare("SELECT email, name FROM users WHERE id = ?").get(userId) as
+  const u = await db.prepare("SELECT email, name FROM users WHERE id = ?").get(userId) as
     | { email: string; name: string }
     | undefined;
   if (!u) {
     res.status(404).json({ error: "مستخدم غير موجود" });
     return;
   }
-  db.prepare(`UPDATE users SET visa_unlock_requested_at = datetime('now') WHERE id = ?`).run(userId);
+  await db.prepare(`UPDATE users SET visa_unlock_requested_at = NOW() WHERE id = ?`).run(userId);
   const id = randomUUID();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO subscriptions (id, user_id, plan_id, modules, payment_method, receipt_path, status, billing_period) VALUES (?, ?, 'visa_premium', ?, 'bank_transfer', NULL, 'pending', 'yearly')`
   ).run(id, userId, JSON.stringify(["visa"]));
   const msg = [
@@ -896,37 +982,37 @@ app.post("/api/visa/request-unlock", authMiddleware, (req, res) => {
   res.json({ ok: true, subscriptionId: id, whatsappNotifyUrl: buildAdminWhatsappUrl(msg) });
 });
 
-function countApprovedReferrals(referrerId: string): number {
-  const row = db
+async function countApprovedReferrals(referrerId: string): Promise<number> {
+  const row = (await db
     .prepare(
-      `SELECT COUNT(DISTINCT u.id) AS c FROM users u
+      `SELECT COUNT(DISTINCT u.id)::int AS c FROM users u
      INNER JOIN subscriptions s ON s.user_id = u.id AND s.status = 'approved'
      WHERE u.referred_by = ?`
     )
-    .get(referrerId) as { c: number };
+    .get(referrerId)) as { c: number };
   return Number(row?.c) || 0;
 }
 
 /** عند الوصول إلى 5 أو 10 إحالات مع اشتراك معتمد — طلب موافقة أدمن للمكافأة */
-function maybeCreateReferralReward(referrerId: string): string | null {
-  const c = countApprovedReferrals(referrerId);
+async function maybeCreateReferralReward(referrerId: string): Promise<string | null> {
+  const c = await countApprovedReferrals(referrerId);
   const milestones: { n: number; tier: string; label: string }[] = [
     { n: 5, tier: "5", label: "3 أشهر مجانية (بعد موافقة الأدمن)" },
     { n: 10, tier: "10", label: "6 أشهر مجانية (بعد موافقة الأدمن)" },
   ];
   for (const m of milestones) {
     if (c < m.n) continue;
-    const ex = db
+    const ex = await db
       .prepare("SELECT id FROM referral_rewards WHERE user_id = ? AND tier = ?")
       .get(referrerId, m.tier) as { id: string } | undefined;
     if (ex) continue;
     const rid = randomUUID();
-    db.prepare(`INSERT INTO referral_rewards (id, user_id, tier, status) VALUES (?, ?, ?, 'pending')`).run(
+    await db.prepare(`INSERT INTO referral_rewards (id, user_id, tier, status) VALUES (?, ?, ?, 'pending')`).run(
       rid,
       referrerId,
       m.tier
     );
-    const refUser = db.prepare(`SELECT email, name FROM users WHERE id = ?`).get(referrerId) as
+    const refUser = await db.prepare(`SELECT email, name FROM users WHERE id = ?`).get(referrerId) as
       | { email: string; name: string }
       | undefined;
     return buildAdminWhatsappUrl(
@@ -942,9 +1028,9 @@ function maybeCreateReferralReward(referrerId: string): string | null {
   return null;
 }
 
-app.get("/api/subscription/status", authMiddleware, (req, res) => {
+app.get("/api/subscription/status", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const sub = db
+  const sub = await db
     .prepare(
       `SELECT id, plan_id, modules, payment_method, status, created_at, reviewed_at, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
     )
@@ -952,8 +1038,8 @@ app.get("/api/subscription/status", authMiddleware, (req, res) => {
   res.json({ subscription: sub ?? null });
 });
 
-app.get("/api/admin/pending", authMiddleware, superAdminOnly, (_req, res) => {
-  const rows = db
+app.get("/api/admin/pending", authMiddleware, superAdminOnly, async (_req, res) => {
+  const rows = await db
     .prepare(
       `SELECT s.*, u.email, u.name as user_name FROM subscriptions s JOIN users u ON u.id = s.user_id WHERE s.status = 'pending' ORDER BY s.created_at ASC`
     )
@@ -961,10 +1047,10 @@ app.get("/api/admin/pending", authMiddleware, superAdminOnly, (_req, res) => {
   res.json({ pending: rows });
 });
 
-app.post("/api/admin/approve/:subId", authMiddleware, superAdminOnly, (req, res) => {
+app.post("/api/admin/approve/:subId", authMiddleware, superAdminOnly, async (req, res) => {
   const adminId = (req as express.Request & { userId: string }).userId;
   const subId = paramString(req.params.subId);
-  const row = db
+  const row = await db
     .prepare(
       `SELECT id, user_id, plan_id, billing_period FROM subscriptions WHERE id = ? AND status = 'pending'`
     )
@@ -980,30 +1066,32 @@ app.post("/api/admin/approve/:subId", authMiddleware, superAdminOnly, (req, res)
     res.status(404).json({ error: "طلب غير موجود أو تمت معالجته" });
     return;
   }
-  let periodMod = `+${SUBSCRIPTION_PERIOD_DAYS} days`;
-  if (row.billing_period === "yearly") periodMod = "+365 days";
+  const days =
+    row.plan_id === "visa_premium" || row.billing_period === "yearly"
+      ? 365
+      : SUBSCRIPTION_PERIOD_DAYS;
+  const endsAt = new Date(Date.now() + days * 86400000).toISOString();
   if (row.plan_id === "visa_premium") {
-    periodMod = "+365 days";
-    db.prepare(`UPDATE users SET visa_unlock_approved = 1 WHERE id = ?`).run(row.user_id);
+    await db.prepare(`UPDATE users SET visa_unlock_approved = 1 WHERE id = ?`).run(row.user_id);
   }
-  const r = db
+  const r = await db
     .prepare(
-      `UPDATE subscriptions SET status = 'approved', reviewed_at = datetime('now'), reviewed_by = ?, ends_at = datetime('now', ?) WHERE id = ? AND status = 'pending'`
+      `UPDATE subscriptions SET status = 'approved', reviewed_at = NOW(), reviewed_by = ?, ends_at = ? WHERE id = ? AND status = 'pending'`
     )
-    .run(adminId, periodMod, subId);
+    .run(adminId, endsAt, subId);
   if (r.changes === 0) {
     res.status(404).json({ error: "طلب غير موجود أو تمت معالجته" });
     return;
   }
-  const refRow = db.prepare(`SELECT referred_by FROM users WHERE id = ?`).get(row.user_id) as
+  const refRow = await db.prepare(`SELECT referred_by FROM users WHERE id = ?`).get(row.user_id) as
     | { referred_by: string | null }
     | undefined;
   let referralNotifyUrl: string | undefined;
   if (refRow?.referred_by) {
-    const u = maybeCreateReferralReward(refRow.referred_by);
+    const u = await maybeCreateReferralReward(refRow.referred_by);
     if (u) referralNotifyUrl = u;
   }
-  const userRow = db.prepare(`SELECT email, name FROM users WHERE id = ?`).get(row.user_id) as
+  const userRow = await db.prepare(`SELECT email, name FROM users WHERE id = ?`).get(row.user_id) as
     | { email: string; name: string }
     | undefined;
   const adminMsg = [
@@ -1017,8 +1105,8 @@ app.post("/api/admin/approve/:subId", authMiddleware, superAdminOnly, (req, res)
   res.json({ ok: true, referralNotifyUrl, adminWhatsAppAckUrl });
 });
 
-app.get("/api/admin/referral-rewards", authMiddleware, superAdminOnly, (_req, res) => {
-  const rewards = db
+app.get("/api/admin/referral-rewards", authMiddleware, superAdminOnly, async (_req, res) => {
+  const rewards = await db
     .prepare(
       `SELECT r.id, r.user_id, r.tier, r.status, r.created_at, u.email, u.name as user_name
        FROM referral_rewards r JOIN users u ON u.id = r.user_id
@@ -1028,9 +1116,9 @@ app.get("/api/admin/referral-rewards", authMiddleware, superAdminOnly, (_req, re
   res.json({ rewards });
 });
 
-app.post("/api/admin/referral-reward/approve/:rewardId", authMiddleware, superAdminOnly, (req, res) => {
+app.post("/api/admin/referral-reward/approve/:rewardId", authMiddleware, superAdminOnly, async (req, res) => {
   const rewardId = paramString(req.params.rewardId);
-  const rw = db
+  const rw = await db
     .prepare(`SELECT * FROM referral_rewards WHERE id = ? AND status = 'pending'`)
     .get(rewardId) as { id: string; user_id: string; tier: string } | undefined;
   if (!rw) {
@@ -1038,7 +1126,7 @@ app.post("/api/admin/referral-reward/approve/:rewardId", authMiddleware, superAd
     return;
   }
   const addDays = rw.tier === "10" ? 180 : rw.tier === "5" ? 90 : 30;
-  const sub = db
+  const sub = await db
     .prepare(
       `SELECT id, ends_at FROM subscriptions WHERE user_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 1`
     )
@@ -1047,18 +1135,18 @@ app.post("/api/admin/referral-reward/approve/:rewardId", authMiddleware, superAd
     const baseMs = sub.ends_at ? new Date(sub.ends_at).getTime() : Date.now();
     const start = Math.max(baseMs, Date.now());
     const newEnd = new Date(start + addDays * 86400000).toISOString();
-    db.prepare(`UPDATE subscriptions SET ends_at = ? WHERE id = ?`).run(newEnd, sub.id);
+    await db.prepare(`UPDATE subscriptions SET ends_at = ? WHERE id = ?`).run(newEnd, sub.id);
   }
-  db.prepare(`UPDATE referral_rewards SET status = 'approved' WHERE id = ?`).run(rw.id);
+  await db.prepare(`UPDATE referral_rewards SET status = 'approved' WHERE id = ?`).run(rw.id);
   res.json({ ok: true });
 });
 
-app.post("/api/admin/reject/:subId", authMiddleware, superAdminOnly, (req, res) => {
+app.post("/api/admin/reject/:subId", authMiddleware, superAdminOnly, async (req, res) => {
   const adminId = (req as express.Request & { userId: string }).userId;
   const subId = paramString(req.params.subId);
-  const r = db
+  const r = await db
     .prepare(
-      `UPDATE subscriptions SET status = 'rejected', reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ? AND status = 'pending'`
+      `UPDATE subscriptions SET status = 'rejected', reviewed_at = NOW(), reviewed_by = ? WHERE id = ? AND status = 'pending'`
     )
     .run(adminId, subId);
   if (r.changes === 0) {
@@ -1068,8 +1156,8 @@ app.post("/api/admin/reject/:subId", authMiddleware, superAdminOnly, (req, res) 
   res.json({ ok: true });
 });
 
-app.get("/api/admin/users", authMiddleware, superAdminOnly, (_req, res) => {
-  const users = db
+app.get("/api/admin/users", authMiddleware, superAdminOnly, async (_req, res) => {
+  const users = await db
     .prepare(
       `SELECT u.id, u.email, u.name, u.role, u.created_at, u.trial_ends_at, u.account_locked,
         s.plan_id, s.status AS sub_status, s.ends_at AS sub_ends_at, s.payment_method
@@ -1077,13 +1165,13 @@ app.get("/api/admin/users", authMiddleware, superAdminOnly, (_req, res) => {
        LEFT JOIN subscriptions s ON s.id = (
          SELECT id FROM subscriptions WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1
        )
-       ORDER BY datetime(u.created_at) DESC`
+       ORDER BY u.created_at DESC`
     )
     .all();
   res.json({ users });
 });
 
-app.post("/api/admin/users/:targetUserId/locked", authMiddleware, superAdminOnly, (req, res) => {
+app.post("/api/admin/users/:targetUserId/locked", authMiddleware, superAdminOnly, async (req, res) => {
   const adminId = (req as express.Request & { userId: string }).userId;
   const targetUserId = paramString(req.params.targetUserId);
   const locked = Boolean((req.body as { locked?: boolean }).locked);
@@ -1091,7 +1179,7 @@ app.post("/api/admin/users/:targetUserId/locked", authMiddleware, superAdminOnly
     res.status(400).json({ error: "cannot_lock_self" });
     return;
   }
-  const target = db.prepare("SELECT role FROM users WHERE id = ?").get(targetUserId) as
+  const target = await db.prepare("SELECT role FROM users WHERE id = ?").get(targetUserId) as
     | { role: string }
     | undefined;
   if (!target) {
@@ -1102,7 +1190,7 @@ app.post("/api/admin/users/:targetUserId/locked", authMiddleware, superAdminOnly
     res.status(400).json({ error: "cannot_lock_admin" });
     return;
   }
-  db.prepare("UPDATE users SET account_locked = ? WHERE id = ?").run(locked ? 1 : 0, targetUserId);
+  await db.prepare("UPDATE users SET account_locked = ? WHERE id = ?").run(locked ? 1 : 0, targetUserId);
   res.json({ ok: true });
 });
 
@@ -1111,7 +1199,7 @@ app.post(
   "/api/admin/users/:targetUserId/subscription-access",
   authMiddleware,
   superAdminOnly,
-  (req, res) => {
+  async (req, res) => {
     const adminId = (req as express.Request & { userId: string }).userId;
     const targetUserId = paramString(req.params.targetUserId);
     const mode = (req.body as { mode?: string }).mode;
@@ -1119,7 +1207,7 @@ app.post(
       res.status(400).json({ error: "invalid_mode" });
       return;
     }
-    const target = db.prepare("SELECT id, role FROM users WHERE id = ?").get(targetUserId) as
+    const target = await db.prepare("SELECT id, role FROM users WHERE id = ?").get(targetUserId) as
       | { id: string; role: string }
       | undefined;
     if (!target) {
@@ -1130,9 +1218,9 @@ app.post(
       res.status(400).json({ error: "cannot_modify_superadmin" });
       return;
     }
-    const sub = db
+    const sub = await db
       .prepare(
-        `SELECT id FROM subscriptions WHERE user_id = ? ORDER BY datetime(created_at) DESC LIMIT 1`
+        `SELECT id FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
       )
       .get(targetUserId) as { id: string } | undefined;
 
@@ -1143,22 +1231,22 @@ app.post(
         : new Date(nowMs - 86400000).toISOString();
 
     if (sub) {
-      db.prepare(
-        `UPDATE subscriptions SET status = 'approved', ends_at = ?, reviewed_at = datetime('now'), reviewed_by = ? WHERE id = ?`
+      await db.prepare(
+        `UPDATE subscriptions SET status = 'approved', ends_at = ?, reviewed_at = NOW(), reviewed_by = ? WHERE id = ?`
       ).run(endsIso, adminId, sub.id);
     } else {
       const sid = randomUUID();
-      db.prepare(
+      await db.prepare(
         `INSERT INTO subscriptions (id, user_id, plan_id, modules, payment_method, status, reviewed_at, reviewed_by, ends_at)
-         VALUES (?, ?, 'full_management', ?, 'admin_manual', 'approved', datetime('now'), ?, ?)`
+         VALUES (?, ?, 'full_management', ?, 'admin_manual', 'approved', NOW(), ?, ?)`
       ).run(sid, targetUserId, FULL_MODULES_JSON, adminId, endsIso);
     }
     res.json({ ok: true });
   }
 );
 
-app.get("/api/admin/subscription-stats", authMiddleware, superAdminOnly, (_req, res) => {
-  const rows = db
+app.get("/api/admin/subscription-stats", authMiddleware, superAdminOnly, async (_req, res) => {
+  const rows = await db
     .prepare(`SELECT ends_at FROM subscriptions WHERE status = 'approved'`)
     .all() as { ends_at: string | null }[];
   const now = Date.now();
@@ -1169,9 +1257,9 @@ app.get("/api/admin/subscription-stats", authMiddleware, superAdminOnly, (_req, 
     if (Number.isFinite(t) && t > now) activeSubscriptions++;
     else expiredSubscriptions++;
   }
-  const trialRow = db
+  const trialRow = await db
     .prepare(
-      `SELECT COUNT(*) AS c FROM users WHERE trial_ends_at IS NOT NULL AND datetime(trial_ends_at) > datetime('now')`
+      `SELECT COUNT(*)::int AS c FROM users WHERE trial_ends_at IS NOT NULL AND trial_ends_at > NOW()`
     )
     .get() as { c: number };
   res.json({
@@ -1181,20 +1269,20 @@ app.get("/api/admin/subscription-stats", authMiddleware, superAdminOnly, (_req, 
   });
 });
 
-app.get("/api/admin/support/inbox", authMiddleware, superAdminOnly, (_req, res) => {
-  const messages = db
+app.get("/api/admin/support/inbox", authMiddleware, superAdminOnly, async (_req, res) => {
+  const messages = await db
     .prepare(
       `SELECT m.id, m.user_id, m.from_admin, m.body, m.created_at, u.email, u.name AS user_name
        FROM support_messages m
        JOIN users u ON u.id = m.user_id
-       ORDER BY datetime(m.created_at) DESC
+       ORDER BY m.created_at DESC
        LIMIT 800`
     )
     .all();
   res.json({ messages });
 });
 
-app.post("/api/admin/support/reply", authMiddleware, superAdminOnly, (req, res) => {
+app.post("/api/admin/support/reply", authMiddleware, superAdminOnly, async (req, res) => {
   const { userId, body } = req.body as { userId?: string; body?: string };
   const uid = typeof userId === "string" ? userId.trim() : "";
   const text = typeof body === "string" ? body.trim() : "";
@@ -1202,13 +1290,13 @@ app.post("/api/admin/support/reply", authMiddleware, superAdminOnly, (req, res) 
     res.status(400).json({ error: "invalid" });
     return;
   }
-  const exists = db.prepare("SELECT id FROM users WHERE id = ?").get(uid) as { id: string } | undefined;
+  const exists = await db.prepare("SELECT id FROM users WHERE id = ?").get(uid) as { id: string } | undefined;
   if (!exists) {
     res.status(404).json({ error: "user_not_found" });
     return;
   }
   const id = randomUUID();
-  db.prepare(`INSERT INTO support_messages (id, user_id, from_admin, body) VALUES (?, ?, 1, ?)`).run(
+  await db.prepare(`INSERT INTO support_messages (id, user_id, from_admin, body) VALUES (?, ?, 1, ?)`).run(
     id,
     uid,
     text
@@ -1216,17 +1304,17 @@ app.post("/api/admin/support/reply", authMiddleware, superAdminOnly, (req, res) 
   res.json({ ok: true, id });
 });
 
-app.get("/api/support/messages", authMiddleware, (req, res) => {
+app.get("/api/support/messages", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const messages = db
+  const messages = await db
     .prepare(
-      `SELECT id, from_admin, body, created_at FROM support_messages WHERE user_id = ? ORDER BY datetime(created_at) ASC`
+      `SELECT id, from_admin, body, created_at FROM support_messages WHERE user_id = ? ORDER BY created_at ASC`
     )
     .all(userId);
   res.json({ messages });
 });
 
-app.post("/api/support/messages", authMiddleware, (req, res) => {
+app.post("/api/support/messages", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const text = String((req.body as { body?: string }).body ?? "").trim();
   if (!text || text.length > 8000) {
@@ -1234,7 +1322,7 @@ app.post("/api/support/messages", authMiddleware, (req, res) => {
     return;
   }
   const id = randomUUID();
-  db.prepare(`INSERT INTO support_messages (id, user_id, from_admin, body) VALUES (?, ?, 0, ?)`).run(
+  await db.prepare(`INSERT INTO support_messages (id, user_id, from_admin, body) VALUES (?, ?, 0, ?)`).run(
     id,
     userId,
     text
@@ -1243,8 +1331,8 @@ app.post("/api/support/messages", authMiddleware, (req, res) => {
 });
 
 /** تجميع مبيعات المخزون (pos_invoices) عبر كل المستخدمين — يطابق منطق /dashboard/financial-summary */
-app.get("/api/admin/sales-analytics", authMiddleware, superAdminOnly, (_req, res) => {
-  const invoices = db
+app.get("/api/admin/sales-analytics", authMiddleware, superAdminOnly, async (_req, res) => {
+  const invoices = await db
     .prepare(
       "SELECT total, paid, created_at, lines_json FROM pos_invoices ORDER BY created_at DESC LIMIT 8000"
     )
@@ -1317,19 +1405,19 @@ app.get("/api/admin/sales-analytics", authMiddleware, superAdminOnly, (_req, res
 });
 
 /** HR + modules data (scoped to user) */
-app.get("/api/hr/employees", authMiddleware, (req, res) => {
+app.get("/api/hr/employees", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "hr")) {
+  if (!(await moduleAllowed(userId, "hr"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const rows = db.prepare("SELECT * FROM hr_employees WHERE user_id = ?").all(userId);
+  const rows = await db.prepare("SELECT * FROM hr_employees WHERE user_id = ?").all(userId);
   res.json({ employees: rows });
 });
 
-app.post("/api/hr/employees", authMiddleware, (req, res) => {
+app.post("/api/hr/employees", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "hr")) {
+  if (!(await moduleAllowed(userId, "hr"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -1342,7 +1430,7 @@ app.post("/api/hr/employees", authMiddleware, (req, res) => {
     contract_end?: string;
   };
   const id = randomUUID();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO hr_employees (id, user_id, name, employee_id, role, salary, contract_type, contract_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
@@ -1357,10 +1445,10 @@ app.post("/api/hr/employees", authMiddleware, (req, res) => {
   res.json({ id });
 });
 
-app.patch("/api/hr/employees/:id", authMiddleware, (req, res) => {
+app.patch("/api/hr/employees/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const id = paramString(req.params.id);
-  if (!moduleAllowed(userId, "hr")) {
+  if (!(await moduleAllowed(userId, "hr"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -1372,7 +1460,7 @@ app.patch("/api/hr/employees/:id", authMiddleware, (req, res) => {
     contract_type: string;
     contract_end?: string | null;
   };
-  const r = db
+  const r = await db
     .prepare(
       `UPDATE hr_employees SET name = ?, employee_id = ?, role = ?, salary = ?, contract_type = ?, contract_end = ? WHERE id = ? AND user_id = ?`
     )
@@ -1393,10 +1481,10 @@ app.patch("/api/hr/employees/:id", authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
-app.patch("/api/hr/metrics/:id", authMiddleware, (req, res) => {
+app.patch("/api/hr/metrics/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const id = paramString(req.params.id);
-  if (!moduleAllowed(userId, "hr")) {
+  if (!(await moduleAllowed(userId, "hr"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -1406,7 +1494,7 @@ app.patch("/api/hr/metrics/:id", authMiddleware, (req, res) => {
     logistics: number;
     quality: number;
   };
-  const r = db
+  const r = await db
     .prepare(
       `UPDATE production_metrics SET week_label = ?, production = ?, logistics = ?, quality = ? WHERE id = ? AND user_id = ?`
     )
@@ -1418,20 +1506,20 @@ app.patch("/api/hr/metrics/:id", authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/hr/metrics", authMiddleware, (req, res) => {
+app.get("/api/hr/metrics", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "hr")) {
+  if (!(await moduleAllowed(userId, "hr"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  let rows = db
+  let rows = await db
     .prepare("SELECT * FROM production_metrics WHERE user_id = ? ORDER BY week_label")
     .all(userId) as Record<string, unknown>[];
   if (rows.length === 0) {
     const weeks = ["أسبوع 1", "أسبوع 2", "أسبوع 3", "أسبوع 4"];
     for (let i = 0; i < weeks.length; i++) {
       const id = randomUUID();
-      db.prepare(
+      await db.prepare(
         `INSERT INTO production_metrics (id, user_id, week_label, production, logistics, quality) VALUES (?, ?, ?, ?, ?, ?)`
       ).run(
         id,
@@ -1442,17 +1530,17 @@ app.get("/api/hr/metrics", authMiddleware, (req, res) => {
         88 + Math.random() * 5
       );
     }
-    rows = db
+    rows = await db
       .prepare("SELECT * FROM production_metrics WHERE user_id = ? ORDER BY week_label")
       .all(userId) as Record<string, unknown>[];
   }
   res.json({ metrics: rows });
 });
 
-function getUserGateFlags(userId: string): { bypass: boolean } {
-  const u = db.prepare("SELECT role, email, name FROM users WHERE id = ?").get(userId) as
-    | { role: string; email: string; name: string }
-    | undefined;
+async function getUserGateFlags(userId: string): Promise<{ bypass: boolean }> {
+  const u = (await db
+    .prepare("SELECT role, email, name FROM users WHERE id = ?")
+    .get(userId)) as { role: string; email: string; name: string } | undefined;
   if (!u) return { bypass: false };
   const bypass =
     u.role === "superadmin" ||
@@ -1461,21 +1549,21 @@ function getUserGateFlags(userId: string): { bypass: boolean } {
   return { bypass };
 }
 
-function moduleAllowed(userId: string, mod: string): boolean {
-  if (getUserGateFlags(userId).bypass) return true;
+async function moduleAllowed(userId: string, mod: string): Promise<boolean> {
+  if ((await getUserGateFlags(userId)).bypass) return true;
   /** رادار التأشيرة: لا يُفتح إلا بعد موافقة الأدمن (عمود visa_unlock_approved) */
   if (mod === "visa") {
-    const u = db.prepare("SELECT visa_unlock_approved FROM users WHERE id = ?").get(userId) as
+    const u = (await db.prepare("SELECT visa_unlock_approved FROM users WHERE id = ?").get(userId)) as
       | { visa_unlock_approved: number }
       | undefined;
     return Boolean(u?.visa_unlock_approved);
   }
-  if (userHasActiveTrial(userId) && TRIAL_MODULE_IDS.has(mod)) return true;
-  const sub = db
+  if ((await userHasActiveTrial(userId)) && TRIAL_MODULE_IDS.has(mod)) return true;
+  const sub = (await db
     .prepare(
       `SELECT modules, ends_at FROM subscriptions WHERE user_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 1`
     )
-    .get(userId) as { modules: string; ends_at: string | null } | undefined;
+    .get(userId)) as { modules: string; ends_at: string | null } | undefined;
   if (!sub) return false;
   if (sub.ends_at) {
     const end = new Date(sub.ends_at).getTime();
@@ -1489,67 +1577,67 @@ function moduleAllowed(userId: string, mod: string): boolean {
   }
 }
 
-function aiGenerateAllowed(userId: string, moduleName: string): boolean {
-  if (getUserGateFlags(userId).bypass) return true;
+async function aiGenerateAllowed(userId: string, moduleName: string): Promise<boolean> {
+  if ((await getUserGateFlags(userId)).bypass) return true;
   switch (moduleName) {
     case "mediaLab":
-      return moduleAllowed(userId, "media_lab");
+      return await moduleAllowed(userId, "media_lab");
     case "legalAi":
       return (
-        moduleAllowed(userId, "legal_ai") ||
-        moduleAllowed(userId, "law") ||
-        moduleAllowed(userId, "public")
+        (await moduleAllowed(userId, "legal_ai")) ||
+        (await moduleAllowed(userId, "law")) ||
+        (await moduleAllowed(userId, "public"))
       );
     case "law":
-      return moduleAllowed(userId, "law");
+      return await moduleAllowed(userId, "law");
     case "public":
-      return moduleAllowed(userId, "public");
+      return await moduleAllowed(userId, "public");
     case "exam":
-      return moduleAllowed(userId, "edu");
+      return await moduleAllowed(userId, "edu");
     case "hrContract":
-      return moduleAllowed(userId, "hr");
+      return await moduleAllowed(userId, "hr");
     default:
       return false;
   }
 }
 
-app.get("/api/law/cases", authMiddleware, (req, res) => {
+app.get("/api/law/cases", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "law")) {
+  if (!(await moduleAllowed(userId, "law"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const rows = db.prepare("SELECT * FROM lawyer_cases WHERE user_id = ?").all(userId);
+  const rows = await db.prepare("SELECT * FROM lawyer_cases WHERE user_id = ?").all(userId);
   res.json({ cases: rows });
 });
 
-app.post("/api/law/cases", authMiddleware, (req, res) => {
+app.post("/api/law/cases", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "law")) {
+  if (!(await moduleAllowed(userId, "law"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
   const b = req.body as { title: string; client_name: string; deadline?: string };
   const id = randomUUID();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO lawyer_cases (id, user_id, title, client_name, deadline) VALUES (?, ?, ?, ?, ?)`
   ).run(id, userId, b.title, b.client_name, b.deadline ?? null);
   res.json({ id });
 });
 
-app.get("/api/acc/reports", authMiddleware, (req, res) => {
+app.get("/api/acc/reports", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "acc")) {
+  if (!(await moduleAllowed(userId, "acc"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const rows = db.prepare("SELECT * FROM accountant_reports WHERE user_id = ?").all(userId);
+  const rows = await db.prepare("SELECT * FROM accountant_reports WHERE user_id = ?").all(userId);
   res.json({ reports: rows });
 });
 
-app.post("/api/acc/reports", authMiddleware, (req, res) => {
+app.post("/api/acc/reports", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "acc")) {
+  if (!(await moduleAllowed(userId, "acc"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -1562,16 +1650,16 @@ app.post("/api/acc/reports", authMiddleware, (req, res) => {
   };
   const id = randomUUID();
   const flow = b.entry_type === "income" ? "income" : "expense";
-  db.prepare(
+  await db.prepare(
     `INSERT INTO accountant_reports (id, user_id, title, period, amount, notes, entry_type) VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run(id, userId, b.title, b.period, b.amount ?? null, b.notes ?? null, flow);
   res.json({ id });
 });
 
-app.patch("/api/acc/reports/:id", authMiddleware, (req, res) => {
+app.patch("/api/acc/reports/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const id = paramString(req.params.id);
-  if (!moduleAllowed(userId, "acc")) {
+  if (!(await moduleAllowed(userId, "acc"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -1583,7 +1671,7 @@ app.patch("/api/acc/reports/:id", authMiddleware, (req, res) => {
     entry_type?: string;
   };
   const flow = b.entry_type === "income" ? "income" : "expense";
-  const r = db
+  const r = await db
     .prepare(
       `UPDATE accountant_reports SET title = ?, period = ?, amount = ?, notes = ?, entry_type = ? WHERE id = ? AND user_id = ?`
     )
@@ -1595,13 +1683,13 @@ app.patch("/api/acc/reports/:id", authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/reminders", authMiddleware, (req, res) => {
+app.get("/api/reminders", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const rows = db.prepare("SELECT * FROM reminders WHERE user_id = ?").all(userId);
+  const rows = await db.prepare("SELECT * FROM reminders WHERE user_id = ?").all(userId);
   res.json({ reminders: rows });
 });
 
-app.post("/api/reminders", authMiddleware, (req, res) => {
+app.post("/api/reminders", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const b = req.body as {
     channel: string;
@@ -1610,7 +1698,7 @@ app.post("/api/reminders", authMiddleware, (req, res) => {
     due_at: string;
   };
   const id = randomUUID();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO reminders (id, user_id, channel, target, message, due_at) VALUES (?, ?, ?, ?, ?, ?)`
   ).run(id, userId, b.channel, b.target, b.message, b.due_at);
   res.json({ id, note: "في الإنتاج: ربط Twilio / SendGrid / WhatsApp Business API" });
@@ -1634,22 +1722,44 @@ function mockAiText(
     return `Auto-draft: party ${name}, ${city}${amount ? `, amount ${amount} MAD` : ""}. Notarial review required.`;
   }
   if (module === "exam") {
-    if (locale.startsWith("ar")) return `سؤال مقترح حول «${name}» — يُخصص للمستوى والمادة حسب جدولك.`;
-    if (locale.startsWith("fr")) return `Question suggérée sur « ${name} » — adaptez au niveau et à la matière.`;
-    if (locale === "es") return `Pregunta sugerida sobre «${name}» — adapte nivel y asignatura.`;
-    return `Suggested question on "${name}" — adapt to level and subject.`;
+    const subj = ctx.subject || name || "المادة";
+    const lvl = ctx.level || "";
+    const line = locale.startsWith("ar")
+      ? `أسئلة مقترحة (إرشادية) في «${subj}»${lvl ? ` — المستوى: ${lvl}` : ""} — وفق إطار 51.17؛ راجع المنسق البيداغوجي.`
+      : locale.startsWith("fr")
+        ? `Questions indicatives — « ${subj} »${lvl ? `, niveau : ${lvl}` : ""} — cadre 51.17 ; relecture pédagogique requise.`
+        : `Sample assessment items for "${subj}"${lvl ? ` (level: ${lvl})` : ""} — align to Morocco framework; pedagogical review required.`;
+    return `${line}\n1) … (5 نقط)\n2) … (5 نقط)\n3) … (10 نقط)\n4) … (10 نقط)`;
   }
   if (module === "legalAi") {
+    const who = ctx.fullName || name;
+    const subj = ctx.requestType || ctx.requestTypeLabel || "";
     if (locale.startsWith("ar"))
-      return `مسودة إرشادية (المملكة المغربية): يُذكر الطرف ${name} بـ ${city}. يُستند إلى التشريع المغربي الجاري به العمل؛ يُراجع النص قبل الإيداع.`;
+      return `مسودة إرشادية (المملكة المغربية): الموضوع: ${subj || "طلب إداري"}. يُذكر صاحب الطلب ${who}${ctx.address ? `، العنوان: ${ctx.address}` : ""}. يُستند إلى التشريع المغربي الجاري به العمل؛ يُراجع النص قبل الإيداع.`;
     if (locale.startsWith("fr"))
-      return `Ébauche indicative (Royaume du Maroc) : partie ${name}, ${city}. Fondée sur le droit marocain en vigueur ; révision avant dépôt.`;
+      return `Ébauche indicative (Royaume du Maroc) : objet ${subj || "demande administrative"}, partie ${who}. Droit marocain en vigueur ; révision avant dépôt.`;
     if (locale === "es")
-      return `Borrador orientativo (Reino de Marruecos): parte ${name}, ${city}. Basado en la legislación marroquí vigente; revisión antes del depósito.`;
-    return `Indicative draft (Kingdom of Morocco): party ${name}, ${city}. Grounded in applicable Moroccan law; review before filing.`;
+      return `Borrador orientativo (Reino de Marruecos): asunto ${subj || "solicitud"}, parte ${who}. Legislación marroquí aplicable; revisión antes del depósito.`;
+    return `Indicative draft (Kingdom of Morocco): matter ${subj || "administrative request"}, party ${who}. Grounded in applicable Moroccan law; review before filing.`;
   }
   if (module === "hrContract") {
     const emp = ctx.employee || ctx.name || "—";
+    if (ctx.docKind === "dismissal_grounds") {
+      const hint = (ctx.groundsHint || "").trim() || "—";
+      if (locale.startsWith("ar"))
+        return `مسودة أسس فصل إرشادية (المغرب): توسيع الملاحظات الموجزة أدناه إلى صياغة رسمية محايدة تتوافق مع أحكام مدونة الشغل؛ دون إحداث وقائع غير مذكورة. ملاحظات: ${hint}. يُراجع من المحامي.`;
+      if (locale.startsWith("fr"))
+        return `Motifs de licenciement (Maroc) : à partir de ces notes factuelles, rédiger un texte formel et sobre, cadre Code du travail ; n’inventez pas de faits. Notes : ${hint}. Révision juridique requise.`;
+      return `Morocco dismissal grounds draft: expand factual notes into formal, code-grounded language; do not invent facts. Notes: ${hint}. Legal review required.`;
+    }
+    if (ctx.docKind === "internal_rules_polish") {
+      const raw = (ctx.rulesExcerpt || "").trim().slice(0, 2000) || "—";
+      if (locale.startsWith("ar"))
+        return `العناية بالنص الداخلي للمؤسسة: حوّل النقاط أدناه إلى فق رات لائحة داخلية بلغة إدارية عربية فصحى مناسبة للشركات في المغرب، دون مخالفة ظاهرة لمدونة الشغل. المصدر: ${raw}`;
+      if (locale.startsWith("fr"))
+        return `Règlement intérieur (Maroc) : reformuler le texte brut en articles/clauses lisibles, ton professionnel, droit marocain du travail en tête. Texte : ${raw}`;
+      return `Internal work rules (Morocco): rewrite the following bullet/notes into clear policy clauses; professional tone. Source: ${raw}`;
+    }
     if (locale.startsWith("ar"))
       return `مسودة عقد عمل (مغرب): بين ${ctx.employer || "المشغّل"} والموظف ${emp} — المسمى ${ctx.jobTitle || "—"}، الأجر ${ctx.salaryGross || "—"} درهم، نوع ${ctx.contractType || "CDI"}. يُراجع لدى المحامي قبل التوقيع.`;
     if (locale.startsWith("fr"))
@@ -1673,9 +1783,26 @@ function buildAiPrompt(module: string, locale: string, ctx: Record<string, strin
   const json = JSON.stringify(ctx);
   const moroccanLaw =
     "Ground the draft in Moroccan law in force: Constitution (2011). Cite and apply as relevant: Dahir 1-58-250 (Code of Civil Procedure) for civil matters; Moroccan criminal procedure codes for penal matters; Law 03-12 (administrative justice); specialized codes and dahirs. Ensure wording supports formal admissibility (form and substance) before Moroccan courts and administrations.";
+  const labourMorocco =
+    "Ground the text in the Moroccan Labour Code (Book One of Dahir 1-03-19 as amended), CNSS/AMO rules where relevant, legal working hours, trial periods, and applicable collective agreements. Do not fabricate facts. Recommend legal review before signature.";
+  const educationMorocco =
+    "Align with Morocco Framework Law 51.17 on education and training and official competency frameworks where relevant. Use clear formal language suitable for classroom assessment; include numbered questions and suggested marks when appropriate. No markdown.";
   const base = `You are a legal and administrative drafting assistant for the Kingdom of Morocco (Smart Al-Idara Pro). Module: ${module}. Locale: ${locale}. User data (JSON): ${json}. Produce concise formal text in the user's language only, no markdown, max 400 words.`;
+
   if (module === "law" || module === "public" || module === "legalAi") {
-    return `${base} ${moroccanLaw}`;
+    return `${base} ${moroccanLaw} If existingDraft or userNotes is present, refine and complete the request body for filing — preserve factual data; do not duplicate the formal recipient line unnecessarily; use structured paragraphs.`;
+  }
+  if (module === "exam") {
+    return `You are an expert Moroccan teacher / pedagogy assessor. Locale: ${locale}. User data (JSON): ${json}. ${educationMorocco} Output numbered exam questions (plain text only). If subject or level is provided, match difficulty. Prefer 4–8 items unless context asks otherwise. Max 650 words.`;
+  }
+  if (module === "hrContract") {
+    if (ctx.docKind === "dismissal_grounds") {
+      return `You are an HR and labour-law writing assistant (Morocco). Locale: ${locale}. JSON: ${json}. Expand groundsHint into formal termination grounds: neutral, factual tone; categories under the Labour Code (serious misconduct, economic, etc.) only as hypotheses if they fit the notes — never invent incidents. Max 320 words. Plain text.`;
+    }
+    if (ctx.docKind === "internal_rules_polish") {
+      return `You are drafting internal company policy prose for Morocco. Locale: ${locale}. JSON: ${json}. Rewrite rulesExcerpt into coherent numbered articles suitable for internal handbook; professional tone; respect Labour Code minima. Max 500 words. Plain text.`;
+    }
+    return `${base} ${labourMorocco} Deliver a single complete employment contract body with numbered articles where helpful.`;
   }
   if (module === "mediaLab") {
     const fmt = ctx.format;
@@ -1707,7 +1834,7 @@ app.post("/api/ai/generate", authMiddleware, async (req, res) => {
     res.status(400).json({ error: "بيانات ناقصة" });
     return;
   }
-  if (!aiGenerateAllowed(userId, module)) {
+  if (!(await aiGenerateAllowed(userId, module))) {
     res.status(403).json({ error: "القسم غير مفعّل أو انتهى الاشتراك" });
     return;
   }
@@ -1720,7 +1847,8 @@ app.post("/api/ai/generate", authMiddleware, async (req, res) => {
       return;
     }
   }
-  const maxTokens = module === "mediaLab" ? 420 : 900;
+  const maxTokens =
+    module === "mediaLab" ? 420 : module === "exam" || module === "hrContract" ? 1400 : module === "legalAi" ? 1200 : 900;
   const key = process.env.OPENAI_API_KEY;
   if (key) {
     try {
@@ -1766,9 +1894,9 @@ app.post("/api/ai/generate", authMiddleware, async (req, res) => {
   res.json({ text: fallback });
 });
 
-app.get("/api/studio/capabilities", authMiddleware, (req, res) => {
+app.get("/api/studio/capabilities", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const allowed = aiGenerateAllowed(userId, "mediaLab");
+  const allowed = await aiGenerateAllowed(userId, "mediaLab");
   const openAiKeyConfigured = Boolean(process.env.OPENAI_API_KEY?.trim());
   const textToImage = Boolean(allowed && openAiKeyConfigured);
   res.json({ textToImage, openAiKeyConfigured });
@@ -1776,7 +1904,7 @@ app.get("/api/studio/capabilities", authMiddleware, (req, res) => {
 
 app.post("/api/studio/text-to-image", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!aiGenerateAllowed(userId, "mediaLab")) {
+  if (!(await aiGenerateAllowed(userId, "mediaLab"))) {
     res.status(403).json({ error: "القسم غير مفعّل أو انتهى الاشتراك" });
     return;
   }
@@ -1829,14 +1957,14 @@ app.post("/api/studio/text-to-image", authMiddleware, async (req, res) => {
 });
 
 /** إعدادات المنصة (عامة) — روابط التواصل ومعلومات الدفع */
-app.get("/api/settings/public", (_req, res) => {
-  const rows = db.prepare("SELECT key, value FROM app_settings").all() as { key: string; value: string }[];
+app.get("/api/settings/public", async (_req, res) => {
+  const rows = await db.prepare("SELECT key, value FROM app_settings").all() as { key: string; value: string }[];
   const settings: Record<string, string> = {};
   for (const r of rows) settings[r.key] = r.value;
   res.json({ settings });
 });
 
-app.put("/api/settings/platform", authMiddleware, superAdminOnly, (req, res) => {
+app.put("/api/settings/platform", authMiddleware, platformSettingsEditor, async (req, res) => {
   const body = req.body as Record<string, unknown>;
   if (!body || typeof body !== "object") {
     res.status(400).json({ error: "بيانات ناقصة" });
@@ -1857,29 +1985,30 @@ app.put("/api/settings/platform", authMiddleware, superAdminOnly, (req, res) => 
   ]);
   for (const [k, v] of Object.entries(body)) {
     if (!allowed.has(k) || typeof v !== "string") continue;
-    db.prepare(
-      `INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))`
+    await db.prepare(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`
     ).run(k, v);
   }
   res.json({ ok: true });
 });
 
 /** ملف تأشيرة — بيانات محفوظة للحجز التلقائي */
-app.get("/api/visa/profile", authMiddleware, (req, res) => {
+app.get("/api/visa/profile", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "visa")) {
+  if (!(await moduleAllowed(userId, "visa"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const row = db
+  const row = await db
     .prepare("SELECT * FROM visa_user_profile WHERE user_id = ?")
     .get(userId) as Record<string, unknown> | undefined;
   res.json({ profile: row ?? null });
 });
 
-app.post("/api/visa/profile", authMiddleware, (req, res) => {
+app.post("/api/visa/profile", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "visa")) {
+  if (!(await moduleAllowed(userId, "visa"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -1890,10 +2019,10 @@ app.post("/api/visa/profile", authMiddleware, (req, res) => {
     email?: string;
     extra_json?: string;
   };
-  const ex = db.prepare("SELECT user_id FROM visa_user_profile WHERE user_id = ?").get(userId);
+  const ex = await db.prepare("SELECT user_id FROM visa_user_profile WHERE user_id = ?").get(userId);
   if (ex) {
-    db.prepare(
-      `UPDATE visa_user_profile SET full_name = ?, passport_no = ?, phone = ?, email = ?, extra_json = ?, updated_at = datetime('now') WHERE user_id = ?`
+    await db.prepare(
+      `UPDATE visa_user_profile SET full_name = ?, passport_no = ?, phone = ?, email = ?, extra_json = ?, updated_at = NOW() WHERE user_id = ?`
     ).run(
       b.full_name ?? "",
       b.passport_no ?? "",
@@ -1903,8 +2032,8 @@ app.post("/api/visa/profile", authMiddleware, (req, res) => {
       userId
     );
   } else {
-    db.prepare(
-      `INSERT INTO visa_user_profile (user_id, full_name, passport_no, phone, email, extra_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`
+    await db.prepare(
+      `INSERT INTO visa_user_profile (user_id, full_name, passport_no, phone, email, extra_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW())`
     ).run(
       userId,
       b.full_name ?? "",
@@ -1918,21 +2047,21 @@ app.post("/api/visa/profile", authMiddleware, (req, res) => {
 });
 
 /** حالة مواعيد التأشيرة — مرجع مركزي لكل مستخدم (تحديث من زر التحديث) */
-app.get("/api/visa/appointment-status", authMiddleware, (req, res) => {
+app.get("/api/visa/appointment-status", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "visa")) {
+  if (!(await moduleAllowed(userId, "visa"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const rows = db
+  const rows = await db
     .prepare("SELECT center_id, status, updated_at FROM visa_appointment_status WHERE user_id = ?")
     .all(userId) as { center_id: string; status: string; updated_at: string }[];
   res.json({ rows });
 });
 
-app.post("/api/visa/appointment-status/:centerId/refresh", authMiddleware, (req, res) => {
+app.post("/api/visa/appointment-status/:centerId/refresh", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "visa")) {
+  if (!(await moduleAllowed(userId, "visa"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -1941,7 +2070,7 @@ app.post("/api/visa/appointment-status/:centerId/refresh", authMiddleware, (req,
     res.status(400).json({ error: "مرجع المركز ناقص" });
     return;
   }
-  const prev = db
+  const prev = await db
     .prepare("SELECT status FROM visa_appointment_status WHERE user_id = ? AND center_id = ?")
     .get(userId, centerId) as { status: string } | undefined;
   const order: Array<"open" | "closed" | "soon"> = ["open", "closed", "soon"];
@@ -1949,7 +2078,7 @@ app.post("/api/visa/appointment-status/:centerId/refresh", authMiddleware, (req,
   const idx = order.indexOf(prevStatus);
   const next = order[(idx + 1) % 3];
   const now = new Date().toISOString();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO visa_appointment_status (user_id, center_id, status, updated_at)
      VALUES (?, ?, ?, ?)
      ON CONFLICT(user_id, center_id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`
@@ -1965,19 +2094,19 @@ app.post("/api/visa/appointment-status/:centerId/refresh", authMiddleware, (req,
 });
 
 /** مخزون ونقاط بيع */
-app.get("/api/inventory/products", authMiddleware, (req, res) => {
+app.get("/api/inventory/products", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "inventory")) {
+  if (!(await moduleAllowed(userId, "inventory"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const rows = db.prepare("SELECT * FROM inventory_products WHERE user_id = ? ORDER BY name").all(userId);
+  const rows = await db.prepare("SELECT * FROM inventory_products WHERE user_id = ? ORDER BY name").all(userId);
   res.json({ products: rows });
 });
 
-app.post("/api/inventory/products", authMiddleware, (req, res) => {
+app.post("/api/inventory/products", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "inventory")) {
+  if (!(await moduleAllowed(userId, "inventory"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -2003,7 +2132,7 @@ app.post("/api/inventory/products", authMiddleware, (req, res) => {
   const cost = Math.max(0, Number(b.cost_price) || 0);
   const expiry = b.expiry_date?.trim() ? b.expiry_date.trim().slice(0, 10) : null;
   const lowAlert = Math.max(0, Math.floor(Number(b.low_stock_alert) ?? 10) || 10);
-  db.prepare(
+  await db.prepare(
     `INSERT INTO inventory_products (id, user_id, name, sku, retail_type, pieces_per_carton, unit_price, stock_pieces, unit_kind, cost_price, expiry_date, low_stock_alert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
@@ -2022,9 +2151,9 @@ app.post("/api/inventory/products", authMiddleware, (req, res) => {
   res.json({ id });
 });
 
-app.patch("/api/inventory/products/:id", authMiddleware, (req, res) => {
+app.patch("/api/inventory/products/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "inventory")) {
+  if (!(await moduleAllowed(userId, "inventory"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -2041,7 +2170,7 @@ app.patch("/api/inventory/products/:id", authMiddleware, (req, res) => {
     expiry_date?: string | null;
     low_stock_alert?: number;
   };
-  const r = db
+  const r = await db
     .prepare(
       `UPDATE inventory_products SET name = COALESCE(?, name), sku = COALESCE(?, sku), retail_type = COALESCE(?, retail_type),
        pieces_per_carton = COALESCE(?, pieces_per_carton), unit_price = COALESCE(?, unit_price), stock_pieces = COALESCE(?, stock_pieces),
@@ -2077,7 +2206,7 @@ app.post(
   uploadMemory.single("file"),
   async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    if (!moduleAllowed(userId, "inventory")) {
+    if (!(await moduleAllowed(userId, "inventory"))) {
       res.status(403).json({ error: "القسم غير مفعّل" });
       return;
     }
@@ -2118,7 +2247,7 @@ app.post(
   uploadMemory.single("file"),
   async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
-    if (!moduleAllowed(userId, "inventory")) {
+    if (!(await moduleAllowed(userId, "inventory"))) {
       res.status(403).json({ error: "القسم غير مفعّل" });
       return;
     }
@@ -2146,9 +2275,9 @@ app.post(
   }
 );
 
-app.post("/api/inventory/stock-add", authMiddleware, (req, res) => {
+app.post("/api/inventory/stock-add", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "inventory")) {
+  if (!(await moduleAllowed(userId, "inventory"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -2158,7 +2287,7 @@ app.post("/api/inventory/stock-add", authMiddleware, (req, res) => {
     return;
   }
   const add = Math.max(0, Math.floor(Number(b.add_pieces)));
-  const r = db
+  const r = await db
     .prepare(
       `UPDATE inventory_products SET stock_pieces = stock_pieces + ? WHERE id = ? AND user_id = ?`
     )
@@ -2170,9 +2299,9 @@ app.post("/api/inventory/stock-add", authMiddleware, (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/inventory/sale", authMiddleware, (req, res) => {
+app.post("/api/inventory/sale", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "inventory")) {
+  if (!(await moduleAllowed(userId, "inventory"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -2188,7 +2317,7 @@ app.post("/api/inventory/sale", authMiddleware, (req, res) => {
     return;
   }
   const qty = Math.max(1, Math.floor(Number(b.qty_pieces)));
-  const product = db
+  const product = await db
     .prepare("SELECT * FROM inventory_products WHERE id = ? AND user_id = ?")
     .get(b.product_id, userId) as
     | {
@@ -2212,7 +2341,7 @@ app.post("/api/inventory/sale", authMiddleware, (req, res) => {
   const lineProfit = qty * (product.unit_price - costUnit);
   const paid = Math.max(0, Number(b.paid) || 0);
   const credit = Math.max(0, lineTotal - paid);
-  db.prepare(`UPDATE inventory_products SET stock_pieces = stock_pieces - ? WHERE id = ?`).run(qty, product.id);
+  await db.prepare(`UPDATE inventory_products SET stock_pieces = stock_pieces - ? WHERE id = ?`).run(qty, product.id);
   const invId = randomUUID();
   const lines = JSON.stringify([
     {
@@ -2225,7 +2354,7 @@ app.post("/api/inventory/sale", authMiddleware, (req, res) => {
       line_profit: lineProfit,
     },
   ]);
-  db.prepare(
+  await db.prepare(
     `INSERT INTO pos_invoices (id, user_id, customer_name, lines_json, total, paid, credit, due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     invId,
@@ -2241,9 +2370,9 @@ app.post("/api/inventory/sale", authMiddleware, (req, res) => {
 });
 
 /** بيع متعدد الأسطر في فاتورة واحدة (مسودة البيع السريع) */
-app.post("/api/inventory/sale-batch", authMiddleware, (req, res) => {
+app.post("/api/inventory/sale-batch", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "inventory")) {
+  if (!(await moduleAllowed(userId, "inventory"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -2270,82 +2399,78 @@ app.post("/api/inventory/sale-batch", authMiddleware, (req, res) => {
     line_profit: number;
   };
 
-  const linesOut: LineOut[] = [];
-  let grandTotal = 0;
-
   try {
-    db.exec("BEGIN IMMEDIATE");
-    for (const row of b.lines) {
-      if (!row.product_id || !Number.isFinite(Number(row.qty_pieces))) {
-        throw new Error("بيانات ناقصة");
+    const out = await db.withTransaction(async (client) => {
+      const pq = (sql: string) => db.prepareWithClient(client, sql);
+      const linesOut: LineOut[] = [];
+      let grandTotal = 0;
+      for (const row of b.lines!) {
+        if (!row.product_id || !Number.isFinite(Number(row.qty_pieces))) {
+          throw new Error("بيانات ناقصة");
+        }
+        const qty = Math.max(1, Math.floor(Number(row.qty_pieces)));
+        const product = (await pq(
+          "SELECT * FROM inventory_products WHERE id = ? AND user_id = ?"
+        ).get(row.product_id, userId)) as
+          | {
+              id: string;
+              name: string;
+              unit_price: number;
+              stock_pieces: number;
+              cost_price?: number;
+            }
+          | undefined;
+        if (!product) {
+          throw new Error("المنتج غير موجود");
+        }
+        if (product.stock_pieces < qty) {
+          throw new Error("الكمية غير متوفرة في المخزون");
+        }
+        const costUnit = Math.max(0, Number(product.cost_price) || 0);
+        const defaultLine = qty * product.unit_price;
+        let lineTotal = defaultLine;
+        if (row.line_total != null && Number.isFinite(Number(row.line_total)) && Number(row.line_total) >= 0) {
+          lineTotal = Math.round(Number(row.line_total) * 100) / 100;
+        }
+        const lineProfit = lineTotal - qty * costUnit;
+        await pq(`UPDATE inventory_products SET stock_pieces = stock_pieces - ? WHERE id = ?`).run(qty, product.id);
+        linesOut.push({
+          product_id: product.id,
+          name: product.name,
+          qty_pieces: qty,
+          unit_price: product.unit_price,
+          cost_price: costUnit,
+          line_total: lineTotal,
+          line_profit: lineProfit,
+        });
+        grandTotal += lineTotal;
       }
-      const qty = Math.max(1, Math.floor(Number(row.qty_pieces)));
-      const product = db
-        .prepare("SELECT * FROM inventory_products WHERE id = ? AND user_id = ?")
-        .get(row.product_id, userId) as
-        | {
-            id: string;
-            name: string;
-            unit_price: number;
-            stock_pieces: number;
-            cost_price?: number;
-          }
-        | undefined;
-      if (!product) {
-        throw new Error("المنتج غير موجود");
-      }
-      if (product.stock_pieces < qty) {
-        throw new Error("الكمية غير متوفرة في المخزون");
-      }
-      const costUnit = Math.max(0, Number(product.cost_price) || 0);
-      const defaultLine = qty * product.unit_price;
-      let lineTotal = defaultLine;
-      if (row.line_total != null && Number.isFinite(Number(row.line_total)) && Number(row.line_total) >= 0) {
-        lineTotal = Math.round(Number(row.line_total) * 100) / 100;
-      }
-      const lineProfit = lineTotal - qty * costUnit;
-      db.prepare(`UPDATE inventory_products SET stock_pieces = stock_pieces - ? WHERE id = ?`).run(qty, product.id);
-      linesOut.push({
-        product_id: product.id,
-        name: product.name,
-        qty_pieces: qty,
-        unit_price: product.unit_price,
-        cost_price: costUnit,
-        line_total: lineTotal,
-        line_profit: lineProfit,
-      });
-      grandTotal += lineTotal;
-    }
 
-    const ov = b.override_total;
-    if (ov != null && Number.isFinite(Number(ov)) && Number(ov) >= 0) {
-      grandTotal = Math.round(Number(ov) * 100) / 100;
-    }
+      const ov = b.override_total;
+      if (ov != null && Number.isFinite(Number(ov)) && Number(ov) >= 0) {
+        grandTotal = Math.round(Number(ov) * 100) / 100;
+      }
 
-    const paid = Math.max(0, Number(b.paid) || 0);
-    const credit = Math.max(0, grandTotal - paid);
-    const invId = randomUUID();
-    const linesJson = JSON.stringify(linesOut);
-    db.prepare(
-      `INSERT INTO pos_invoices (id, user_id, customer_name, lines_json, total, paid, credit, due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      invId,
-      userId,
-      (b.customer_name ?? "").trim(),
-      linesJson,
-      grandTotal,
-      paid,
-      credit,
-      credit > 0 ? (b.due_at ?? null) : null
-    );
-    db.exec("COMMIT");
-    res.json({ id: invId, total: grandTotal, credit });
+      const paid = Math.max(0, Number(b.paid) || 0);
+      const credit = Math.max(0, grandTotal - paid);
+      const invId = randomUUID();
+      const linesJson = JSON.stringify(linesOut);
+      await pq(
+        `INSERT INTO pos_invoices (id, user_id, customer_name, lines_json, total, paid, credit, due_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        invId,
+        userId,
+        (b.customer_name ?? "").trim(),
+        linesJson,
+        grandTotal,
+        paid,
+        credit,
+        credit > 0 ? (b.due_at ?? null) : null
+      );
+      return { invId, grandTotal, credit };
+    });
+    res.json({ id: out.invId, total: out.grandTotal, credit: out.credit });
   } catch (err) {
-    try {
-      db.exec("ROLLBACK");
-    } catch {
-      /* ignore */
-    }
     const msg = err instanceof Error ? err.message : "فشل البيع";
     if (msg === "الكمية غير متوفرة في المخزون" || msg === "المنتج غير موجود" || msg === "بيانات ناقصة") {
       res.status(400).json({ error: msg });
@@ -2355,13 +2480,13 @@ app.post("/api/inventory/sale-batch", authMiddleware, (req, res) => {
   }
 });
 
-app.get("/api/inventory/invoices", authMiddleware, (req, res) => {
+app.get("/api/inventory/invoices", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "inventory")) {
+  if (!(await moduleAllowed(userId, "inventory"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const rows = db
+  const rows = await db
     .prepare("SELECT * FROM pos_invoices WHERE user_id = ? ORDER BY created_at DESC LIMIT 200")
     .all(userId);
   res.json({ invoices: rows });
@@ -2374,7 +2499,7 @@ registerBackendServices(app, authMiddleware);
 /** معالجة صور احترافية (Sharp) — يتطلب قسم media_lab */
 app.post("/api/media/enhance-image", authMiddleware, upload.single("image"), async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!moduleAllowed(userId, "media_lab")) {
+  if (!(await moduleAllowed(userId, "media_lab"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
@@ -2421,6 +2546,42 @@ app.post("/api/media/enhance-image", authMiddleware, upload.single("image"), asy
       /* ignore */
     }
   }
+});
+
+app.use((err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  const errObj = err && typeof err === "object" ? (err as Record<string, unknown>) : null;
+  const code = errObj && typeof errObj.code === "string" ? errObj.code : "";
+  const msg = err instanceof Error ? err.message : String(err);
+  const lowerMsg = msg.toLowerCase();
+
+  if (
+    code === "28P01" ||
+    code === "28000" ||
+    lowerMsg.includes("password authentication failed") ||
+    lowerMsg.includes("no password supplied")
+  ) {
+    console.error("[api] database auth failed:", code || msg, req.method, req.path);
+    res.status(503).json({
+      error:
+        "فشل الاتصال بقاعدة البيانات — تحقق من كلمة مرور Postgres في Supabase Settings → Database، وحدّث DATABASE_URL و DIRECT_URL في .env ثم أعد تشغيل npm run dev",
+    });
+    return;
+  }
+
+  if (code === "ETIMEDOUT" || code === "ECONNREFUSED" || msg.includes("timeout") || msg.includes("نتهت مهلة")) {
+    console.error("[api] database unreachable:", code || msg, req.method, req.path);
+    res.status(503).json({
+      error:
+        "قاعدة البيانات غير متاحة — تحقق من DATABASE_URL / DIRECT_URL، الشبكة، أو نفّذ: npm run db:schema",
+    });
+    return;
+  }
+  console.error("[api]", err);
+  res.status(500).json({ error: "Internal Server Error" });
 });
 
 const PORT = Number(process.env.PORT ?? 4000);

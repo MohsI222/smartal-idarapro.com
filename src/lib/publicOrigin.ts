@@ -6,9 +6,18 @@
  * - If unset, uses `window` origin plus **Vite `base`** so subpath deploys (`vite.config base`)
  *   still produce correct absolute links.
  * - On localhost / loopback, forces `http:` so `https://localhost` does not break dev certs.
+ * - يصحّح تلقائياً نسخاً خاطئاً شائعاً (.com.th → .com) لدومين المشروع في المتغيّر الصريح.
  */
 export function getPublicOrigin(): string {
-  const explicit = import.meta.env.VITE_PUBLIC_APP_URL?.trim();
+  let explicit =
+    (
+      import.meta.env.VITE_PUBLIC_APP_URL ??
+      import.meta.env.NEXT_PUBLIC_APP_URL ??
+      import.meta.env.NEXT_PUBLIC_SITE_URL
+    )?.trim() ?? "";
+  if (explicit && /smartal-idara/i.test(explicit) && /\.com\.th\b/i.test(explicit)) {
+    explicit = explicit.replace(/\.com\.th\b/gi, ".com");
+  }
   if (explicit) return explicit.replace(/\/$/, "");
 
   if (typeof window === "undefined") return "";

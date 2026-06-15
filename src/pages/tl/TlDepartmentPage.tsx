@@ -26,6 +26,7 @@ import { usePwaInstall } from "@/hooks/usePwaInstall";
 import { tlCombineTodayWithTime, tlDefaultExpectedEntryLocal } from "@/lib/tlDateTimeLocal";
 import { ensureLatinDigitsInString, formatTlLatinInt, formatTlLatinNum } from "@/lib/tlLatinNums";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 import {
   isTlDept,
   tlCreateOps,
@@ -49,6 +50,7 @@ import {
   type TlVehicleLog,
   type TlWorker,
 } from "@/lib/tlApi";
+import { isTlPwaFocusDeptSlug } from "@/lib/tlDeptRoutes";
 import {
   buildGridExcelFile,
   exportCurrentGridExcel,
@@ -96,7 +98,7 @@ export function TlDepartmentPage() {
   const pwaInvite = search.get("pwa") === "1";
   const { token, approvedModules } = useAuth();
   const { t, isRtl, locale } = useI18n();
-  const { install, canNativeInstall } = usePwaInstall();
+  const { install, canNativeInstall, installed } = usePwaInstall();
   const [workers, setWorkers] = useState<TlWorker[]>([]);
   const [ctxWorker, setCtxWorker] = useState<TlWorker | null>(null);
   const [tab, setTab] = useState<"ops" | "msg">("ops");
@@ -109,6 +111,8 @@ export function TlDepartmentPage() {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [brandingLogo, setBrandingLogo] = useState<string | null>(null);
+  const [brandingCompany, setBrandingCompany] = useState<string>("");
 
   const allowed = approvedModules.includes("transport_logistics");
   const slug = dept && isTlDept(dept) ? dept : null;
@@ -157,6 +161,33 @@ export function TlDepartmentPage() {
       if (link && prev) link.setAttribute("href", prev || "/manifest.webmanifest");
     };
   }, [slug]);
+
+  useEffect(() => {
+    if (!slug) return;
+    const deptLabel = t(`tl.dept.${slug}`);
+    document.title = brandingCompany ? `${brandingCompany} — ${deptLabel}` : deptLabel;
+    return () => {
+      document.title = "سمارت الإدارة برو";
+    };
+  }, [slug, brandingCompany, t]);
+
+  useEffect(() => {
+    if (!token) {
+      setBrandingLogo(null);
+      setBrandingCompany("");
+      return;
+    }
+    void api<{ branding: { logoDataUrl?: string; companyName?: string } }>("/user/branding", { token })
+      .then((r) => {
+        const u = r.branding?.logoDataUrl;
+        setBrandingLogo(typeof u === "string" && u.startsWith("data:image") ? u : null);
+        setBrandingCompany(String(r.branding?.companyName ?? "").trim());
+      })
+      .catch(() => {
+        setBrandingLogo(null);
+        setBrandingCompany("");
+      });
+  }, [token]);
 
   const loadData = useCallback(async () => {
     if (!token || !slug || !allowed) return;
@@ -423,22 +454,41 @@ export function TlDepartmentPage() {
     );
   }
 
+  const showFullPlatformEntry = !pwaInvite && !installed && !isTlPwaFocusDeptSlug(slug);
+
   return (
     <div className="min-h-screen bg-[#050a12] text-slate-100 flex flex-col" dir={isRtl ? "rtl" : "ltr"}>
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-[#050a12]/95 backdrop-blur-md px-4 py-3 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 text-[#FF8C00] font-black text-sm">
-          {isVehicle ? <Truck className="size-5" /> : <Bus className="size-5" />}
-          {t(`tl.dept.${slug}`)}
+      <header className="sticky top-0 z-20 border-b border-white/10 bg-[#050a12]/95 backdrop-blur-md px-4 py-3 flex flex-wrap items-center gap-3 justify-between">
+        <div className="flex items-center gap-2 min-w-0 flex-1 md:max-w-[min(100%,36rem)]">
+          {brandingLogo ? (
+            <img
+              src={brandingLogo}
+              alt=""
+              className="h-9 max-w-[100px] sm:max-w-[140px] object-contain rounded-lg border border-white/10 bg-white/5 shrink-0"
+            />
+          ) : null}
+          {brandingCompany ? (
+            <span className="truncate text-[11px] sm:text-xs font-bold text-slate-300 max-w-[100px] sm:max-w-[180px]">
+              {brandingCompany}
+            </span>
+          ) : null}
+          <div className="flex items-center gap-2 text-[#FF8C00] font-black text-sm shrink-0">
+            {isVehicle ? <Truck className="size-5" /> : <Bus className="size-5" />}
+            {t(`tl.dept.${slug}`)}
+          </div>
         </div>
-        <div className="flex-1" />
-        <LanguageSwitcher />
-        <PwaInstallControl variant="header" />
-        <Button asChild size="sm" variant="outline" className="border-white/20">
-          <Link to="/app/tl">
-            <Home className="size-4" />
-            {t("tl.fullPlatform")}
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          <LanguageSwitcher />
+          <PwaInstallControl variant="header" />
+          {showFullPlatformEntry ? (
+            <Button asChild size="sm" variant="outline" className="border-white/20">
+              <Link to="/app/tl">
+                <Home className="size-4" />
+                {t("tl.fullPlatform")}
+              </Link>
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       <div className="flex gap-2 p-3 border-b border-white/10">

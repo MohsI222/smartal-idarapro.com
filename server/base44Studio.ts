@@ -8,10 +8,11 @@ import sharp from "sharp";
 type AuthMw = (req: Request, res: Response, next: () => void) => void;
 
 function serverOrigin(): string {
-  return (
-    process.env.PUBLIC_API_URL?.trim().replace(/\/$/, "") ||
-    `http://127.0.0.1:${Number(process.env.PORT ?? 4000)}`
-  );
+  const explicit = process.env.PUBLIC_API_URL?.trim().replace(/\/$/, "");
+  if (explicit) return explicit;
+  const vercel = process.env.VERCEL_URL?.trim();
+  if (vercel) return `https://${vercel}`;
+  return `http://127.0.0.1:${Number(process.env.PORT ?? 4000)}`;
 }
 
 export function registerBase44StudioRoutes(
@@ -19,7 +20,7 @@ export function registerBase44StudioRoutes(
   opts: {
     authMiddleware: AuthMw;
     uploadDir: string;
-    aiGenerateAllowed: (userId: string, module: string) => boolean;
+    aiGenerateAllowed: (userId: string, module: string) => Promise<boolean>;
   }
 ): void {
   const { authMiddleware, uploadDir, aiGenerateAllowed } = opts;
@@ -91,7 +92,7 @@ export function registerBase44StudioRoutes(
     memoryUpload.single("file"),
     async (req, res) => {
       const userId = (req as Request & { userId: string }).userId;
-      if (!aiGenerateAllowed(userId, "mediaLab")) {
+      if (!(await aiGenerateAllowed(userId, "mediaLab"))) {
         res.status(403).json({ error: "القسم غير مفعّل أو انتهى الاشتراك" });
         return;
       }
@@ -114,7 +115,7 @@ export function registerBase44StudioRoutes(
 
   app.post("/api/studio/base44/generate-image", authMiddleware, async (req, res) => {
     const userId = (req as Request & { userId: string }).userId;
-    if (!aiGenerateAllowed(userId, "mediaLab")) {
+    if (!(await aiGenerateAllowed(userId, "mediaLab"))) {
       res.status(403).json({ error: "القسم غير مفعّل أو انتهى الاشتراك" });
       return;
     }
@@ -207,7 +208,7 @@ export function registerBase44StudioRoutes(
 
   app.post("/api/studio/base44/invoke-llm", authMiddleware, async (req, res) => {
     const userId = (req as Request & { userId: string }).userId;
-    if (!aiGenerateAllowed(userId, "mediaLab")) {
+    if (!(await aiGenerateAllowed(userId, "mediaLab"))) {
       res.status(403).json({ error: "القسم غير مفعّل أو انتهى الاشتراك" });
       return;
     }
@@ -297,7 +298,7 @@ export function registerBase44StudioRoutes(
     authMiddleware,
     async (req, res) => {
       const userId = (req as Request & { userId: string }).userId;
-      if (!aiGenerateAllowed(userId, "mediaLab")) {
+      if (!(await aiGenerateAllowed(userId, "mediaLab"))) {
         res.status(403).json({ error: "القسم غير مفعّل أو انتهى الاشتراك" });
         return;
       }

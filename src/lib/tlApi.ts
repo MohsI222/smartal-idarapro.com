@@ -1,7 +1,5 @@
 import { api, ApiError, getApiUrlPrefix } from "@/lib/api";
 
-const API_BASE = getApiUrlPrefix();
-
 export type TlWorker = {
   id: string;
   user_id: string;
@@ -194,7 +192,7 @@ export async function tlSendMessageWithFile(
   fd.append("to_worker_id", fields.to_worker_id);
   fd.append("body", fields.body ?? "");
   if (file) fd.append("file", file);
-  const res = await fetch(`${API_BASE}/tl/messages/with-attachment`, {
+  const res = await fetch(`${getApiUrlPrefix()}/tl/messages/with-attachment`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: fd,
@@ -207,7 +205,7 @@ export async function tlSendMessageWithFile(
 }
 
 export async function tlFetchMessageAttachmentBlob(token: string, messageId: string): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/tl/messages/${encodeURIComponent(messageId)}/attachment`, {
+  const res = await fetch(`${getApiUrlPrefix()}/tl/messages/${encodeURIComponent(messageId)}/attachment`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new ApiError("download_failed", res.status);

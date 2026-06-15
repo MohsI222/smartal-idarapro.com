@@ -3,12 +3,13 @@ import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { requestAiGenerate } from "@/lib/aiClient";
+import { ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 
 type Props = {
   module: string;
-  context: Record<string, string>;
+  context: Record<string, string | number | undefined | null>;
   onGenerated?: (text: string) => void;
   variant?: "default" | "outline" | "secondary";
   className?: string;
@@ -46,8 +47,9 @@ export function AiGenerateButton({
       } else {
         window.alert(text);
       }
-    } catch {
-      toast.error(t("ai.error"));
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : t("ai.error");
+      toast.error(msg);
     } finally {
       window.clearInterval(step);
       setLoading(false);
