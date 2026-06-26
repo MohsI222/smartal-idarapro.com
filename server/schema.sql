@@ -162,6 +162,18 @@ CREATE TABLE IF NOT EXISTS support_messages (
 
 CREATE INDEX IF NOT EXISTS idx_support_messages_user ON support_messages (user_id, created_at);
 
+CREATE TABLE IF NOT EXISTS internal_chat_messages (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  from_admin INTEGER NOT NULL DEFAULT 0,
+  body TEXT,
+  attachment_name TEXT,
+  attachment_path TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_internal_chat_messages_user ON internal_chat_messages (user_id, created_at);
+
 CREATE TABLE IF NOT EXISTS referral_rewards (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users (id),
@@ -242,8 +254,31 @@ CREATE TABLE IF NOT EXISTS tl_messages (
   attachment_original_name TEXT,
   attachment_stored_path TEXT,
   attachment_mime TEXT,
+  attachment_data BYTEA,
   FOREIGN KEY (from_worker_id) REFERENCES tl_workers (id) ON DELETE CASCADE,
   FOREIGN KEY (to_worker_id) REFERENCES tl_workers (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS production_requests (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  target_quantity INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending',
+  requested_by TEXT,
+  assigned_to TEXT,
+  bom_items_json TEXT NOT NULL DEFAULT '[]',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS logistics_queue (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  production_request_id TEXT REFERENCES production_requests (id) ON DELETE CASCADE,
+  product_id TEXT,
+  assigned_to TEXT,
+  status TEXT NOT NULL DEFAULT 'scheduled',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_tl_workers_user ON tl_workers (user_id);
@@ -251,3 +286,7 @@ CREATE INDEX IF NOT EXISTS idx_tl_vehicle_user ON tl_vehicle_logs (user_id);
 CREATE INDEX IF NOT EXISTS idx_tl_ops_user ON tl_ops_logs (user_id);
 CREATE INDEX IF NOT EXISTS idx_tl_incidents_user ON tl_incidents (user_id);
 CREATE INDEX IF NOT EXISTS idx_tl_messages_user ON tl_messages (user_id);
+CREATE INDEX IF NOT EXISTS idx_production_requests_user ON production_requests (user_id);
+CREATE INDEX IF NOT EXISTS idx_logistics_queue_user ON logistics_queue (user_id);
+
+ALTER TABLE tl_messages ADD COLUMN IF NOT EXISTS attachment_data BYTEA;

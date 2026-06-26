@@ -149,6 +149,8 @@ export async function downloadXlsxWorkbook(wb: XLSX.WorkBook, fileName: string):
   a.style.setProperty("display", "none");
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    if (document.body.contains(a)) document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
 }

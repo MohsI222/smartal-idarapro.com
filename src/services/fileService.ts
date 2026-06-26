@@ -71,6 +71,20 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function triggerDownload(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  window.setTimeout(() => {
+    if (document.body.contains(a)) document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
 export function listOfficeStash(): StashedOfficeFile[] {
   try {
     const raw = localStorage.getItem(STASH_KEY);
@@ -188,15 +202,7 @@ export async function exportBrandedTableXlsx(opts: {
   const blob = new Blob([buf], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  triggerDownload(blob, name);
 }
 
 /** مستند Word بسيط — عنوان + جدول */
@@ -252,15 +258,7 @@ export async function exportBrandedTableDocx(opts: {
   const doc = new Document({ sections: [{ children }] });
   const blob = await Packer.toBlob(doc);
   const name = opts.fileName.endsWith(".docx") ? opts.fileName : `${opts.fileName}.docx`;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  triggerDownload(blob, name);
 }
 
 export async function withFileToast<T>(fn: () => Promise<T>, errLabel = "File operation failed"): Promise<T | undefined> {

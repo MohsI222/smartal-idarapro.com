@@ -1,5 +1,6 @@
 import { escapeHtmlPdf, escapeHtmlPdfLatin } from "@/lib/htmlEscape";
 import { formatLatinDateTime } from "@/lib/tlLatinNums";
+import { fixArabicText } from "@/lib/arabicPdfText";
 
 /** خطوط عربية من Google قبل الطباعة — يقلّل الصفحات البيضاء بسبب عدم تحميل الخط. */
 const FONT_LINKS = `
@@ -56,8 +57,8 @@ export function buildLegalApplicationFullHtml(
   direction: "rtl" | "ltr" = "rtl",
   lang: string = "ar"
 ): string {
-  const kingdom = escapeHtmlPdf("المملكة المغربية");
-  const bodyText = escapeHtmlPdfLatin(requestDetails.trim() || "—");
+  const kingdom = escapeHtmlPdf(fixArabicText("المملكة المغربية"));
+  const bodyText = escapeHtmlPdfLatin(fixArabicText(requestDetails.trim() || "—"));
   const headerDir = direction;
   const headerAlign = direction === "rtl" ? "right" : "left";
   const bodyAlign = direction === "rtl" ? "right" : "left";
@@ -173,8 +174,8 @@ export type PlatformPrintWindowOpts = {
 /** HTML كامل لتقرير المنصة — للتصدير PDF عبر Canvas */
 export function buildPlatformReportFullHtml(opts: PlatformPrintWindowOpts): string {
   const { innerHtml, sectionTitle, mainTitle, direction, lang, dateLocale = lang, trialWatermark } = opts;
-  const mt = escapeHtmlPdfLatin(mainTitle.trim());
-  const st = escapeHtmlPdfLatin(sectionTitle.trim());
+  const mt = escapeHtmlPdfLatin(fixArabicText(mainTitle.trim()));
+  const st = escapeHtmlPdfLatin(fixArabicText(sectionTitle.trim()));
   const dateStr = escapeHtmlPdfLatin(formatLatinDateTime(dateLocale || lang));
   const headerDir = direction;
   const headerAlign = direction === "rtl" ? "right" : "left";
@@ -340,8 +341,8 @@ export function buildOfficialDocumentFullHtml(opts: OfficialPrintWindowOpts): st
     officialKingdomLine,
     dateLocale = lang,
   } = opts;
-  const kingdom = escapeHtmlPdfLatin(officialKingdomLine.trim() || "المملكة المغربية");
-  const titleSec = escapeHtmlPdfLatin(sectionTitle.trim());
+  const kingdom = escapeHtmlPdfLatin(fixArabicText(officialKingdomLine.trim() || "المملكة المغربية"));
+  const titleSec = escapeHtmlPdfLatin(fixArabicText(sectionTitle.trim()));
   const dateStr = escapeHtmlPdfLatin(formatLatinDateTime(dateLocale || lang));
   const headerDir = direction;
   const headerAlign = direction === "rtl" ? "right" : "left";
@@ -490,7 +491,9 @@ function bodyChunksToSimpleParagraphsHtml(raw: string): string {
     chunks = t.split("\n").map((s) => s.trim()).filter(Boolean);
   }
   const parts = chunks.length > 0 ? chunks : [t];
-  return parts.map((p) => `<p class="simple-para">${escapeHtmlPdfLatin(p)}</p>`).join("");
+  return parts
+    .map((p) => `<p class="simple-para">${escapeHtmlPdfLatin(fixArabicText(p))}</p>`)
+    .join("");
 }
 
 /** فصل المقدمة عن فقرة «أنا الممضي أسفله» (أو ما يقابلها) لزيادة المسافة البصرية الاحترافية */
@@ -557,19 +560,19 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
   } = input;
   const htmlTitle =
     kingdomHeaderImageDataUrl != null
-      ? escapeHtmlPdf("المملكة المغربية")
-      : administrativePdfHtmlTitle(lang, officialLegal);
-  const formal = escapeHtmlPdfLatin(formalRecipientLine.trim() || "—");
+      ? escapeHtmlPdf(fixArabicText("المملكة المغربية"))
+      : escapeHtmlPdf(fixArabicText(administrativePdfHtmlTitle(lang, officialLegal)));
+  const formal = escapeHtmlPdfLatin(fixArabicText(formalRecipientLine.trim() || "—"));
   const rawBody = requestBody.trim() || "—";
   const { head: headRaw, tail: tailRaw } = splitAdministrativeBodyForUndersigned(rawBody);
   const headSafe = headRaw.trim().length ? headRaw.trim() : "—";
   const headBlock = officialLegal
-    ? `<div class="request-main">${escapeHtmlPdfLatin(headSafe)}</div>`
+    ? `<div class="request-main">${escapeHtmlPdfLatin(fixArabicText(headSafe))}</div>`
     : `<div class="request-main request-main--simple">${bodyChunksToSimpleParagraphsHtml(headSafe)}</div>`;
   const tailBlock =
     tailRaw != null && tailRaw.length > 0
       ? officialLegal
-        ? `<div class="request-main request-main-undersigned">${escapeHtmlPdfLatin(tailRaw)}</div>`
+        ? `<div class="request-main request-main-undersigned">${escapeHtmlPdfLatin(fixArabicText(tailRaw))}</div>`
         : `<div class="request-main request-main--simple request-main-undersigned">${bodyChunksToSimpleParagraphsHtml(tailRaw)}</div>`
       : "";
   const bodyAlign = direction === "rtl" ? "right" : "left";
@@ -578,10 +581,10 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
     ? `<div class="official-identity"><img class="kingdom-header-img print-keep" src="${headerSrc}" width="300" height="56" alt="" /></div>`
     : "";
   const sig = administrativePdfSignatureLabels(lang);
-  const sigHeading = escapeHtmlPdf(sig.heading);
-  const sigHint = escapeHtmlPdf(sig.hint);
-  const dateCap = escapeHtmlPdf(administrativePdfDateCaption(lang));
-  const dateEsc = escapeHtmlPdfLatin(documentDateLine.trim() || "—");
+  const sigHeading = escapeHtmlPdf(fixArabicText(sig.heading));
+  const sigHint = escapeHtmlPdf(fixArabicText(sig.hint));
+  const dateCap = escapeHtmlPdf(fixArabicText(administrativePdfDateCaption(lang)));
+  const dateEsc = escapeHtmlPdfLatin(fixArabicText(documentDateLine.trim() || "—"));
   const shellClass = [
     "doc-shell",
     layoutSpacing === "address_change" ? "doc-shell--addr" : "doc-shell--std",

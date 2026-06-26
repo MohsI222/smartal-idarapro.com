@@ -1,17 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState, startTransition } from "react";
+import type { ChangeEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   Boxes,
   Download,
-  Lock,
   FileSpreadsheet,
   FileText,
+  Lock,
+  MessageSquare,
+  Paperclip,
   Plus,
   Receipt,
   ScanBarcode,
+  Search,
+  Send,
   ShoppingCart,
+  Upload,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,6 +36,33 @@ import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import * as XLSX from "xlsx";
 import { downloadXlsxWorkbook } from "@/lib/excelDownload";
+import {
+  assignLogisticsItemBackend,
+  createProductionRequestBackend,
+  fetchLogisticsQueueBackend,
+  fetchProductionRequestsBackend,
+  reserveProductionMaterialBackend,
+} from "@/lib/productionApi";
+import {
+  fetchHrStaff,
+  fetchInventory,
+  reserveMaterial,
+  type HrStaffRow,
+  type InventoryItem,
+  type LogisticsQueueItem,
+  type ProductionRequestRow,
+} from "@/lib/supabaseClient";
+import {
+  tlDownloadMessageAttachment,
+  tlMessageRecipients,
+  tlMessages,
+  tlResolveMagic,
+  tlSendMessage,
+  tlSendMessageWithFile,
+  tlWorkers,
+  type TlMessage,
+  type TlWorker,
+} from "@/lib/tlApi";
 import { BarcodeScannerHub } from "@/components/BarcodeScannerHub";
 import {
   Dialog,
@@ -41,6 +75,7 @@ import { ProcessingBar } from "@/components/ProcessingBar";
 import { lookupBarcodeOpenFoodFacts } from "@/lib/barcodeGlobalLookup";
 import { MiniCalculatorDialog } from "@/components/MiniCalculatorDialog";
 import { InventoryAiDocScannerButton } from "@/components/InventoryAiDocScannerButton";
+import { extractPlainTextFromInventoryFile } from "@/lib/inventoryDocumentImport";
 import type { VisionReceiptItem } from "@/lib/inventoryVisionTypes";
 import { todayIsoLocal } from "@/lib/todayIso";
 import {
@@ -106,19 +141,260 @@ type DraftLine = {
   line_total: number;
 };
 
+type ProductsResponse = { products: Product[] };
+type InvoicesResponse = { invoices: Invoice[] };
+type ProductCreateResponse = { id: string };
+type ProductWritePayload = {
+  name: string;
+  sku: string;
+  retail_type: string;
+  pieces_per_carton: number;
+  unit_price: number;
+  stock_pieces: number;
+  unit_kind: string;
+  cost_price: number;
+  expiry_date?: string | null;
+  low_stock_alert: number;
+};
+
+type ProductionBomItem = {
+  material_id: string;
+  name: string;
+  quantity: number;
+  available: number;
+  reference?: string;
+  source: "supabase" | "inventory_products";
+};
+
+type InventorySourceRow = {
+  id: string;
+  name: string;
+  qty: number;
+  sku: string;
+  barcode: string;
+  reference: string;
+  source: "supabase" | "inventory_products";
+};
+
+type SheetCell = string | number | boolean | Date | null | undefined;
+type InventoryImportKey =
+  | "name"
+  | "sku"
+  | "retail_type"
+  | "unit_kind"
+  | "pieces_per_carton"
+  | "unit_price"
+  | "cost_price"
+  | "stock_pieces"
+  | "expiry_date"
+  | "low_stock_alert";
+
+const IMPORT_FALLBACK_INDEX: Record<InventoryImportKey, number> = {
+  name: 0,
+  sku: 1,
+  retail_type: 2,
+  unit_kind: 3,
+  pieces_per_carton: 4,
+  unit_price: 5,
+  cost_price: 6,
+  stock_pieces: 7,
+  expiry_date: 8,
+  low_stock_alert: 9,
+};
+
+const IMPORT_HEADER_ALIASES: Record<InventoryImportKey, string[]> = {
+  name: ["name", "product", "item", "designation", "produit", "الصنف", "المنتج", "الاسم"],
+  sku: ["sku", "barcode", "bar code", "code", "reference", "référence", "كود", "باركود", "المرجع"],
+  retail_type: ["sector", "retail_type", "retail type", "activity", "activité", "قطاع", "النشاط"],
+  unit_kind: ["unit_kind", "unit kind", "unit", "kind", "unité", "وحدة", "نوع الوحدة"],
+  pieces_per_carton: [
+    "ppc",
+    "pieces_per_carton",
+    "pieces per carton",
+    "per carton",
+    "carton",
+    "colis",
+    "كرتون",
+    "علبة",
+  ],
+  unit_price: ["unit_price", "unit price", "price", "prix", "ثمن", "السعر"],
+  cost_price: ["cost_price", "cost price", "cost", "coût", "تكلفة", "ثمن الشراء"],
+  stock_pieces: ["stock_pieces", "stock pieces", "stock", "quantity", "qty", "quantité", "مخزون", "الكمية"],
+  expiry_date: ["expiry_date", "expiry", "expiration", "date expiration", "صلاحية", "انتهاء"],
+  low_stock_alert: ["low_stock_alert", "low stock", "alert", "seuil", "تنبيه", "حد أدنى"],
+};
+
 function piecesPerQuickUnit(p: Product, u: QuickUnit): number {
   const ppc = Math.max(1, Math.floor(Number(p.pieces_per_carton) || 1));
   if (u === "piece") return 1;
   return ppc;
 }
 
+function textCell(cell: SheetCell): string {
+  if (cell == null) return "";
+  if (cell instanceof Date) return cell.toISOString().slice(0, 10);
+  return String(cell).trim();
+}
+
+function normalizeHeader(cell: SheetCell): string {
+  return textCell(cell)
+    .toLowerCase()
+    .replace(/[()[\]{}:؛،,._/-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findHeaderIndex(header: SheetCell[], aliases: string[]): number {
+  const normalizedAliases = aliases.map((a) => normalizeHeader(a));
+  return header.findIndex((cell) => {
+    const h = normalizeHeader(cell);
+    if (!h) return false;
+    return normalizedAliases.some((a) => h === a || (a.length > 3 && h.includes(a)));
+  });
+}
+
+function parseNumberCell(cell: SheetCell, fallback: number): number {
+  if (typeof cell === "number" && Number.isFinite(cell)) return cell;
+  const txt = textCell(cell).replace(/\s/g, "").replace(",", ".");
+  if (!txt) return fallback;
+  const n = Number(txt);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function parseIntCell(cell: SheetCell, fallback: number, min: number): number {
+  return Math.max(min, Math.floor(parseNumberCell(cell, fallback)));
+}
+
+function parseDateCell(cell: SheetCell): string | null {
+  if (cell instanceof Date && !Number.isNaN(cell.getTime())) return cell.toISOString().slice(0, 10);
+  if (typeof cell === "number" && Number.isFinite(cell) && cell > 20000) {
+    const formatted = XLSX.SSF.format("yyyy-mm-dd", cell);
+    return /^\d{4}-\d{2}-\d{2}$/.test(formatted) ? formatted : null;
+  }
+  const raw = textCell(cell);
+  if (!raw) return null;
+  const iso = raw.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
+  if (iso) {
+    const [, y, m, d] = iso;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  const local = raw.match(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/);
+  if (!local) return null;
+  const [, d, m, y] = local;
+  return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+}
+
+function normalizeRetailType(cell: SheetCell, fallback: string): string {
+  const raw = textCell(cell);
+  return (RETAIL_TYPES as readonly string[]).includes(raw) ? raw : fallback || "retail";
+}
+
+function normalizeUnitKind(cell: SheetCell): string {
+  const raw = textCell(cell);
+  return (UNIT_KINDS as readonly string[]).includes(raw) ? raw : "piece";
+}
+
+function normalizeLookupText(value: string): string {
+  return value
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.codePointAt(0)! - 0x06f0))
+    .toLowerCase()
+    .trim();
+}
+
+function inventoryRowFromSupabase(item: InventoryItem): InventorySourceRow {
+  const name = String(item.name ?? item.sku ?? item.reference ?? item.id).trim() || item.id;
+  return {
+    id: item.id,
+    name,
+    qty: Math.max(0, Number(item.quantity ?? item.stock_pieces ?? 0) || 0),
+    sku: String(item.sku ?? "").trim(),
+    barcode: String(item.barcode ?? "").trim(),
+    reference: String(item.reference ?? "").trim(),
+    source: "supabase",
+  };
+}
+
+function inventoryRowFromProduct(product: Product): InventorySourceRow {
+  return {
+    id: product.id,
+    name: product.name,
+    qty: Math.max(0, Number(product.stock_pieces) || 0),
+    sku: product.sku,
+    barcode: product.sku,
+    reference: product.retail_type,
+    source: "inventory_products",
+  };
+}
+
+function parseInventoryImportRows(rows: SheetCell[][], defaultRetailType: string): ProductWritePayload[] {
+  const visibleRows = rows.filter((row) => row.some((cell) => textCell(cell) !== ""));
+  if (visibleRows.length === 0) return [];
+
+  const firstRow = visibleRows[0] ?? [];
+  const namedIndexes = Object.fromEntries(
+    Object.entries(IMPORT_HEADER_ALIASES).map(([key, aliases]) => [
+      key,
+      findHeaderIndex(firstRow, aliases),
+    ])
+  ) as Record<InventoryImportKey, number>;
+  const hasHeader = Object.values(namedIndexes).some((idx) => idx >= 0);
+  const indexes: Record<InventoryImportKey, number> = { ...IMPORT_FALLBACK_INDEX };
+  if (hasHeader) {
+    for (const key of Object.keys(indexes) as InventoryImportKey[]) {
+      if (namedIndexes[key] >= 0) indexes[key] = namedIndexes[key];
+    }
+  }
+
+  const dataRows = hasHeader ? visibleRows.slice(1) : visibleRows;
+  const parsed: ProductWritePayload[] = [];
+  for (const row of dataRows) {
+    const name = textCell(row[indexes.name]).slice(0, 240);
+    if (!name) continue;
+    parsed.push({
+      name,
+      sku: textCell(row[indexes.sku]).slice(0, 120),
+      retail_type: normalizeRetailType(row[indexes.retail_type], defaultRetailType),
+      pieces_per_carton: parseIntCell(row[indexes.pieces_per_carton], 1, 1),
+      unit_price: Math.max(0, parseNumberCell(row[indexes.unit_price], 0)),
+      stock_pieces: parseIntCell(row[indexes.stock_pieces], 0, 0),
+      unit_kind: normalizeUnitKind(row[indexes.unit_kind]),
+      cost_price: Math.max(0, parseNumberCell(row[indexes.cost_price], 0)),
+      expiry_date: parseDateCell(row[indexes.expiry_date]),
+      low_stock_alert: parseIntCell(row[indexes.low_stock_alert], 10, 0),
+    });
+  }
+  return parsed;
+}
+
 export function InventoryPosModule() {
   const { token, isApproved, approvedModules } = useAuth();
   const { t, isRtl, locale } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
+  const magicParam = searchParams.get("magic");
   const [products, setProducts] = useState<Product[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [productionRequests, setProductionRequests] = useState<ProductionRequestRow[]>([]);
+  const [logisticsQueue, setLogisticsQueue] = useState<LogisticsQueueItem[]>([]);
+  const [hrStaff, setHrStaff] = useState<HrStaffRow[]>([]);
+  const [tlWorkerList, setTlWorkerList] = useState<TlWorker[]>([]);
+  const [ctxWorker, setCtxWorker] = useState<TlWorker | null>(null);
+  const [bomItems, setBomItems] = useState<ProductionBomItem[]>([]);
+  const [isCreatingRequest, setIsCreatingRequest] = useState(false);
+  const [isAssigningLogistics, setIsAssigningLogistics] = useState(false);
+  const [inventorySearch, setInventorySearch] = useState("");
+  const [selectedProductionWorkerId, setSelectedProductionWorkerId] = useState("");
+  const [selectedLogisticsAssignee, setSelectedLogisticsAssignee] = useState("");
+  const [messages, setMessages] = useState<TlMessage[]>([]);
+  const [messageRecipients, setMessageRecipients] = useState<
+    { id: string; full_name: string; hierarchy_role?: string; department?: string }[]
+  >([]);
+  const [messageTo, setMessageTo] = useState("");
+  const [messageBody, setMessageBody] = useState("");
+  const [messageFile, setMessageFile] = useState<File | null>(null);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [brandingPrefs, setBrandingPrefs] = useState({
     activityType: "retail",
     companyName: "",
@@ -163,6 +439,7 @@ export function InventoryPosModule() {
     due_at: todayIsoLocal(),
   });
   const [quickListIndex, setQuickListIndex] = useState(0);
+  const [quickSearch, setQuickSearch] = useState("");
   const [quickUnit, setQuickUnit] = useState<QuickUnit>("piece");
   const [draftLines, setDraftLines] = useState<DraftLine[]>([]);
   const quickKbRef = useRef<HTMLDivElement>(null);
@@ -180,52 +457,82 @@ export function InventoryPosModule() {
     label: string;
     progress?: number;
   }>({ active: false, label: "" });
+  const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [isSavingActivity, setIsSavingActivity] = useState(false);
+  const [isImportingInventory, setIsImportingInventory] = useState(false);
   const [manualTotalOverride, setManualTotalOverride] = useState("");
   const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [quickStockOpen, setQuickStockOpen] = useState(false);
   const [quickStockProductId, setQuickStockProductId] = useState<string | null>(null);
   const [quickStockPieces, setQuickStockPieces] = useState("1");
+  const inventoryImportInputRef = useRef<HTMLInputElement>(null);
 
   const runExport = useCallback(async (label: string, fn: () => Promise<void>) => {
     setExportProcessing({ active: true, label, progress: 0.06 });
     try {
       await fn();
       setExportProcessing((s) => ({ ...s, progress: 1 }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
     } finally {
       window.setTimeout(() => setExportProcessing({ active: false, label: "" }), 420);
     }
-  }, []);
+  }, [t]);
 
   const ghostBarcodeBusyRef = useRef<string | null>(null);
 
-  const load = useCallback(async () => {
+  const refreshInventoryTables = useCallback(async () => {
     if (!token) return;
+    const [p, inv] = await Promise.all([
+      api<ProductsResponse>("/inventory/products", { token }),
+      api<InvoicesResponse>("/inventory/invoices", { token }),
+    ]);
+    startTransition(() => {
+      setProducts(p.products);
+      setInvoices(inv.invoices);
+    });
+  }, [token]);
+
+  const load = useCallback(async () => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const [p, inv, br] = await Promise.all([
-        api<{ products: Product[] }>("/inventory/products", { token }),
-        api<{ invoices: Invoice[] }>("/inventory/invoices", { token }),
+      const [p, inv, br, supInv, prodRequests, prodLogistics, supHr, tlStaff] = await Promise.allSettled([
+        api<ProductsResponse>("/inventory/products", { token }),
+        api<InvoicesResponse>("/inventory/invoices", { token }),
         api<{
           branding: { activityType?: string; companyName?: string; logoDataUrl?: string };
         }>("/user/branding", { token }),
+        fetchInventory(),
+        fetchProductionRequestsBackend(token),
+        fetchLogisticsQueueBackend(token),
+        fetchHrStaff(),
+        tlWorkers(token),
       ]);
       startTransition(() => {
-        setProducts(p.products);
-        setInvoices(inv.invoices);
-        if (br.branding) {
-          const act = br.branding.activityType || "retail";
+        setProducts(p.status === "fulfilled" ? p.value.products : []);
+        setInvoices(inv.status === "fulfilled" ? inv.value.invoices : []);
+        if (supInv.status === "fulfilled") setInventoryItems(supInv.value);
+        if (prodRequests.status === "fulfilled") setProductionRequests(prodRequests.value);
+        if (prodLogistics.status === "fulfilled") setLogisticsQueue(prodLogistics.value);
+        if (supHr.status === "fulfilled") setHrStaff(supHr.value);
+        if (tlStaff.status === "fulfilled") {
+          setTlWorkerList(tlStaff.value.workers);
+          setSelectedProductionWorkerId((prev) => prev || tlStaff.value.workers[0]?.id || "");
+          setSelectedLogisticsAssignee((prev) => prev || tlStaff.value.workers[0]?.id || "");
+        }
+        if (br.status === "fulfilled" && br.value.branding) {
+          const act = br.value.branding.activityType || "retail";
           setBrandingPrefs({
             activityType: act,
-            companyName: br.branding.companyName || "",
-            logoDataUrl: br.branding.logoDataUrl || "",
+            companyName: br.value.branding.companyName || "",
+            logoDataUrl: br.value.branding.logoDataUrl || "",
           });
           setNewProduct((n) => ({ ...n, retail_type: act }));
         }
-      });
-    } catch {
-      startTransition(() => {
-        setProducts([]);
-        setInvoices([]);
       });
     } finally {
       setLoading(false);
@@ -233,56 +540,344 @@ export function InventoryPosModule() {
   }, [token]);
 
   const saveBrandingActivity = async () => {
-    if (!token) return;
-    await api("/user/branding", {
-      method: "PUT",
-      token,
-      body: JSON.stringify({
-        companyName: brandingPrefs.companyName,
-        activityType: brandingPrefs.activityType,
-        logoDataUrl: brandingPrefs.logoDataUrl,
-      }),
-    });
+    if (!token || isSavingActivity) return;
+    setIsSavingActivity(true);
+    try {
+      const res = await api<{ ok: boolean }>("/user/branding", {
+        method: "PUT",
+        token,
+        body: JSON.stringify({
+          companyName: brandingPrefs.companyName,
+          activityType: brandingPrefs.activityType,
+          logoDataUrl: brandingPrefs.logoDataUrl,
+        }),
+      });
+      if (!res.ok) throw new Error(t("pay.errGeneric"));
+      setNewProduct((n) => ({ ...n, retail_type: brandingPrefs.activityType || "retail" }));
+      toast.success(t("common.saved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    } finally {
+      setIsSavingActivity(false);
+    }
   };
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!token || !magicParam) {
+      setCtxWorker(null);
+      return;
+    }
+    let active = true;
+    void tlResolveMagic(magicParam, token)
+      .then((res) => {
+        if (active) setCtxWorker(res?.worker ?? null);
+      })
+      .catch(() => {
+        if (active) setCtxWorker(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [token, magicParam]);
+
+  const refreshProductionData = useCallback(async () => {
+    if (!token) return;
+    const [backendRequests, backendLogistics, supInv] = await Promise.allSettled([
+      fetchProductionRequestsBackend(token),
+      fetchLogisticsQueueBackend(token),
+      fetchInventory(),
+    ]);
+    if (backendRequests.status === "fulfilled") setProductionRequests(backendRequests.value);
+    if (backendLogistics.status === "fulfilled") setLogisticsQueue(backendLogistics.value);
+    if (supInv.status === "fulfilled") setInventoryItems(supInv.value);
+  }, [token]);
+
+  const inventorySourceRows = useMemo(() => {
+    const supabaseRows = inventoryItems.map(inventoryRowFromSupabase);
+    if (supabaseRows.length > 0) return supabaseRows;
+    return products.map(inventoryRowFromProduct);
+  }, [inventoryItems, products]);
+
+  const filteredInventoryRows = useMemo(() => {
+    const q = normalizeLookupText(inventorySearch);
+    if (!q) return inventorySourceRows;
+    return inventorySourceRows.filter((row) => {
+      const haystack = [row.name, row.sku, row.barcode, row.reference, row.id]
+        .map(normalizeLookupText)
+        .join(" ");
+      return haystack.includes(q);
+    });
+  }, [inventorySourceRows, inventorySearch]);
+
+  const productionWorkers = useMemo(
+    () =>
+      tlWorkerList.filter((worker) =>
+        ["production", "logistics", "quality"].includes(worker.department)
+      ),
+    [tlWorkerList]
+  );
+
+  const effectiveSender = useMemo(() => {
+    if (ctxWorker) return ctxWorker;
+    return (
+      tlWorkerList.find((worker) => worker.id === selectedProductionWorkerId) ??
+      productionWorkers.find((worker) => ["manager", "hr", "admin"].includes(worker.hierarchy_role)) ??
+      productionWorkers[0] ??
+      tlWorkerList[0] ??
+      null
+    );
+  }, [ctxWorker, productionWorkers, selectedProductionWorkerId, tlWorkerList]);
+
+  const workerNameById = useMemo(
+    () => new Map(tlWorkerList.map((worker) => [worker.id, worker.full_name])),
+    [tlWorkerList]
+  );
+
+  const loadInventoryMessages = useCallback(async () => {
+    if (!token || !effectiveSender) {
+      setMessages([]);
+      setMessageRecipients([]);
+      return;
+    }
+    try {
+      const [msg, rec] = await Promise.all([
+        tlMessages(token, effectiveSender.id),
+        tlMessageRecipients(token, effectiveSender.id),
+      ]);
+      setMessages(msg.messages);
+      setMessageRecipients(rec.recipients);
+      setMessageTo((prev) =>
+        prev && rec.recipients.some((recipient) => recipient.id === prev)
+          ? prev
+          : rec.recipients[0]?.id ?? ""
+      );
+    } catch (err) {
+      setMessages([]);
+      setMessageRecipients([]);
+      if (approvedModules.includes("transport_logistics")) {
+        toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+      }
+    }
+  }, [approvedModules, effectiveSender, t, token]);
+
+  useEffect(() => {
+    void loadInventoryMessages();
+  }, [loadInventoryMessages]);
+
+  const addBomItem = (item: InventorySourceRow) => {
+    setBomItems((current) => {
+      const existing = current.find((i) => i.material_id === item.id);
+      if (existing) {
+        return current.map((i) =>
+          i.material_id === item.id ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [
+        ...current,
+        {
+          material_id: item.id,
+          name: item.name,
+          quantity: 1,
+          available: item.qty,
+          reference: item.sku || item.barcode || item.reference || undefined,
+          source: item.source,
+        },
+      ];
+    });
+  };
+
+  const updateBomQuantity = (materialId: string, quantity: number) => {
+    setBomItems((current) =>
+      current.map((item) =>
+        item.material_id === materialId
+          ? { ...item, quantity: Math.max(1, Math.floor(Number(quantity) || 1)) }
+          : item
+      )
+    );
+  };
+
+  const reserveBomMaterial = async (materialId: string) => {
+    const item = bomItems.find((row) => row.material_id === materialId);
+    if (!item || !token) return;
+    try {
+      if (item.source === "supabase") {
+        await reserveMaterial(materialId, item.quantity);
+      } else {
+        await reserveProductionMaterialBackend(token, {
+          product_id: materialId,
+          quantity: item.quantity,
+          source: item.source,
+        });
+        await load();
+      }
+      await refreshProductionData();
+      toast.success(t("common.saved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    }
+  };
+
+  const createProductionRequestHandler = async () => {
+    if (!bomItems.length || !token) return;
+    setIsCreatingRequest(true);
+    try {
+      const requestedBy = selectedLogisticsAssignee || effectiveSender?.id || selectedProductionWorkerId || "inventory-module";
+      const inserted = await createProductionRequestBackend(token, {
+        title: `${t("inv.production.requestTitlePrefix")} - ${bomItems.map((item) => item.name).join(", ").slice(0, 140)}`,
+        target_quantity: bomItems.reduce((sum, item) => sum + item.quantity, 0),
+        status: "pending",
+        requested_by: requestedBy,
+        bom_items: bomItems.map((item) => ({
+          material_id: item.material_id,
+          quantity: item.quantity,
+          name: item.name,
+          reference: item.reference,
+          source: item.source,
+        })),
+      });
+      await refreshProductionData();
+      setBomItems([]);
+      if (inserted?.id) toast.success(t("common.saved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    } finally {
+      setIsCreatingRequest(false);
+    }
+  };
+
+  const addFirstSearchMatchToBom = () => {
+    const first = filteredInventoryRows[0];
+    if (!first) {
+      toast.error(t("inv.production.noSearchMatch"));
+      return;
+    }
+    addBomItem(first);
+  };
+
+  const assignLogisticsQueueItem = async (id: string) => {
+    if (!selectedLogisticsAssignee || !token) {
+      toast.error(t("inv.production.pickAssignee"));
+      return;
+    }
+    setIsAssigningLogistics(true);
+    try {
+      await assignLogisticsItemBackend(token, id, selectedLogisticsAssignee);
+      await refreshProductionData();
+      toast.success(t("common.saved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    } finally {
+      setIsAssigningLogistics(false);
+    }
+  };
+
+  const sendInventoryMessage = async () => {
+    if (!token || !effectiveSender || !messageTo) return;
+    if (!messageBody.trim() && !messageFile) {
+      toast.error(t("inv.msg.needTextOrFile"));
+      return;
+    }
+    setIsSendingMessage(true);
+    try {
+      if (messageFile) {
+        await tlSendMessageWithFile(
+          token,
+          {
+            from_worker_id: effectiveSender.id,
+            to_worker_id: messageTo,
+            body: messageBody.trim() || t("inv.msg.attachmentFallback"),
+          },
+          messageFile
+        );
+      } else {
+        await tlSendMessage(token, {
+          from_worker_id: effectiveSender.id,
+          to_worker_id: messageTo,
+          body: messageBody.trim(),
+        });
+      }
+      setMessageBody("");
+      setMessageFile(null);
+      await loadInventoryMessages();
+      toast.success(t("common.saved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
+
+  const openInventoryMessageAttachment = async (message: TlMessage) => {
+    if (!token || !message.attachment_stored_path) return;
+    try {
+      await tlDownloadMessageAttachment(
+        token,
+        message.id,
+        message.attachment_original_name || "download"
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    }
+  };
+
   const addProduct = async () => {
-    if (!token || !newProduct.name.trim()) return;
-    await api("/inventory/products", {
-      method: "POST",
-      token,
-      body: JSON.stringify({
-        name: newProduct.name,
-        sku: newProduct.sku,
-        retail_type: newProduct.retail_type,
-        pieces_per_carton: Number(newProduct.pieces_per_carton) || 1,
-        unit_price: Number(newProduct.unit_price) || 0,
-        stock_pieces: Number(newProduct.stock_pieces) || 0,
-        unit_kind: newProduct.unit_kind,
-        cost_price: Number(newProduct.cost_price) || 0,
+    const name = newProduct.name.trim();
+    if (!token || isAddingProduct || !name) return;
+    setIsAddingProduct(true);
+    try {
+      const payload: ProductWritePayload = {
+        name,
+        sku: newProduct.sku.trim(),
+        retail_type: newProduct.retail_type || brandingPrefs.activityType || "retail",
+        pieces_per_carton: Math.max(1, Math.floor(Number(newProduct.pieces_per_carton) || 1)),
+        unit_price: Math.max(0, Number(newProduct.unit_price) || 0),
+        stock_pieces: Math.max(0, Math.floor(Number(newProduct.stock_pieces) || 0)),
+        unit_kind: newProduct.unit_kind || "piece",
+        cost_price: Math.max(0, Number(newProduct.cost_price) || 0),
         expiry_date: newProduct.expiry_date.trim() || null,
         low_stock_alert: Math.max(0, Math.floor(Number(newProduct.low_stock_alert) || 10)),
-      }),
-    });
-    setNewProduct((n) => ({ ...n, name: "", sku: "" }));
-    await load();
+      };
+      const created = await api<ProductCreateResponse>("/inventory/products", {
+        method: "POST",
+        token,
+        body: JSON.stringify(payload),
+      });
+      const fresh = await api<ProductsResponse>("/inventory/products", { token });
+      startTransition(() => {
+        setProducts(fresh.products);
+        const idx = fresh.products.findIndex((p) => p.id === created.id);
+        if (idx >= 0) setQuickListIndex(idx);
+      });
+      setNewProduct((n) => ({ ...n, name: "", sku: "", stock_pieces: "0" }));
+      toast.success(t("common.saved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    } finally {
+      setIsAddingProduct(false);
+    }
   };
 
   const addStock = async () => {
     if (!token || !stockAdd.product_id) return;
-    await api("/inventory/stock-add", {
-      method: "POST",
-      token,
-      body: JSON.stringify({
-        product_id: stockAdd.product_id,
-        add_pieces: Number(stockAdd.add) || 0,
-      }),
-    });
-    setStockAdd({ product_id: "", add: "0" });
-    await load();
+    try {
+      await api("/inventory/stock-add", {
+        method: "POST",
+        token,
+        body: JSON.stringify({
+          product_id: stockAdd.product_id,
+          add_pieces: Number(stockAdd.add) || 0,
+        }),
+      });
+      setStockAdd({ product_id: "", add: "0" });
+      await refreshInventoryTables();
+      toast.success(t("common.saved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    }
   };
 
   const submitQuickDraft = async () => {
@@ -293,25 +888,40 @@ export function InventoryPosModule() {
       const n = parseFloat(ovRaw);
       if (Number.isFinite(n) && n >= 0) override_total = n;
     }
-    await api("/inventory/sale-batch", {
-      method: "POST",
-      token,
-      body: JSON.stringify({
-        lines: draftLines.map((l) => ({
-          product_id: l.product_id,
-          qty_pieces: l.qty_pieces,
-          line_total: l.line_total,
-        })),
-        customer_name: sale.customer,
-        paid: Number(sale.paid) || 0,
-        due_at: sale.due_at || null,
-        ...(override_total != null ? { override_total } : {}),
-      }),
-    });
-    setDraftLines([]);
-    setManualTotalOverride("");
-    await load();
+    try {
+      await api<{ id: string; total: number; credit: number }>("/inventory/sale-batch", {
+        method: "POST",
+        token,
+        body: JSON.stringify({
+          lines: draftLines.map((l) => ({
+            product_id: l.product_id,
+            qty_pieces: l.qty_pieces,
+            line_total: l.line_total,
+          })),
+          customer_name: sale.customer,
+          paid: Number(sale.paid) || 0,
+          due_at: sale.due_at || null,
+          ...(override_total != null ? { override_total } : {}),
+        }),
+      });
+      setDraftLines([]);
+      setManualTotalOverride("");
+      await refreshInventoryTables();
+      toast.success(t("common.saved"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    }
   };
+
+  const filteredQuickProducts = useMemo(() => {
+    const q = quickSearch.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        (p.sku && p.sku.toLowerCase().includes(q))
+    );
+  }, [products, quickSearch]);
 
   const overdueCredits = useMemo(
     () =>
@@ -322,14 +932,14 @@ export function InventoryPosModule() {
   );
 
   const currentLinePreview = useMemo(() => {
-    const p = products[quickListIndex];
+    const p = filteredQuickProducts[quickListIndex];
     if (!p) return { line: 0, profit: 0, pp: 1 };
     const pp = piecesPerQuickUnit(p, quickUnit);
     const line = pp * p.unit_price;
     const cost = Math.max(0, Number(p.cost_price) || 0);
     const profit = pp * (p.unit_price - cost);
     return { line, profit, pp };
-  }, [products, quickListIndex, quickUnit]);
+  }, [filteredQuickProducts, quickListIndex, quickUnit]);
 
   const draftGrandTotal = useMemo(
     () => draftLines.reduce((s, l) => s + l.line_total, 0),
@@ -515,6 +1125,124 @@ export function InventoryPosModule() {
     [productsLite, token, load, applyStockVisionItems, t]
   );
 
+  const upsertImportedProducts = async (imported: ProductWritePayload[]) => {
+    if (!token) return 0;
+    const bySku = new Map<string, string>();
+    const byName = new Map<string, string>();
+    for (const p of products) {
+      const sku = p.sku.trim().toLowerCase();
+      if (sku) bySku.set(sku, p.id);
+      byName.set(p.name.trim().toLowerCase(), p.id);
+    }
+
+    for (let idx = 0; idx < imported.length; idx += 1) {
+      const item = imported[idx];
+      const skuKey = item.sku.trim().toLowerCase();
+      const nameKey = item.name.trim().toLowerCase();
+      const existingId = (skuKey ? bySku.get(skuKey) : undefined) ?? byName.get(nameKey);
+      if (existingId) {
+        await api(`/inventory/products/${existingId}`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify(item),
+        });
+      } else {
+        const created = await api<ProductCreateResponse>("/inventory/products", {
+          method: "POST",
+          token,
+          body: JSON.stringify(item),
+        });
+        if (skuKey) bySku.set(skuKey, created.id);
+        byName.set(nameKey, created.id);
+      }
+      setExportProcessing((s) => ({
+        ...s,
+        progress: 0.16 + ((idx + 1) / Math.max(1, imported.length)) * 0.72,
+      }));
+    }
+    return imported.length;
+  };
+
+  const importInventoryFromText = async (text: string) => {
+    if (!token) return 0;
+    const rows = parseStockRowsFromPlainText(text, productsLite);
+    if (rows.length > 0) {
+      for (const row of rows) {
+        if (row.unit_price != null && Number.isFinite(row.unit_price)) {
+          await api(`/inventory/products/${row.product_id}`, {
+            method: "PATCH",
+            token,
+            body: JSON.stringify({ unit_price: row.unit_price }),
+          });
+        }
+        await api("/inventory/stock-add", {
+          method: "POST",
+          token,
+          body: JSON.stringify({
+            product_id: row.product_id,
+            add_pieces: row.add_pieces,
+          }),
+        });
+      }
+      return rows.length;
+    }
+
+    const loose = heuristicReceiptItemsFromPlainText(text);
+    if (loose.length === 0) throw new Error(t("inv.ocrNoMatch"));
+    await applyStockVisionItems(loose);
+    return loose.length;
+  };
+
+  const handleInventoryImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file || !token || isImportingInventory) return;
+
+    setIsImportingInventory(true);
+    setExportProcessing({ active: true, label: t("inv.importProcessing"), progress: 0.08 });
+    try {
+      const lowerName = file.name.toLowerCase();
+      const isSpreadsheet =
+        lowerName.endsWith(".xlsx") ||
+        lowerName.endsWith(".xls") ||
+        lowerName.endsWith(".csv") ||
+        file.type.includes("spreadsheet") ||
+        file.type === "text/csv";
+
+      let affected = 0;
+      if (isSpreadsheet) {
+        const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+        const sheetName = wb.SheetNames[0];
+        const sheet = sheetName ? wb.Sheets[sheetName] : null;
+        if (!sheet) throw new Error(t("inv.importEmptyWorkbook"));
+        const rows = XLSX.utils.sheet_to_json(sheet, {
+          header: 1,
+          defval: "",
+          raw: true,
+        }) as SheetCell[][];
+        const imported = parseInventoryImportRows(rows, brandingPrefs.activityType || "retail");
+        if (imported.length > 0) {
+          affected = await upsertImportedProducts(imported);
+        } else {
+          const text = XLSX.utils.sheet_to_csv(sheet, { FS: "\t" });
+          affected = await importInventoryFromText(text);
+        }
+      } else {
+        const text = await extractPlainTextFromInventoryFile(file, token);
+        affected = await importInventoryFromText(text);
+      }
+
+      await refreshInventoryTables();
+      setExportProcessing((s) => ({ ...s, progress: 1 }));
+      toast.success(`${t("common.saved")} (${affected})`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    } finally {
+      setIsImportingInventory(false);
+      window.setTimeout(() => setExportProcessing({ active: false, label: "" }), 420);
+    }
+  };
+
   const applyQuickStock = async () => {
     if (!token || !quickStockProductId) return;
     const add = Math.max(0, Math.floor(Number(quickStockPieces) || 0));
@@ -533,7 +1261,7 @@ export function InventoryPosModule() {
     });
     setQuickStockOpen(false);
     setQuickStockProductId(null);
-    await load();
+    await refreshInventoryTables();
   };
 
   const tryAddQuickLineForProductId = useCallback(
@@ -1035,8 +1763,14 @@ export function InventoryPosModule() {
               ))}
             </select>
           </div>
-          <Button type="button" variant="secondary" className="gap-2" onClick={() => void saveBrandingActivity()}>
-            {t("common.save")}
+          <Button
+            type="button"
+            variant="secondary"
+            className="gap-2"
+            disabled={isSavingActivity}
+            onClick={() => void saveBrandingActivity()}
+          >
+            {isSavingActivity ? t("common.processing") : t("common.save")}
           </Button>
         </CardContent>
       </Card>
@@ -1066,6 +1800,13 @@ export function InventoryPosModule() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
+            <input
+              ref={inventoryImportInputRef}
+              type="file"
+              accept=".xlsx,.xls,.csv,.pdf,.doc,.docx,image/*"
+              className="hidden"
+              onChange={(event) => void handleInventoryImportFile(event)}
+            />
             <Button type="button" variant="secondary" className="gap-2" onClick={() => void exportPdf()}>
               <Download className="size-4" />
               {t("inv.exportPdfStock")}
@@ -1076,7 +1817,17 @@ export function InventoryPosModule() {
             </Button>
             <Button type="button" variant="secondary" className="gap-2" onClick={exportExcel}>
               <FileSpreadsheet className="size-4" />
-              Excel
+              {t("inv.exportExcelStock")}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="gap-2"
+              disabled={isImportingInventory}
+              onClick={() => inventoryImportInputRef.current?.click()}
+            >
+              <Upload className="size-4" />
+              {isImportingInventory ? t("common.processing") : t("inv.importInventory")}
             </Button>
             <Button type="button" variant="outline" className="gap-2 border-slate-600" onClick={exportInvoicesExcel}>
               <Receipt className="size-4" />
@@ -1202,9 +1953,14 @@ export function InventoryPosModule() {
                 />
               </div>
               <div className="md:col-span-2 lg:col-span-3">
-                <Button type="button" className="bg-[#0052CC]" onClick={() => void addProduct()}>
+                <Button
+                  type="button"
+                  className="bg-[#0052CC]"
+                  disabled={isAddingProduct || !newProduct.name.trim()}
+                  onClick={() => void addProduct()}
+                >
                   <Plus className="size-4 me-1" />
-                  {t("inv.addProduct")}
+                  {isAddingProduct ? t("common.processing") : t("inv.addProduct")}
                 </Button>
               </div>
             </CardContent>
@@ -1251,6 +2007,323 @@ export function InventoryPosModule() {
                   ))}
                 </tbody>
               </table>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-800 bg-[#0a1628]/90">
+            <CardHeader className="border-b border-slate-800">
+              <p className="font-black text-white">{t("inv.production.title")}</p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+                <div className="space-y-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="font-semibold text-white">{t("inv.production.inventoryTitle")}</p>
+                      <p className="text-xs text-slate-500">
+                        {inventoryItems.length > 0
+                          ? t("inv.production.sourceSupabase")
+                          : t("inv.production.sourceFallback")}
+                      </p>
+                    </div>
+                    <div className="flex min-w-0 flex-1 gap-2 sm:max-w-md">
+                      <div className="relative flex-1">
+                        <Search className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+                        <Input
+                          value={inventorySearch}
+                          onChange={(e) => setInventorySearch(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") addFirstSearchMatchToBom();
+                          }}
+                          placeholder={t("inv.production.searchPlaceholder")}
+                          className="bg-[#0c1222] border-slate-700 ps-9"
+                        />
+                      </div>
+                      <Button type="button" variant="secondary" className="gap-2" onClick={addFirstSearchMatchToBom}>
+                        <Plus className="size-4" />
+                        {t("common.add")}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto rounded-xl border border-slate-800 bg-[#020715]/80">
+                    <table className="w-full text-sm text-slate-200">
+                      <thead>
+                        <tr className="text-left border-b border-slate-700 text-slate-400">
+                          <th className="py-2 pe-4">{t("inv.production.col.name")}</th>
+                          <th className="py-2 pe-4">{t("inv.production.col.qty")}</th>
+                          <th className="py-2 pe-4">{t("inv.production.col.ref")}</th>
+                          <th className="py-2">{t("inv.production.col.action")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredInventoryRows.length ? (
+                          filteredInventoryRows.map((item) => (
+                            <tr key={`${item.source}-${item.id}`} className="border-b border-slate-800/80">
+                              <td className="py-2 pe-4 font-semibold">
+                                {item.name}
+                                <span className="ms-2 rounded-full border border-slate-700 px-2 py-0.5 text-[10px] text-slate-500">
+                                  {item.source === "supabase" ? "SB" : "API"}
+                                </span>
+                              </td>
+                              <td className="py-2 pe-4 text-emerald-300 font-semibold">{item.qty}</td>
+                              <td className="py-2 pe-4 text-xs text-slate-500">
+                                {item.sku || item.barcode || item.reference || "—"}
+                              </td>
+                              <td className="py-2">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  className="gap-1 bg-slate-900/80"
+                                  onClick={() => addBomItem(item)}
+                                >
+                                  <Plus className="size-3" />
+                                  {t("inv.production.addBom")}
+                                </Button>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="py-6 text-center text-slate-500">
+                              {t("inv.production.noMatches")}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label className="text-slate-300">{t("inv.production.supervisorSender")}</Label>
+                      <select
+                        className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-[#0c1222] px-2 text-sm text-white"
+                        value={effectiveSender?.id ?? selectedProductionWorkerId}
+                        disabled={Boolean(ctxWorker)}
+                        onChange={(e) => setSelectedProductionWorkerId(e.target.value)}
+                      >
+                        {tlWorkerList.length === 0 && <option value="">{t("inv.production.noTlWorkers")}</option>}
+                        {tlWorkerList.map((worker) => (
+                          <option key={worker.id} value={worker.id}>
+                            {worker.full_name} · {worker.department}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-slate-300">{t("inv.production.logisticsEmployee")}</Label>
+                      <select
+                        className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-[#0c1222] px-2 text-sm text-white"
+                        value={selectedLogisticsAssignee}
+                        onChange={(e) => setSelectedLogisticsAssignee(e.target.value)}
+                      >
+                        {tlWorkerList.length === 0 && <option value="">{t("inv.production.noEmployees")}</option>}
+                        {tlWorkerList.map((worker) => (
+                          <option key={worker.id} value={worker.id}>
+                            {worker.full_name} · {worker.hierarchy_role}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-cyan-500/20 bg-cyan-950/20 p-3 text-xs text-slate-300">
+                    <p className="font-semibold text-cyan-200">
+                      {t("inv.production.rhSync", { staff: String(hrStaff.length), workers: String(tlWorkerList.length) })}
+                    </p>
+                    <p className="mt-1 text-slate-500">
+                      {ctxWorker
+                        ? t("inv.production.magicResolved", {
+                            name: ctxWorker.full_name,
+                            department: ctxWorker.department,
+                          })
+                        : t("inv.production.magicDashboard")}
+                    </p>
+                  </div>
+                  <p className="font-semibold text-white">{t("inv.production.bomTitle")}</p>
+                  <div className="space-y-3 rounded-xl border border-slate-800 bg-[#020715]/80 p-4">
+                    {bomItems.length === 0 ? (
+                      <p className="text-slate-400">{t("inv.production.bomEmpty")}</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {bomItems.map((item) => (
+                          <div key={item.material_id} className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                            <div className="min-w-[140px] flex-1 text-slate-200">
+                              <p className="font-semibold">{item.name}</p>
+                              <p className="text-[11px] text-slate-500">
+                                {t("inv.production.available")}: {item.available} · {item.source}
+                              </p>
+                            </div>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={item.quantity}
+                              onChange={(ev) => updateBomQuantity(item.material_id, Number(ev.target.value))}
+                              className="w-24 bg-[#0c1222] border-slate-700"
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void reserveBomMaterial(item.material_id)}
+                            >
+                              {t("inv.production.reserve")}
+                            </Button>
+                          </div>
+                        ))}
+                        <Button
+                          className="w-full bg-[#0052CC]"
+                          disabled={isCreatingRequest}
+                          onClick={() => void createProductionRequestHandler()}
+                        >
+                          {isCreatingRequest ? t("inv.production.creating") : t("inv.production.createRequest")}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="rounded-xl border border-slate-800 bg-[#020715]/80 p-4">
+                  <p className="font-semibold text-white">{t("inv.production.requests")}</p>
+                  <div className="space-y-2 mt-3 max-h-72 overflow-y-auto">
+                    {productionRequests.length ? (
+                      productionRequests.map((request) => (
+                        <div key={request.id} className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-slate-200">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="font-semibold">{request.title || request.product_id || request.id}</p>
+                              <p className="text-[11px] text-slate-500">
+                                {t("inv.production.requestedBy")}: {workerNameById.get(request.requested_by ?? "") ?? request.requested_by ?? "—"}
+                              </p>
+                            </div>
+                            <span className="text-slate-400 text-xs">
+                              {request.target_quantity ?? request.quantity ?? 0} {t("inv.production.qtySuffix")} · {request.status ?? t("inv.production.statusPending")}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-slate-400">{t("inv.production.noRequests")}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-800 bg-[#020715]/80 p-4">
+                  <p className="font-semibold text-white">{t("inv.production.logisticsQueue")}</p>
+                  <div className="space-y-2 mt-3 max-h-72 overflow-y-auto">
+                    {logisticsQueue.length ? (
+                      logisticsQueue.map((item) => (
+                        <div key={item.id} className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-slate-200">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="font-semibold">{item.title || item.product_id || item.id}</p>
+                              <p className="text-[11px] text-slate-500">
+                                {t("inv.production.assigned")}: {workerNameById.get(item.assigned_to ?? "") ?? item.assigned_to ?? "—"}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              disabled={isAssigningLogistics || !selectedLogisticsAssignee}
+                              onClick={() => void assignLogisticsQueueItem(item.id)}
+                            >
+                              {t("inv.production.assign")}
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-slate-400">{t("inv.production.noLogistics")}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-800 bg-[#020715]/80 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <MessageSquare className="size-5 text-cyan-300" />
+                  <p className="font-semibold text-white">{t("inv.msg.title")}</p>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-[0.85fr_1.15fr]">
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-slate-300">{t("inv.msg.to")}</Label>
+                      <select
+                        className="mt-1 h-10 w-full rounded-md border border-slate-700 bg-[#0c1222] px-2 text-sm text-white"
+                        value={messageTo}
+                        onChange={(e) => setMessageTo(e.target.value)}
+                        disabled={!effectiveSender || messageRecipients.length === 0}
+                      >
+                        {messageRecipients.length === 0 && <option value="">{t("inv.msg.noRecipients")}</option>}
+                        {messageRecipients.map((recipient) => (
+                          <option key={recipient.id} value={recipient.id}>
+                            {recipient.full_name} · {recipient.department ?? t("inv.msg.teamFallback")}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-slate-300">{t("inv.msg.body")}</Label>
+                      <textarea
+                        className="mt-1 min-h-24 w-full rounded-md border border-slate-700 bg-[#0c1222] px-3 py-2 text-sm text-white"
+                        value={messageBody}
+                        onChange={(e) => setMessageBody(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2 text-slate-300">
+                        <Paperclip className="size-4" />
+                        {t("inv.msg.file")}
+                      </Label>
+                      <input
+                        type="file"
+                        accept=".pdf,.xlsx,.xls,.csv,image/*"
+                        className="text-xs text-slate-400 file:mr-2 file:rounded-lg file:border file:border-white/20 file:bg-white/10 file:px-2 file:py-1"
+                        onChange={(e) => setMessageFile(e.target.files?.[0] ?? null)}
+                      />
+                      {messageFile && <p className="text-xs text-amber-300">{messageFile.name}</p>}
+                    </div>
+                    <Button
+                      type="button"
+                      className="gap-2 bg-cyan-600"
+                      disabled={isSendingMessage || !effectiveSender || !messageTo || (!messageBody.trim() && !messageFile)}
+                      onClick={() => void sendInventoryMessage()}
+                    >
+                      <Send className="size-4" />
+                      {isSendingMessage ? t("common.processing") : t("inv.msg.send")}
+                    </Button>
+                  </div>
+                  <div className="max-h-80 space-y-2 overflow-y-auto">
+                    {messages.length ? (
+                      messages.map((message) => (
+                        <div key={message.id} className="rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-sm text-slate-200">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-cyan-200">{message.from_name} → {message.to_name}</p>
+                            <span className="text-[10px] text-slate-500">{message.created_at}</span>
+                          </div>
+                          <p className="mt-2 whitespace-pre-wrap">{message.body}</p>
+                          {message.attachment_original_name && message.attachment_stored_path && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="mt-2 gap-1"
+                              onClick={() => void openInventoryMessageAttachment(message)}
+                            >
+                              <FileText className="size-3" />
+                              {message.attachment_original_name}
+                            </Button>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-slate-500">{t("inv.msg.empty")}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -1335,10 +2408,34 @@ export function InventoryPosModule() {
                     ref={quickListRef}
                     className="max-h-[min(60vh,28rem)] overflow-y-auto overscroll-contain border-b border-slate-800"
                   >
-                    {products.length === 0 ? (
+                    <div className="px-3 pt-3 pb-1">
+                      <div className="relative">
+                        <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-500 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={quickSearch}
+                          onChange={(e) => {
+                            setQuickSearch(e.target.value);
+                            setQuickListIndex(0);
+                          }}
+                          placeholder={t("inv.quickSearchPlaceholder")}
+                          className="w-full rounded-lg bg-slate-800/80 border border-slate-700 text-sm text-white placeholder:text-slate-500 ps-8 pe-3 py-1.5 outline-none focus:ring-1 focus:ring-[#0052CC]/60"
+                        />
+                        {quickSearch && (
+                          <button
+                            type="button"
+                            onClick={() => { setQuickSearch(""); setQuickListIndex(0); }}
+                            className="absolute end-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                          >
+                            
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {filteredQuickProducts.length === 0 ? (
                       <p className="p-4 text-sm text-slate-500">{t("inv.quickEmptyProducts")}</p>
                     ) : (
-                      products.map((p, i) => {
+                      filteredQuickProducts.map((p, i) => {
                         const active = i === quickListIndex;
                         return (
                           <div
@@ -1381,7 +2478,7 @@ export function InventoryPosModule() {
                         </span>
                       ))}
                     </div>
-                    {products[quickListIndex] && (
+                    {filteredQuickProducts[quickListIndex] && (
                       <p className="text-xs text-slate-400">
                         {t("inv.quickLinePreview")}:{" "}
                         <span className="text-white font-mono tabular-nums">
@@ -1393,9 +2490,9 @@ export function InventoryPosModule() {
                         </span>
                       </p>
                     )}
-                    {products[quickListIndex] &&
+                    {filteredQuickProducts[quickListIndex] &&
                       (() => {
-                        const p = products[quickListIndex];
+                        const p = filteredQuickProducts[quickListIndex];
                         const reserved = draftLines
                           .filter((l) => l.product_id === p.id)
                           .reduce((s, l) => s + l.qty_pieces, 0);

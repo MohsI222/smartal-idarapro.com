@@ -1,4 +1,5 @@
 import { escapeHtmlPdf } from "@/lib/htmlEscape";
+import { fixArabicText } from "@/lib/arabicPdfText";
 
 export type HrBranding = {
   companyName: string;
@@ -15,8 +16,8 @@ function shell(
     branding.logoDataUrl?.startsWith("data:image") && branding.logoDataUrl.length > 80
       ? `<img src="${escapeHtmlPdf(branding.logoDataUrl)}" alt="" class="print-keep" style="max-height:56px;max-width:180px;object-fit:contain;margin-bottom:10px;" />`
       : "";
-  const cn = escapeHtmlPdf(branding.companyName || "—");
-  const tt = escapeHtmlPdf(title);
+  const cn = escapeHtmlPdf(fixArabicText(branding.companyName || "—"));
+  const tt = escapeHtmlPdf(fixArabicText(title));
   const align = dir === "rtl" ? "right" : "left";
   return `
 <div style="font-family:'Noto Naskh Arabic',Arial,sans-serif;direction:${dir};text-align:${align};color:#0f172a;line-height:1.55;">
@@ -48,7 +49,7 @@ export function buildReturnToWorkHtml(params: {
 }): string {
   const { branding, dir } = params;
   const p = (k: string, v: string) =>
-    `<p style="margin:10px 0;"><strong>${escapeHtmlPdf(k)}</strong> ${escapeHtmlPdf(v)}</p>`;
+    `<p style="margin:10px 0;"><strong>${escapeHtmlPdf(fixArabicText(k))}</strong> ${escapeHtmlPdf(fixArabicText(v))}</p>`;
   const body =
     p("Employee / الموظف(ة):", params.employeeName) +
     p("ID / الرقم:", params.employeeId) +
@@ -56,11 +57,13 @@ export function buildReturnToWorkHtml(params: {
     p("Reason / السبب:", params.reason) +
     `<p style="margin:16px 0;padding:14px;border-radius:12px;background:linear-gradient(90deg,rgba(0,82,204,0.08),rgba(255,140,0,0.08));font-weight:600;">` +
     escapeHtmlPdf(
-      params.locale.startsWith("ar")
-        ? `يُشهد بأن الموظف(ة) أعلاه قد عاد(ت) إلى العمل بتاريخ ${params.returnDate}.`
-        : params.locale.startsWith("fr")
-          ? `Certifie que l’employé(e) ci-dessus a repris le travail le ${params.returnDate}.`
-          : `This certifies that the above employee returned to work on ${params.returnDate}.`
+      fixArabicText(
+        params.locale.startsWith("ar")
+          ? `يُشهد بأن الموظف(ة) أعلاه قد عاد(ت) إلى العمل بتاريخ ${params.returnDate}.`
+          : params.locale.startsWith("fr")
+            ? `Certifie que l'employé(e) ci-dessus a repris le travail le ${params.returnDate}.`
+            : `This certifies that the above employee returned to work on ${params.returnDate}.`
+      )
     ) +
     `</p>`;
   const title =
@@ -88,18 +91,20 @@ export function buildDismissalNoticeHtml(params: {
         ? "Avis de licenciement (brouillon administratif)"
         : "Notice of dismissal (administrative draft)";
   const body =
-    `<p style="margin:10px 0;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "إلى السيد(ة)" : params.locale.startsWith("fr") ? "À" : "To")}</strong> ${escapeHtmlPdf(params.employeeName)} — ${escapeHtmlPdf(params.employeeId)}</p>` +
-    `<p style="margin:12px 0;">${escapeHtmlPdf(params.dateNotice)}</p>` +
+    `<p style="margin:10px 0;"><strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("ar") ? "إلى السيد(ة)" : params.locale.startsWith("fr") ? "À" : "To"))}</strong> ${escapeHtmlPdf(fixArabicText(params.employeeName))} — ${escapeHtmlPdf(fixArabicText(params.employeeId))}</p>` +
+    `<p style="margin:12px 0;">${escapeHtmlPdf(fixArabicText(params.dateNotice))}</p>` +
     `<div style="margin:14px 0;padding:14px;border-left:4px solid #dc2626;border-radius:8px;background:#fef2f2;">` +
-    `<strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "الأسباب / الملاحظات" : params.locale.startsWith("fr") ? "Motifs" : "Grounds")}</strong><br/>` +
-    escapeHtmlPdf(params.grounds) +
+    `<strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("ar") ? "الأسباب / الملاحظات" : params.locale.startsWith("fr") ? "Motifs" : "Grounds"))}</strong><br/>` +
+    escapeHtmlPdf(fixArabicText(params.grounds)) +
     `</div>` +
     `<p style="font-size:11px;color:#64748b;margin-top:18px;">${escapeHtmlPdf(
-      params.locale.startsWith("ar")
-        ? "مسودة إرشادية — يُراجع من طرف المختص قبل التسليم."
-        : params.locale.startsWith("fr")
-          ? "Brouillon indicatif — révision par un professionnel avant envoi."
-          : "Indicative draft — review by counsel before delivery."
+      fixArabicText(
+        params.locale.startsWith("ar")
+          ? "مسودة إرشادية — يُراجع من طرف المختص قبل التسليم."
+          : params.locale.startsWith("fr")
+            ? "Brouillon indicatif — révision par un professionnel avant envoi."
+            : "Indicative draft — review by counsel before delivery."
+      )
     )}</p>`;
   return shell(params.branding, title, params.dir, body);
 }
@@ -122,24 +127,28 @@ export function buildWorkCertificateHtml(params: {
         : "Work certificate";
   const body =
     `<p style="margin:12px 0;font-size:15px;">${escapeHtmlPdf(
-      params.locale.startsWith("ar")
-        ? "تشهد هذه الوثيقة بأن:"
-        : params.locale.startsWith("fr")
-          ? "La présente atteste que :"
-          : "This certifies that:"
+      fixArabicText(
+        params.locale.startsWith("ar")
+          ? "تشهد هذه الوثيقة بأن:"
+          : params.locale.startsWith("fr")
+            ? "La présente atteste que :"
+            : "This certifies that:"
+      )
     )}</p>` +
-    `<p style="margin:8px 0;"><strong>ID</strong> ${escapeHtmlPdf(params.employeeId)} — ${escapeHtmlPdf(params.employeeName)}</p>` +
-    `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(params.locale.startsWith("fr") ? "Fonction" : params.locale.startsWith("ar") ? "المهمة" : "Role")}</strong> ${escapeHtmlPdf(params.role)}</p>` +
-    `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "تاريخ التوظيف" : params.locale.startsWith("fr") ? "Date d’embauche" : "Hire date")}</strong> ${escapeHtmlPdf(params.hireDate)}</p>` +
+    `<p style="margin:8px 0;"><strong>ID</strong> ${escapeHtmlPdf(fixArabicText(params.employeeId))} — ${escapeHtmlPdf(fixArabicText(params.employeeName))}</p>` +
+    `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("fr") ? "Fonction" : params.locale.startsWith("ar") ? "المهمة" : "Role"))}</strong> ${escapeHtmlPdf(fixArabicText(params.role))}</p>` +
+    `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("ar") ? "تاريخ التوظيف" : params.locale.startsWith("fr") ? "Date d'embauche" : "Hire date"))}</strong> ${escapeHtmlPdf(fixArabicText(params.hireDate))}</p>` +
     (params.endDate
-      ? `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "نهاية العقد" : "End")}</strong> ${escapeHtmlPdf(params.endDate)}</p>`
+      ? `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("ar") ? "نهاية العقد" : "End"))}</strong> ${escapeHtmlPdf(fixArabicText(params.endDate))}</p>`
       : "") +
     `<p style="margin:24px 0 8px;">${escapeHtmlPdf(
-      params.locale.startsWith("ar")
-        ? "حررت للإدلاء بها حيثما يُطلب."
-        : params.locale.startsWith("fr")
-          ? "Pour servir et valoir ce que de droit."
-          : "Issued upon request."
+      fixArabicText(
+        params.locale.startsWith("ar")
+          ? "حررت للإدلاء بها حيثما يُطلب."
+          : params.locale.startsWith("fr")
+            ? "Pour servir et valoir ce que de droit."
+            : "Issued upon request."
+      )
     )}</p>`;
   return shell(params.branding, title, params.dir, body);
 }
@@ -187,9 +196,21 @@ export function buildPayrollSlipHtml(params: {
   employeeName: string;
   employeeId: string;
   period: string;
-  grossSalary: number;
+  baseSalary: number;
+  paidLeave: number;
+  overtime125: number;
+  overtime150: number;
+  overtime200: number;
+  seniorityBonus: number;
+  attendanceBonus: number;
+  productivityBonus: number;
   cnss: number;
   amo: number;
+  ipe: number;
+  mutual: number;
+  advanceSalary: number;
+  totalBrut: number;
+  totalCotisations: number;
   netSalary: number;
   dir: "rtl" | "ltr";
   locale: string;
@@ -210,58 +231,183 @@ export function buildPayrollSlipHtml(params: {
   const labels = params.locale.startsWith("ar")
     ? {
         employee: "الأجير",
+        matricule: "رقم العمل",
         period: "الفترة",
-        gross: "الأجر الإجمالي",
+        designation: "البيان",
+        number: "العدد",
+        base: "الأساس",
+        rate: "النسبة",
+        gain: "الربح",
+        deduction: "الاقتطاع",
+        baseSalary: "الأجر الأساسي",
+        paidLeave: "العطل المؤدى عنها",
+        overtime125: "ساعات إضافية 125%",
+        overtime150: "ساعات إضافية 150%",
+        overtime200: "ساعات إضافية 200%",
+        seniorityBonus: "منحة الأقدمية",
+        attendanceBonus: "منحة الحضور",
+        productivityBonus: "منحة الإنتاجية",
+        totalBrut: "المجموع الخام",
         cnss: "اقتطاع CNSS",
         amo: "اقتطاع AMO",
+        ipe: "اقتطاع IPE",
+        mutual: "اقتطاع التعاضدية",
+        totalCotisations: "مجموع الاقتطاعات",
+        advanceSalary: "تسبيق / أجر",
         net: "الصافي للأداء",
-        note: "حساب تلقائي إرشادي للاقتطاعات القانونية. يرجى مراجعته مع المحاسب قبل الاعتماد النهائي.",
+        note: "شهادة أجر عملية مبنية على المعطيات المدخلة. يرجى مراجعتها مع المحاسب قبل الاستعمال الرسمي.",
       }
     : params.locale.startsWith("fr")
       ? {
           employee: "Salarié",
+          matricule: "Matricule",
           period: "Période",
-          gross: "Salaire brut",
-          cnss: "Retenue CNSS",
-          amo: "Retenue AMO",
+          designation: "Désignation",
+          number: "Nombre",
+          base: "Base",
+          rate: "Taux",
+          gain: "Part salariale / Gain",
+          deduction: "Retenue",
+          baseSalary: "Salaire de base",
+          paidLeave: "Congés payés",
+          overtime125: "Heures supplémentaires 125%",
+          overtime150: "Heures supplémentaires 150%",
+          overtime200: "Heures supplémentaires 200%",
+          seniorityBonus: "Prime d'ancienneté",
+          attendanceBonus: "Prime d'assiduité",
+          productivityBonus: "Prime de productivité",
+          totalBrut: "Total brut",
+          cnss: "Cotisation CNSS",
+          amo: "Cotisation AMO",
+          ipe: "Cotisation IPE",
+          mutual: "Cotisation mutuelle",
+          totalCotisations: "Total cotisations",
+          advanceSalary: "Avance / salaire",
           net: "Net à payer",
-          note: "Calcul automatique indicatif des retenues légales. À valider avec le comptable avant usage officiel.",
+          note: "Bulletin opérationnel basé sur les données saisies. À valider avec le comptable avant usage officiel.",
         }
       : params.locale.startsWith("es")
         ? {
             employee: "Empleado",
+            matricule: "Matrícula",
             period: "Período",
-            gross: "Salario bruto",
-            cnss: "Deducción CNSS",
-            amo: "Deducción AMO",
+            designation: "Concepto",
+            number: "Número",
+            base: "Base",
+            rate: "Tasa",
+            gain: "Devengo",
+            deduction: "Retención",
+            baseSalary: "Salario base",
+            paidLeave: "Vacaciones pagadas",
+            overtime125: "Horas extra 125%",
+            overtime150: "Horas extra 150%",
+            overtime200: "Horas extra 200%",
+            seniorityBonus: "Prima de antigüedad",
+            attendanceBonus: "Prima de asistencia",
+            productivityBonus: "Prima de productividad",
+            totalBrut: "Total bruto",
+            cnss: "Cotización CNSS",
+            amo: "Cotización AMO",
+            ipe: "Cotización IPE",
+            mutual: "Cotización mutua",
+            totalCotisations: "Total cotizaciones",
+            advanceSalary: "Anticipo / salario",
             net: "Neto a pagar",
-            note: "Cálculo automático orientativo de deducciones legales. Validar con contabilidad antes del uso oficial.",
+            note: "Nómina operativa basada en los datos introducidos. Validar con contabilidad antes del uso oficial.",
           }
         : {
             employee: "Employee",
+            matricule: "Employee ID",
             period: "Period",
-            gross: "Gross salary",
-            cnss: "CNSS deduction",
-            amo: "AMO deduction",
+            designation: "Designation",
+            number: "Number",
+            base: "Base",
+            rate: "Rate",
+            gain: "Gain",
+            deduction: "Deduction",
+            baseSalary: "Base salary",
+            paidLeave: "Paid leave",
+            overtime125: "Overtime 125%",
+            overtime150: "Overtime 150%",
+            overtime200: "Overtime 200%",
+            seniorityBonus: "Seniority bonus",
+            attendanceBonus: "Attendance bonus",
+            productivityBonus: "Productivity bonus",
+            totalBrut: "Total gross",
+            cnss: "CNSS contribution",
+            amo: "AMO contribution",
+            ipe: "IPE contribution",
+            mutual: "Mutual contribution",
+            totalCotisations: "Total contributions",
+            advanceSalary: "Advance / salary",
             net: "Net payable",
-            note: "Automatic indicative statutory deduction calculation. Validate with accounting before official use.",
+            note: "Operational salary slip based on entered data. Validate with accounting before official use.",
           };
+  const row = (
+    code: string,
+    label: string,
+    count: string,
+    base: string,
+    rate: string,
+    gain: number | null,
+    deduction: number | null,
+    strong = false
+  ) =>
+    `<tr style="${strong ? "font-weight:800;background:#f0fdf4;" : ""}">
+      <td style="border:1px solid #cbd5e1;padding:7px 8px;color:#64748b;">${escapeHtmlPdf(code)}</td>
+      <td style="border:1px solid #cbd5e1;padding:7px 8px;">${escapeHtmlPdf(label)}</td>
+      <td style="border:1px solid #cbd5e1;padding:7px 8px;text-align:center;">${escapeHtmlPdf(count)}</td>
+      <td style="border:1px solid #cbd5e1;padding:7px 8px;text-align:right;">${escapeHtmlPdf(base)}</td>
+      <td style="border:1px solid #cbd5e1;padding:7px 8px;text-align:right;">${escapeHtmlPdf(rate)}</td>
+      <td style="border:1px solid #cbd5e1;padding:7px 8px;text-align:right;">${gain === null ? "" : escapeHtmlPdf(money(gain))}</td>
+      <td style="border:1px solid #cbd5e1;padding:7px 8px;text-align:right;">${deduction === null ? "" : escapeHtmlPdf(money(deduction))}</td>
+    </tr>`;
   const rows = [
-    [labels.employee, `${params.employeeName} (${params.employeeId})`],
-    [labels.period, params.period],
-    [labels.gross, money(params.grossSalary)],
-    [labels.cnss, money(params.cnss)],
-    [labels.amo, money(params.amo)],
-    [labels.net, money(params.netSalary)],
+    row("20", labels.baseSalary, "1", money(params.baseSalary), "", params.baseSalary, null),
+    row("100", labels.paidLeave, "1", money(params.paidLeave), "", params.paidLeave, null),
+    row("280", labels.overtime125, "", "", "125%", params.overtime125, null),
+    row("300", labels.overtime150, "", "", "150%", params.overtime150, null),
+    row("310", labels.overtime200, "", "", "200%", params.overtime200, null),
+    row("1000", labels.seniorityBonus, "", "", "", params.seniorityBonus, null),
+    row("1100", labels.attendanceBonus, "", "", "", params.attendanceBonus, null),
+    row("1150", labels.productivityBonus, "", "", "", params.productivityBonus, null),
+    row("", labels.totalBrut, "", "", "", params.totalBrut, null, true),
+    row("7010", labels.cnss, "", money(params.totalBrut), "4.48%", null, params.cnss),
+    row("7020", labels.amo, "", money(params.totalBrut), "2.26%", null, params.amo),
+    row("7030", labels.ipe, "", money(params.totalBrut), "0.19%", null, params.ipe),
+    row("7050", labels.mutual, "", money(params.totalBrut), "", null, params.mutual),
+    row("", labels.totalCotisations, "", "", "", null, params.totalCotisations, true),
+    row("9000", labels.advanceSalary, "", "", "", null, params.advanceSalary),
   ];
-  const tr = rows
-    .map(([a, b], index) => {
-      const strong = index === rows.length - 1;
-      return `<tr><td style="border:1px solid #cbd5e1;padding:10px;background:${strong ? "#ecfeff" : "#f8fafc"};font-weight:800;">${escapeHtmlPdf(a)}</td><td style="border:1px solid #cbd5e1;padding:10px;font-weight:${strong ? "800" : "500"};">${escapeHtmlPdf(b)}</td></tr>`;
-    })
-    .join("");
+  const tr = rows.join("");
   const body =
-    `<table style="width:100%;border-collapse:collapse;font-size:13px;">${tr}</table>` +
+    `<div style="border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;background:#fff;">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1px solid #cbd5e1;font-size:12px;">
+        <div style="padding:10px;border-inline-end:1px solid #cbd5e1;"><strong>${escapeHtmlPdf(labels.employee)}</strong><br/>${escapeHtmlPdf(params.employeeName)}</div>
+        <div style="padding:10px;border-inline-end:1px solid #cbd5e1;"><strong>${escapeHtmlPdf(labels.matricule)}</strong><br/>${escapeHtmlPdf(params.employeeId)}</div>
+        <div style="padding:10px;"><strong>${escapeHtmlPdf(labels.period)}</strong><br/>${escapeHtmlPdf(params.period)}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px;">
+        <thead>
+          <tr style="background:#e0f2fe;color:#0f172a;">
+            <th style="border:1px solid #cbd5e1;padding:7px;">N°</th>
+            <th style="border:1px solid #cbd5e1;padding:7px;">${escapeHtmlPdf(labels.designation)}</th>
+            <th style="border:1px solid #cbd5e1;padding:7px;">${escapeHtmlPdf(labels.number)}</th>
+            <th style="border:1px solid #cbd5e1;padding:7px;">${escapeHtmlPdf(labels.base)}</th>
+            <th style="border:1px solid #cbd5e1;padding:7px;">${escapeHtmlPdf(labels.rate)}</th>
+            <th style="border:1px solid #cbd5e1;padding:7px;">${escapeHtmlPdf(labels.gain)}</th>
+            <th style="border:1px solid #cbd5e1;padding:7px;">${escapeHtmlPdf(labels.deduction)}</th>
+          </tr>
+        </thead>
+        <tbody>${tr}</tbody>
+      </table>
+      <div style="display:flex;justify-content:flex-end;padding:14px;background:linear-gradient(90deg,#fef9c3,#dcfce7);border-top:1px solid #cbd5e1;">
+        <div style="min-width:240px;text-align:center;border:2px solid #16a34a;border-radius:12px;background:#fff;padding:12px;">
+          <div style="font-size:12px;color:#15803d;font-weight:800;">${escapeHtmlPdf(labels.net)}</div>
+          <div style="font-size:22px;font-weight:900;color:#0f172a;">${escapeHtmlPdf(money(params.netSalary))}</div>
+        </div>
+      </div>
+    </div>` +
     `<p style="margin-top:14px;font-size:11px;color:#64748b;">${escapeHtmlPdf(labels.note)}</p>`;
   return shell(params.branding, title, params.dir, body);
 }
@@ -282,14 +428,16 @@ export function buildInternalRulesAckHtml(params: {
         ? "Règlement intérieur — accusé de lecture"
         : "Internal regulations — acknowledgment";
   const body =
-    `<p style="margin:8px 0;">${escapeHtmlPdf(params.employeeName)} — ${escapeHtmlPdf(params.employeeId)}</p>` +
-    `<div style="margin:12px 0;padding:14px;border-radius:12px;border:1px solid #e2e8f0;background:#fff;">${escapeHtmlPdf(params.rulesExcerpt).replace(/\n/g, "<br/>")}</div>` +
+    `<p style="margin:8px 0;">${escapeHtmlPdf(fixArabicText(params.employeeName))} — ${escapeHtmlPdf(fixArabicText(params.employeeId))}</p>` +
+    `<div style="margin:12px 0;padding:14px;border-radius:12px;border:1px solid #e2e8f0;background:#fff;">${escapeHtmlPdf(fixArabicText(params.rulesExcerpt)).replace(/\n/g, "<br/>")}</div>` +
     `<p style="margin:16px 0;font-weight:600;">${escapeHtmlPdf(
-      params.locale.startsWith("ar")
-        ? `أقر بأنني اطلعت على النظام الداخلي بتاريخ ${params.ackDate}.`
-        : params.locale.startsWith("fr")
-          ? `Je reconnais avoir pris connaissance du règlement intérieur le ${params.ackDate}.`
-          : `I acknowledge reading the internal regulations on ${params.ackDate}.`
+      fixArabicText(
+        params.locale.startsWith("ar")
+          ? `أقر بأنني اطلعت على النظام الداخلي بتاريخ ${params.ackDate}.`
+          : params.locale.startsWith("fr")
+            ? `Je reconnais avoir pris connaissance du règlement intérieur le ${params.ackDate}.`
+            : `I acknowledge reading the internal regulations on ${params.ackDate}.`
+      )
     )}</p>`;
   return shell(params.branding, title, params.dir, body);
 }
@@ -306,7 +454,7 @@ export function buildEmploymentContractHtml(params: {
       : params.locale.startsWith("fr")
         ? "Contrat de travail — projet"
         : "Employment contract — draft";
-  const safe = escapeHtmlPdf(params.bodyText).replace(/\n/g, "<br/>");
+  const safe = escapeHtmlPdf(fixArabicText(params.bodyText)).replace(/\n/g, "<br/>");
   const body = `<div style="font-size:13px;">${safe}</div>`;
   return shell(params.branding, title, params.dir, body);
 }

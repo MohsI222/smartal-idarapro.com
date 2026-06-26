@@ -119,17 +119,35 @@ function showNonFatalBanner(msg: string) {
   }
 }
 
-const NON_FATAL_ERROR_PATTERNS = /(ginger|writer\.min\.js|elementFromPoint|extension|content\.min\.js)/i;
+const NON_FATAL_ERROR_PATTERNS = /(ginger|share-modal|shareModal|writer\.min\.js|elementFromPoint|extension|content\.min\.js)/i;
+const RECOVERABLE_ERROR_PATTERNS =
+  /(failed to fetch|networkerror|network error|load failed|api|fetch|pdf|docx|xlsx|excel|word|export|import|upload|download|aborterror|notallowederror|permission|backend|canvas|font|timeout|timed out)/i;
+
+function appHasRenderedContent(): boolean {
+  return Boolean(document.getElementById("root")?.childElementCount);
+}
+
+function surfaceRuntimeError(msg: string, filename = "") {
+  const text = String(msg || "");
+  const file = String(filename || "");
+  if (
+    NON_FATAL_ERROR_PATTERNS.test(text) ||
+    NON_FATAL_ERROR_PATTERNS.test(file) ||
+    RECOVERABLE_ERROR_PATTERNS.test(text) ||
+    RECOVERABLE_ERROR_PATTERNS.test(file) ||
+    appHasRenderedContent()
+  ) {
+    console.warn("Non-fatal runtime error intercepted:", text);
+    showNonFatalBanner(text);
+    return;
+  }
+  showFatalOverlay(text);
+}
 
 window.addEventListener("error", (ev) => {
   try {
     const msg = (ev as ErrorEvent)?.error?.message ?? (ev as ErrorEvent).message ?? String(ev);
-    if (NON_FATAL_ERROR_PATTERNS.test(String(msg)) || NON_FATAL_ERROR_PATTERNS.test(String((ev as ErrorEvent).filename || ""))) {
-      console.warn("Non-fatal extension error intercepted:", msg);
-      showNonFatalBanner(msg);
-      return;
-    }
-    showFatalOverlay(msg);
+    surfaceRuntimeError(String(msg), (ev as ErrorEvent).filename || "");
   } catch {
     /* ignore */
   }
@@ -137,13 +155,8 @@ window.addEventListener("error", (ev) => {
 window.addEventListener("unhandledrejection", (ev) => {
   try {
     const reason = (ev as PromiseRejectionEvent & any)?.reason || "Unhandled promise rejection";
-    const rstr = String(reason);
-    if (NON_FATAL_ERROR_PATTERNS.test(rstr)) {
-      console.warn("Non-fatal extension rejection intercepted:", rstr);
-      showNonFatalBanner(rstr);
-      return;
-    }
-    showFatalOverlay(rstr);
+    const rstr = reason instanceof Error ? reason.message : String(reason);
+    surfaceRuntimeError(rstr);
   } catch {
     /* ignore */
   }

@@ -244,17 +244,17 @@ function buildCourtFilingHtml(f: FormState): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&display=swap" rel="stylesheet"/>
 <style>
-  @page { size: A4; margin: 20mm 15mm 20mm 15mm; }
+  @page { size: A4; margin: 8mm; }
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: "Noto Naskh Arabic", "Traditional Arabic", Arial, serif;
-    font-size: 12pt;
-    line-height: 1.85;
+    font-size: 10.5pt;
+    line-height: 1.35;
     color: #111;
     background: #fff;
     direction: rtl;
-    padding: 28px 36px;
-    max-width: 210mm;
+    padding: 10px 20px;
+    max-width: 100%;
     margin: 0 auto;
   }
 
@@ -264,7 +264,7 @@ function buildCourtFilingHtml(f: FormState): string {
     padding: 0;
     position: relative;
   }
-  .inner-pad { padding: 26px 34px 30px; }
+  .inner-pad { padding: 10px 15px 15px; }
 
   /* ── kingdom header ── */
   .header-block {
@@ -274,10 +274,10 @@ function buildCourtFilingHtml(f: FormState): string {
     margin-bottom: 0;
   }
   .header-title {
-    font-size: 17pt;
+    font-size: 13pt;
     font-weight: 700;
     text-decoration: underline;
-    line-height: 1.6;
+    line-height: 1.2;
     color: #003876;
   }
 
@@ -286,10 +286,10 @@ function buildCourtFilingHtml(f: FormState): string {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-top: 18px;
+    margin-top: 8px;
     gap: 10px;
   }
-  .lawyer-info { font-size: 11pt; line-height: 1.75; }
+  .lawyer-info { font-size: 9.5pt; line-height: 1.3; }
   .lawyer-info strong { color: #003876; }
   .date-block {
     text-align: left;
@@ -303,57 +303,57 @@ function buildCourtFilingHtml(f: FormState): string {
   /* ── salutation ── */
   .salutation {
     text-align: center;
-    margin-top: 22px;
-    font-size: 14pt;
+    margin-top: 10px;
+    font-size: 11.5pt;
     font-weight: 700;
     color: #003876;
     border-top: 1.5px solid #c9a227;
     border-bottom: 1.5px solid #c9a227;
-    padding: 8px 0;
+    padding: 4px 0;
   }
 
   /* ── parties block ── */
-  .parties { margin-top: 20px; font-size: 11.5pt; line-height: 2; }
+  .parties { margin-top: 8px; font-size: 10pt; line-height: 1.5; }
   .parties strong { color: #003876; }
 
   /* ── subject banner ── */
   .subject-banner {
     text-align: center;
-    margin-top: 20px;
-    font-size: 13pt;
+    margin-top: 10px;
+    font-size: 11pt;
     font-weight: 700;
     background: #f2f2f2;
     border: 1px solid #ccc;
-    padding: 8px 12px;
+    padding: 4px 8px;
     color: #111;
   }
 
   /* ── section heading ── */
   .sec-heading {
-    font-size: 12pt;
+    font-size: 10.5pt;
     font-weight: 700;
     color: #003876;
-    margin-top: 22px;
-    margin-bottom: 6px;
+    margin-top: 10px;
+    margin-bottom: 2px;
     text-decoration: underline;
     text-underline-offset: 3px;
   }
 
   /* ── body text ── */
   .body-text {
-    font-size: 11.5pt;
-    line-height: 2;
+    font-size: 10pt;
+    line-height: 1.4;
     text-align: justify;
     color: #111;
     margin-bottom: 4px;
   }
-  .body-text p { margin-bottom: 6px; }
+  .body-text p { margin-bottom: 2px; }
   .body-text strong { color: #003876; }
 
   /* ── requests list ── */
-  .requests { margin-top: 20px; font-size: 11.5pt; line-height: 2; }
+  .requests { margin-top: 8px; font-size: 10pt; line-height: 1.4; }
   .requests strong { text-decoration: underline; color: #003876; }
-  .requests ol { padding-right: 20px; margin-top: 8px; }
+  .requests ol { padding-right: 18px; margin-top: 4px; }
   .requests li { margin-bottom: 4px; }
 
   /* ── signature ── */
@@ -361,11 +361,11 @@ function buildCourtFilingHtml(f: FormState): string {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    margin-top: 40px;
+    margin-top: 15px;
   }
   .sig-left { text-align: left; font-size: 10.5pt; color: #444; }
-  .sig-right { text-align: right; font-size: 11pt; }
-  .sig-right strong { font-size: 12pt; color: #003876; }
+  .sig-right { text-align: right; font-size: 9.5pt; }
+  .sig-right strong { font-size: 10.5pt; color: #003876; }
   .sig-stamp {
     border: 1.5px dashed #003876;
     border-radius: 50%;

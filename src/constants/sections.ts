@@ -13,6 +13,7 @@ import {
   Train,
   Users,
   FileText,
+  HousePlus,
   type LucideIcon,
 } from "lucide-react";
 
@@ -37,7 +38,8 @@ export type SectionId =
   | "chat"
   | "edu_print"
   | "tools"
-  | "reminders";
+  | "reminders"
+  | "auto_real_estate";
 
 export type SectionDef = {
   id: SectionId;
@@ -110,7 +112,7 @@ export const SECTIONS: SectionDef[] = [
     shortTitleKey: "section.visa.short",
     icon: Radar,
     color: "text-cyan-400",
-    price: "—",
+    price: "599 DH",
     path: "/app/visa",
   },
   {
@@ -229,6 +231,15 @@ export const SECTIONS: SectionDef[] = [
     color: "text-orange-300",
     price: "—",
     path: "/app/tools",
+  },
+  {
+    id: "auto_real_estate",
+    titleKey: "section.auto_real_estate.title",
+    shortTitleKey: "section.auto_real_estate.short",
+    icon: HousePlus,
+    color: "text-lime-300",
+    price: "399 DH",
+    path: "/app/auto-real-estate",
   },
   {
     id: "reminders",

@@ -10,6 +10,20 @@ export function getStoredAuthToken(): string | null {
   }
 }
 
+function downloadBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.style.setProperty("display", "none");
+  document.body.appendChild(a);
+  a.click();
+  window.setTimeout(() => {
+    if (document.body.contains(a)) document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
 export async function postBackendXlsxStream(body: {
   fileName: string;
   sheets: { name: string; rows: (string | number | null | undefined)[][]; rtl?: boolean }[];
@@ -27,15 +41,7 @@ export async function postBackendXlsxStream(body: {
     });
     if (!res.ok) return false;
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = body.fileName.endsWith(".xlsx") ? body.fileName : `${body.fileName}.xlsx`;
-    a.style.setProperty("display", "none");
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, body.fileName.endsWith(".xlsx") ? body.fileName : `${body.fileName}.xlsx`);
     return true;
   } catch {
     return false;
@@ -61,15 +67,7 @@ export async function postBackendStatutsDocx(
     });
     if (!res.ok) return false;
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName.endsWith(".docx") ? fileName : `${fileName}.docx`;
-    a.style.setProperty("display", "none");
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, fileName.endsWith(".docx") ? fileName : `${fileName}.docx`);
     return true;
   } catch {
     return false;
@@ -99,15 +97,7 @@ export async function postBackendReportDocx(body: {
     });
     if (!res.ok) return false;
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = body.fileName.endsWith(".docx") ? body.fileName : `${body.fileName}.docx`;
-    a.style.setProperty("display", "none");
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, body.fileName.endsWith(".docx") ? body.fileName : `${body.fileName}.docx`);
     return true;
   } catch {
     return false;
@@ -128,12 +118,7 @@ export async function postBackendLegalDocx(payload: unknown, fileName: string): 
     });
     if (!res.ok) return false;
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName.endsWith(".docx") ? fileName : `${fileName}.docx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, fileName.endsWith(".docx") ? fileName : `${fileName}.docx`);
     return true;
   } catch {
     return false;

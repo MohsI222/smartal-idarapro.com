@@ -17,6 +17,7 @@ export function pathRequiresModules(path: string): SectionId[] {
     "/app/tools": ["tools"],
     "/app/members": ["members"],
     "/app/media-lab": ["media_lab"],
+    "/app/auto-real-estate": ["auto_real_estate"],
     "/app/tl": ["transport_logistics"],
     "/app/edu": ["edu"],
     "/app/public": ["public"],

@@ -1,5 +1,4 @@
 // Load `jspdf` and `jspdf-autotable` dynamically where needed to reduce bundle size
-import arabicPersianReshaper from "arabic-persian-reshaper";
 import { fetchBackendPrintHtml } from "@/lib/backendExportClient";
 import { buildOfficialDocumentFullHtml } from "@/lib/legalApplicationPrint";
 import { downloadPdfFromFullHtmlDocument } from "@/lib/pdfCanvasExport";
@@ -10,6 +9,7 @@ import {
   type MemberMgmtSetup,
   type MemberRow,
 } from "@/lib/memberMgmtTypes";
+import { fixArabicText } from "@/lib/arabicPdfText";
 
 const FONT_VFS_NAME = "NotoNaskhArabic-Regular.ttf";
 const FONT_FAMILY = "NotoNaskhArabic";
@@ -22,8 +22,7 @@ const NOTO_NASKH_AR_TTF_URL =
 function cellText(s: string): string {
   const t = String(s ?? "").trim();
   if (!/[\u0600-\u06FF]/.test(t)) return t;
-  const shaped = arabicPersianReshaper.ArabicShaper.convertArabic(t);
-  return shaped.split("").reverse().join("");
+  return fixArabicText(t);
 }
 
 function arrayBufferToBinaryString(buf: ArrayBuffer): string {

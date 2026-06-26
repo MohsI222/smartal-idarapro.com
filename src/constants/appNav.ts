@@ -10,6 +10,7 @@ import {
   Landmark,
   LayoutGrid,
   MessageCircle,
+  HousePlus,
   Shield,
   Radar,
   Scale,
@@ -50,6 +51,7 @@ export const PLATFORM_NAV: AppNavItem[] = [
   { to: "/app/tools", icon: LayoutGrid, labelKey: "nav.businessTools" },
   { to: "/app/members", icon: Users, labelKey: "nav.memberMgmt" },
   { to: "/app/media-lab", icon: Palette, labelKey: "nav.mediaLab" },
+  { to: "/app/auto-real-estate", icon: HousePlus, labelKey: "nav.autoRealEstate", emphasize: true },
   { to: "/app/tl", icon: Train, labelKey: "nav.transportLogistics" },
 ];
 

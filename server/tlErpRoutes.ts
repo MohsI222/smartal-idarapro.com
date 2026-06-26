@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { randomUUID, randomBytes } from "node:crypto";
 import { db } from "./db.js";
 import { paramString } from "./reqParams.js";
+import { buildTlGridExcelBuffer, parseTlGridDeptFromFilename } from "./tlGridExport.js";
 
 export type TlFilesConfig = {
   uploadTl: { single: (field: string) => express.RequestHandler };
@@ -140,6 +141,17 @@ export function registerTlErpRoutes(
   };
 
   const authGate = [authMiddleware, gate] as express.RequestHandler[];
+
+  const attachmentAccess: express.RequestHandler = async (req, res, next) => {
+    const uid = (req as express.Request & { userId: string }).userId;
+    const hasTl = await moduleAllowed(uid, "transport_logistics");
+    const hasInv = await moduleAllowed(uid, "inventory");
+    if (!hasTl && !hasInv) {
+      res.status(403).json({ error: "القسم غير مفعّل" });
+      return;
+    }
+    next();
+  };
 
   app.get("/api/tl/resolve-magic", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
@@ -550,12 +562,10 @@ export function registerTlErpRoutes(
   });
 
   if (files?.uploadTl && files.tlUploadRoot) {
-    const tlRoot = path.resolve(files.tlUploadRoot);
-
     const runMulter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
       files!.uploadTl.single("file")(req, res, (err: unknown) => {
         if (err) {
-          res.status(400).json({ error: "رفع الملف فشل أو النوع غير مسموح (PDF / Excel / CSV)" });
+          res.status(400).json({ error: "رفع الملف فشل أو النوع غير مسموح (PDF / Excel / CSV / Image)" });
           return;
         }
         next();
@@ -623,9 +633,15 @@ export function registerTlErpRoutes(
         const id = randomUUID();
         const original = file.originalname || "attachment";
         const mime = file.mimetype || "application/octet-stream";
+        let fileBuffer: Buffer | null = null;
+        try {
+          fileBuffer = fs.readFileSync(file.path);
+        } catch {
+          fileBuffer = null;
+        }
         await db.prepare(
-          `INSERT INTO tl_messages (id, user_id, from_worker_id, to_worker_id, body, attachment_original_name, attachment_stored_path, attachment_mime)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO tl_messages (id, user_id, from_worker_id, to_worker_id, body, attachment_original_name, attachment_stored_path, attachment_mime, attachment_data)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
           id,
           userId,
@@ -634,7 +650,8 @@ export function registerTlErpRoutes(
           textBody || "📎",
           original,
           safeDiskName,
-          mime
+          mime,
+          fileBuffer
         );
         const row = await db
           .prepare(
@@ -647,7 +664,7 @@ export function registerTlErpRoutes(
       }
     );
 
-    app.get("/api/tl/messages/:id/attachment", authMiddleware, gate, async (req, res) => {
+    app.get("/api/tl/messages/:id/attachment", authMiddleware, attachmentAccess, async (req, res) => {
       const userId = (req as express.Request & { userId: string }).userId;
       const id = paramString(req.params.id);
       const row = await db
@@ -656,32 +673,55 @@ export function registerTlErpRoutes(
         attachment_stored_path: string | null;
         attachment_original_name: string | null;
         attachment_mime: string | null;
-        from_worker_id: string;
-        to_worker_id: string;
+        attachment_data: Buffer | null;
       } | undefined;
-      if (!row?.attachment_stored_path) {
+      if (!row?.attachment_stored_path && !row?.attachment_data) {
         res.status(404).json({ error: "no_file" });
         return;
       }
-      const safeName = path.basename(row.attachment_stored_path);
-      const full = path.join(tlRoot, safeName);
-      const resolvedRoot = path.resolve(tlRoot);
-      const resolvedFile = path.resolve(full);
-      if (
-        !resolvedFile.startsWith(resolvedRoot + path.sep) &&
-        resolvedFile !== resolvedRoot
-      ) {
-        res.status(400).end();
-        return;
-      }
-      if (!fs.existsSync(resolvedFile)) {
-        res.status(404).end();
-        return;
-      }
       const fname = row.attachment_original_name || "file";
-      res.setHeader("Content-Type", row.attachment_mime || "application/octet-stream");
-      res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(fname)}`);
-      res.sendFile(resolvedFile);
+      const mime = row.attachment_mime || "application/octet-stream";
+      const encodedName = encodeURIComponent(fname);
+
+      if (row.attachment_stored_path && files?.tlUploadRoot) {
+        const tlRoot = files.tlUploadRoot;
+        const safeName = path.basename(row.attachment_stored_path);
+        const full = path.join(tlRoot, safeName);
+        const resolvedRoot = path.resolve(tlRoot);
+        const resolvedFile = path.resolve(full);
+        if (
+          (resolvedFile.startsWith(resolvedRoot + path.sep) || resolvedFile === resolvedRoot) &&
+          fs.existsSync(resolvedFile)
+        ) {
+          res.setHeader("Content-Type", mime);
+          res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodedName}`);
+          res.sendFile(resolvedFile);
+          return;
+        }
+      }
+
+      if (row.attachment_data && row.attachment_data.length > 0) {
+        res.setHeader("Content-Type", mime);
+        res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodedName}`);
+        res.send(row.attachment_data);
+        return;
+      }
+
+      const gridDept = parseTlGridDeptFromFilename(fname);
+      if (gridDept) {
+        const regenerated = await buildTlGridExcelBuffer(userId, gridDept);
+        if (regenerated) {
+          res.setHeader(
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          );
+          res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodedName}`);
+          res.send(regenerated);
+          return;
+        }
+      }
+
+      res.status(404).json({ error: "attachment_not_found" });
     });
   }
 }

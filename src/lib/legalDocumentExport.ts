@@ -10,6 +10,7 @@ import * as XLSX from "xlsx";
 import { downloadXlsxWorkbook } from "@/lib/excelDownload";
 import { escapeHtmlPdf, escapeHtmlPdfLatin } from "@/lib/htmlEscape";
 import { buildOfficialDocumentFullHtml } from "@/lib/legalApplicationPrint";
+import { fixArabicText } from "@/lib/arabicPdfText";
 import {
   moroccanDocumentClassLabel,
   moroccanInstitutionLabel,
@@ -251,13 +252,13 @@ export async function openLegalDocumentOfficialPdf(
         ${metaRows
           .map(
             ([k, v]) =>
-              `<tr><td style="border:1px solid #000;padding:6px;font-weight:700;width:28%;">${escapeHtmlPdf(k)}</td><td style="border:1px solid #000;padding:6px;">${escapeHtmlPdf(v || "—")}</td></tr>`
+              `<tr><td style="border:1px solid #000;padding:6px;font-weight:700;width:28%;">${escapeHtmlPdf(fixArabicText(k))}</td><td style="border:1px solid #000;padding:6px;">${escapeHtmlPdf(fixArabicText(v || "—"))}</td></tr>`
           )
           .join("")}
       </tbody>
     </table>
-    <div style="font-weight:700;margin-bottom:8px;">${escapeHtmlPdf(H.requestBody)}</div>
-    <div style="white-space:pre-wrap;font-size:12pt;line-height:1.65;">${escapeHtmlPdfLatin(payload.requestDetails.trim() || "—")}</div>
+    <div style="font-weight:700;margin-bottom:8px;">${escapeHtmlPdf(fixArabicText(H.requestBody))}</div>
+    <div style="white-space:pre-wrap;font-size:12pt;line-height:1.65;">${escapeHtmlPdfLatin(fixArabicText(payload.requestDetails.trim() || "—"))}</div>
   `;
   const kingdom = legalOfficialKingdomLine(lang);
   const sectionTitle = `${docLabel} — ${instLabel}`;

@@ -7,6 +7,7 @@ import { fetchBackendPrintHtml } from "@/lib/backendExportClient";
 import { downloadPdfFromFullHtmlDocument } from "@/lib/pdfCanvasExport";
 import { escapeHtmlPdf } from "@/lib/htmlEscape";
 import { isTrialWatermarkExport } from "@/lib/exportPolicy";
+import { fixArabicText } from "@/lib/arabicPdfText";
 
 export { escapeHtmlPdf };
 
@@ -19,18 +20,27 @@ export function buildPdfTableHtml(
   rows: (string | number | null | undefined)[][],
   direction: "rtl" | "ltr"
 ): string {
-  const th = headers
+  // Pre-process headers once for better performance
+  const processedHeaders = headers.map((h) => fixArabicText(String(h)));
+  const th = processedHeaders
     .map(
       (h) =>
-        `<th style="border:1px solid #000000;padding:8px;background:#ffffff;color:#000000;font-weight:700;">${escapeHtmlPdf(String(h))}</th>`
+        `<th style="border:1px solid #000000;padding:8px;background:#ffffff;color:#000000;font-weight:700;">${escapeHtmlPdf(h)}</th>`
     )
     .join("");
+  
+  // Pre-process cells with cache optimization
   const trs = rows
     .map(
       (r) =>
-        `<tr>${r.map((c) => `<td style="border:1px solid #000000;padding:8px;background:#ffffff;color:#000000;">${escapeHtmlPdf(String(c ?? "—"))}</td>`).join("")}</tr>`
+        `<tr>${r.map((c) => {
+          const cellText = c === null || c === undefined ? "—" : String(c);
+          const processed = fixArabicText(cellText);
+          return `<td style="border:1px solid #000000;padding:8px;background:#ffffff;color:#000000;">${escapeHtmlPdf(processed)}</td>`;
+        }).join("")}</tr>`
     )
     .join("");
+  
   return `
     <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:${direction === "rtl" ? "right" : "left"};direction:${direction};">
       <thead><tr>${th}</tr></thead>
@@ -89,9 +99,9 @@ export async function exportSmartAlIdaraPdfPreferBackend(opts: ExportPdfProOptio
     trialWatermark && mode !== "official"
       ? `<p style="color:#7f1d1d;font-size:12px;font-weight:700;border:2px solid #fecaca;padding:10px;margin:0 0 12px;background:#fff7ed;">${escapeHtmlPdf(
           lang.startsWith("ar")
-            ? "SMART AL IDARA PRO — نسخة تجريبية — غير صالحة قانونياً للإيداع أو الاستعمال الرسمي حتى ترقية الاشتراك"
+            ? fixArabicText("SMART AL IDARA PRO — نسخة تجريبية — غير صالحة قانونياً للإيداع أو الاستعمال الرسمي حتى ترقية الاشتراك")
             : "SMART AL IDARA PRO — TRIAL VERSION — Legally invalid for official filing or use until you upgrade to a paid plan"
-        )}</p>`
+      )}</p>`
       : "";
   const backendHtml = await fetchBackendPrintHtml({
     direction,
@@ -199,25 +209,25 @@ function buildEduPrintInnerHtml(fields: EduPrintFields, direction: "rtl" | "ltr"
     <div style="direction:${direction};text-align:${ta};">
       ${
         fields.institution.trim()
-          ? `<p style="margin:0 0 8px 0;"><strong>${escapeHtmlPdf(L.institution)}:</strong> ${escapeHtmlPdf(fields.institution)}</p>`
+          ? `<p style="margin:0 0 8px 0;"><strong>${escapeHtmlPdf(fixArabicText(L.institution))}:</strong> ${escapeHtmlPdf(fixArabicText(fields.institution))}</p>`
           : ""
       }
       ${
         fields.examTitle.trim()
-          ? `<p style="margin:0 0 12px 0;font-size:13pt;font-weight:700;">${escapeHtmlPdf(fields.examTitle)}</p>`
+          ? `<p style="margin:0 0 12px 0;font-size:13pt;font-weight:700;">${escapeHtmlPdf(fixArabicText(fields.examTitle))}</p>`
           : ""
       }
       <table style="width:100%;border-collapse:collapse;font-size:11pt;">
         <tr>
-          <td style="border:1px solid #000;padding:10px;font-weight:700;width:32%;">${escapeHtmlPdf(L.subject)}</td>
-          <td style="border:1px solid #000;padding:10px;">${escapeHtmlPdf(fields.subject || "—")}</td>
+          <td style="border:1px solid #000;padding:10px;font-weight:700;width:32%;">${escapeHtmlPdf(fixArabicText(L.subject))}</td>
+          <td style="border:1px solid #000;padding:10px;">${escapeHtmlPdf(fixArabicText(fields.subject || "—"))}</td>
         </tr>
         <tr>
-          <td style="border:1px solid #000;padding:10px;font-weight:700;">${escapeHtmlPdf(L.teacher)}</td>
-          <td style="border:1px solid #000;padding:10px;">${escapeHtmlPdf(fields.teacher || "—")}</td>
+          <td style="border:1px solid #000;padding:10px;font-weight:700;">${escapeHtmlPdf(fixArabicText(L.teacher))}</td>
+          <td style="border:1px solid #000;padding:10px;">${escapeHtmlPdf(fixArabicText(fields.teacher || "—"))}</td>
         </tr>
       </table>
-      <p style="margin-top:18px;font-size:9pt;text-align:center;color:#000;">${escapeHtmlPdf(L.footer)}</p>
+      <p style="margin-top:18px;font-size:9pt;text-align:center;color:#000;">${escapeHtmlPdf(fixArabicText(L.footer))}</p>
     </div>
   `;
 }
@@ -240,9 +250,9 @@ export async function exportEduPrintColorPdf(
     tw
       ? `<p style="color:#7f1d1d;font-size:12px;font-weight:700;border:2px solid #fecaca;padding:10px;margin:0 0 12px;background:#fff7ed;">${escapeHtmlPdf(
           lang.startsWith("ar")
-            ? "SMART AL IDARA PRO — نسخة تجريبية — غير صالحة قانونياً"
+            ? fixArabicText("SMART AL IDARA PRO — نسخة تجريبية — غير صالحة قانونياً")
             : "SMART AL IDARA PRO — TRIAL VERSION — Legally invalid until paid"
-        )}</p>`
+      )}</p>`
       : "";
   const backendHtml = await fetchBackendPrintHtml({
     direction,

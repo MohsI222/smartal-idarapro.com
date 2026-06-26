@@ -34,14 +34,17 @@ export async function downloadStatutsDocx(fileName: string, locale: AppLocale, p
   });
   const blob = asDocxDownloadBlob(await Packer.toBlob(doc));
   const out = fileName.endsWith(".docx") ? fileName : `${fileName}.docx`;
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = url;
   a.download = out;
   a.style.setProperty("display", "none");
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(a.href);
+  window.setTimeout(() => {
+    if (document.body.contains(a)) document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 /** يستخرج نصاً مقروءاً من HTML للفقرات */
@@ -94,8 +97,10 @@ export async function downloadHtmlAsWord(html: string, fileName: string): Promis
   a.style.setProperty("display", "none");
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    if (document.body.contains(a)) document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 /** جدول بسيط إلى docx (بديل عند وجود HTML جدولي فقط) */
@@ -164,6 +169,8 @@ export async function downloadTableAsWordDocx(
   a.style.setProperty("display", "none");
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    if (document.body.contains(a)) document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
 }

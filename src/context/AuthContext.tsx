@@ -415,6 +415,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTrialWatermarkExport(Boolean(trialActive));
   }, [trialActive]);
 
+  const isAdmin = useMemo(() => {
+    return (
+      Boolean(user && user.role === "superadmin") ||
+      Boolean(isPrimaryAdminClient(user?.email, user?.name)) ||
+      (user?.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL)
+    );
+  }, [user]);
+
   const subscriptionDaysRemaining = useMemo(() => {
     if (isAdmin) {
       return null;
@@ -425,7 +433,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const ms = new Date(end).getTime() - Date.now();
     if (!Number.isFinite(ms)) return null;
     return Math.ceil(ms / 86400000);
-  }, [subscription?.ends_at, subscription?.status, trialActive, user]);
+  }, [isAdmin, subscription?.ends_at, subscription?.status, trialActive]);
 
   const subscriptionExpiryUrgent = useMemo(() => {
     if (subscriptionDaysRemaining === null) return false;
@@ -441,7 +449,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (d <= 3) return "3";
     if (d <= 7) return "7";
     return null;
-  }, [subscriptionDaysRemaining, trialActive, user]);
+  }, [isAdmin, subscriptionDaysRemaining, trialActive]);
 
   const subscriptionCountdown = useMemo(() => {
     if (isAdmin) return null;
@@ -459,7 +467,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ms -= hours * 3600000;
     const minutes = Math.floor(ms / 60000);
     return { days, hours, minutes };
-  }, [user, trialActive, subscription, nowTick]);
+  }, [isAdmin, nowTick, subscription, trialActive, user?.trial_ends_at]);
 
   const accountLocked = Boolean(user?.account_locked);
   const subscriptionExpired = useMemo(() => {
@@ -473,15 +481,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const t = new Date(end).getTime();
     if (!Number.isFinite(t)) return false;
     return t <= Date.now();
-  }, [subscription, user, trialActive]);
-
-  const isAdmin = useMemo(() => {
-    return (
-      Boolean(user && user.role === "superadmin") ||
-      Boolean(isPrimaryAdminClient(user?.email, user?.name)) ||
-      (user?.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL)
-    );
-  }, [user]);
+  }, [isAdmin, subscription, trialActive]);
 
   const isApproved = useMemo(() => {
     if (isAdmin) {
@@ -497,21 +497,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (isAdmin) {
       return [...ALL_SAAS_MODULE_IDS];
     }
-    const visaOk = Boolean(user?.visa_unlock_approved);
+    const visaAdminOk = Boolean(user?.visa_unlock_approved);
     if (trialActive) {
       const base = [...TRIAL_MODULE_IDS];
-      return visaOk ? [...base, "visa"] : base;
+      return visaAdminOk ? [...base, "visa"] : base;
     }
     if (!isApproved || !subscription?.modules) return [];
     try {
       const m = JSON.parse(subscription.modules) as string[];
       const list = Array.isArray(m) ? [...m] : [];
-      if (visaOk && !list.includes("visa")) list.push("visa");
       const paid = subscription.status === "approved" && !subscriptionExpired;
       if (paid && !list.includes("chat")) list.push("chat");
       return list;
     } catch {
-      return visaOk ? ["visa"] : [];
+      return visaAdminOk ? ["visa"] : [];
     }
   }, [isApproved, subscription, subscriptionExpired, user, trialActive]);
 

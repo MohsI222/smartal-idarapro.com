@@ -208,6 +208,26 @@ export async function tlFetchMessageAttachmentBlob(token: string, messageId: str
   const res = await fetch(`${getApiUrlPrefix()}/tl/messages/${encodeURIComponent(messageId)}/attachment`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (!res.ok) throw new ApiError("download_failed", res.status);
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new ApiError(data.error ?? "download_failed", res.status);
+  }
   return res.blob();
+}
+
+export async function tlDownloadMessageAttachment(
+  token: string,
+  messageId: string,
+  filename: string
+): Promise<void> {
+  const blob = await tlFetchMessageAttachmentBlob(token, messageId);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.trim() || "download";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

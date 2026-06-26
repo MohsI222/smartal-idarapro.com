@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OcrScanner, parseMoroccanIdHints } from "@/components/OcrScanner";
 import { api } from "@/lib/api";
+import { fetchHrStaff } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { downloadXlsxWorkbook } from "@/lib/excelDownload";
 import { buildPdfTableHtml, exportSmartAlIdaraPdfPreferBackend } from "@/lib/pdfExport";
@@ -54,6 +55,7 @@ export function HrModule() {
   const [empDrafts, setEmpDrafts] = useState<Record<string, Employee>>({});
   const [metrics, setMetrics] = useState<MetricRow[]>([]);
   const [metricDrafts, setMetricDrafts] = useState<Record<string, MetricRow>>({});
+  const [hrStaff, setHrStaff] = useState<any[]>([]);
   const [form, setForm] = useState({
     name: "",
     national_id: "",
@@ -61,19 +63,40 @@ export function HrModule() {
   });
   const load = useCallback(async () => {
     if (!token || !allowed) return;
-    const [e, m] = await Promise.all([
-      api<{ employees: Employee[] }>("/hr/employees", { token }),
-      api<{ metrics: typeof metrics }>("/hr/metrics", { token }),
-    ]);
-    startTransition(() => {
-      setEmployees(e.employees);
-      setMetrics(m.metrics as MetricRow[]);
-    });
+    try {
+      const [e, m] = await Promise.all([
+        api<{ employees: Employee[] }>("/hr/employees", { token }),
+        api<{ metrics: typeof metrics }>("/hr/metrics", { token }),
+      ]);
+      startTransition(() => {
+        setEmployees(Array.isArray(e.employees) ? e.employees : []);
+        setMetrics(Array.isArray(m.metrics) ? (m.metrics as MetricRow[]) : []);
+      });
+    } catch (error) {
+      console.error("[hr] load failed", error);
+      startTransition(() => {
+        setEmployees([]);
+        setMetrics([]);
+      });
+    }
   }, [token, allowed]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!token || !allowed) return;
+    void (async () => {
+      try {
+        const staff = await fetchHrStaff();
+        setHrStaff(Array.isArray(staff) ? staff : []);
+      } catch (error) {
+        console.error("[hr] fetchHrStaff failed", error);
+        setHrStaff([]);
+      }
+    })();
+  }, [token, allowed]);
 
   useEffect(() => {
     const d: Record<string, Employee> = {};
@@ -367,6 +390,42 @@ export function HrModule() {
                   {t("hr.saveEmployee")}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-800 bg-[#0a1628]/90">
+            <CardHeader>
+              <CardTitle className="text-base">HR Staff from Supabase</CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <table className="w-full text-sm text-slate-200">
+                <thead className="bg-slate-900/80">
+                  <tr>
+                    <th className="p-2 text-right">Name</th>
+                    <th className="p-2 text-right">Role</th>
+                    <th className="p-2 text-right">Employee ID</th>
+                    <th className="p-2 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hrStaff.length > 0 ? (
+                    hrStaff.map((staff) => (
+                      <tr key={staff.id ?? JSON.stringify(staff)} className="border-t border-slate-800">
+                        <td className="p-2">{staff?.name ?? "—"}</td>
+                        <td className="p-2">{staff?.role ?? "—"}</td>
+                        <td className="p-2">{staff?.employee_id ?? "—"}</td>
+                        <td className="p-2">{staff?.status ?? "active"}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="p-2 text-slate-400" colSpan={4}>
+                        No Supabase HR staff loaded.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </CardContent>
           </Card>
 

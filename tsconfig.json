@@ -15,11 +15,9 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] },
     "types": ["vite/client"]
   },

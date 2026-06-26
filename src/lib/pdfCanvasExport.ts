@@ -115,7 +115,8 @@ export async function downloadPdfFromFullHtmlDocument(
       pdf.addImage(imgData, "PNG", 0, position, imgWmm, imgHmm, undefined, "SLOW");
       heightLeft -= pageH;
 
-      while (heightLeft > 0) {
+      const pageThresholdMm = 2;
+      while (heightLeft > pageThresholdMm) {
         position = heightLeft - imgHmm;
         pdf.addPage();
         pdf.addImage(imgData, "PNG", 0, position, imgWmm, imgHmm, undefined, "SLOW");
@@ -123,7 +124,20 @@ export async function downloadPdfFromFullHtmlDocument(
       }
     }
 
-    pdf.save(safeName);
+    // استخدام Blob ونوع MIME يفرض التنزيل لتجنب فتح الملف في محرر Cursor أو نافذة المعاينة
+    const blob = pdf.output("blob");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = safeName;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    
+    setTimeout(() => {
+      if (document.body.contains(link)) document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 1000);
   } finally {
     document.body.removeChild(iframe);
   }

@@ -27,10 +27,11 @@ export function normalizeDatabaseConnectionString(raw: string): string {
 }
 
 function requireDatabaseUrl(): string {
-  const u = normalizeDatabaseConnectionString(process.env.DATABASE_URL?.trim() ?? "");
+  const raw = process.env.DIRECT_URL?.trim() || process.env.DATABASE_URL?.trim() || "";
+  const u = normalizeDatabaseConnectionString(raw);
   if (!u) {
     throw new Error(
-      "DATABASE_URL مفقود. أضفوه في .env أو Vercel (مثال: postgres://user:pass@host:5432/dbname)"
+      "DATABASE_URL أو DIRECT_URL مفقود. أضفوهما في .env أو Vercel (مثال: postgres://user:pass@host:5432/dbname)"
     );
   }
   return u;
@@ -114,6 +115,19 @@ export function getPool(): Pool {
 
 let initPromise: Promise<void> | null = null;
 
+function isTransientDbError(e: unknown): boolean {
+  const err = e && typeof e === "object" ? (e as Record<string, unknown>) : null;
+  const code = err && typeof err.code === "string" ? err.code : "";
+  const msg = (e instanceof Error ? e.message : String(e)).toLowerCase();
+  return (
+    code === "ETIMEDOUT" ||
+    code === "ECONNREFUSED" ||
+    code === "ECONNRESET" ||
+    msg.includes("timeout") ||
+    msg.includes("connection terminated")
+  );
+}
+
 /** ينفّذ schema.sql — يفضّل DIRECT_URL (منفذ 5432) لأن PgBouncer 6543 قد يقيّد بعض أوامر DDL الكبيرة. */
 export async function initDatabase(): Promise<void> {
   if (!initPromise) {
@@ -122,21 +136,36 @@ export async function initDatabase(): Promise<void> {
       const sql = fs.readFileSync(schemaPath, "utf8");
       const conn = requireInitDatabaseUrl();
       const cfg = buildPoolConfigForUrl(conn);
-      const initPool = new Pool({ ...cfg, max: 1 });
-      try {
-        await initPool.query(sql);
-      } catch (e) {
-        console.error(
-          "[db] initDatabase (schema) failed — check DIRECT_URL / DATABASE_URL, sslmode, and password from Supabase:",
-          e instanceof Error ? e.message : e
-        );
-        throw e;
-      } finally {
-        await initPool.end().catch(() => undefined);
+      const maxAttempts = Math.max(1, Number(process.env.PG_INIT_RETRIES ?? 3) || 3);
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const initPool = new Pool({ ...cfg, max: 1 });
+        try {
+          await initPool.query(sql);
+          return;
+        } catch (e) {
+          lastErr = e;
+          const retryable = isTransientDbError(e) && attempt < maxAttempts;
+          console.error(
+            `[db] initDatabase (schema) attempt ${attempt}/${maxAttempts} failed — check DIRECT_URL / DATABASE_URL, sslmode, and password from Supabase:`,
+            e instanceof Error ? e.message : e
+          );
+          if (!retryable) break;
+          await new Promise((r) => setTimeout(r, Math.min(8000, 1500 * attempt)));
+        } finally {
+          await initPool.end().catch(() => undefined);
+        }
       }
+      initPromise = null;
+      throw lastErr;
     })();
   }
-  await initPromise;
+  try {
+    await initPromise;
+  } catch (e) {
+    initPromise = null;
+    throw e;
+  }
 }
 
 /** يحوّل `?` إلى $1,$2,... لـ node-pg */

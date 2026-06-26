@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Bus,
@@ -13,9 +13,11 @@ import {
   Wrench,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { TL_DEPT_SLUGS, type TlDeptSlug } from "@/lib/tlApi";
+import { fetchLogisticsQueue, assignLogisticsItem } from "@/lib/supabaseClient";
 
 const DEPT_ICONS: Record<TlDeptSlug, ReactNode> = {
   transport: <Train className="size-8 text-sky-400" />,
@@ -28,6 +30,9 @@ const DEPT_ICONS: Record<TlDeptSlug, ReactNode> = {
 
 export function TransportLogisticsHub() {
   const { t } = useI18n();
+  const [logisticsQueue, setLogisticsQueue] = useState<any[]>([]);
+  const [logisticsBusy, setLogisticsBusy] = useState(false);
+
   /** نفس منشأ الصفحة إن وُجد (يتفادى اختلاف www/apex عن VITE_PUBLIC_APP_URL عند نسخ الرابط أو فتح الـ manifest). */
   const shareOrigin = useMemo(() => {
     if (typeof window !== "undefined") {
@@ -35,6 +40,35 @@ export function TransportLogisticsHub() {
     }
     return getPublicOrigin().replace(/\/$/, "");
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const queue = await fetchLogisticsQueue();
+        if (active) setLogisticsQueue(Array.isArray(queue) ? queue : []);
+      } catch (error) {
+        console.error("[tl hub] fetchLogisticsQueue failed", error);
+        if (active) setLogisticsQueue([]);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const assignAutoDispatch = async (id: string) => {
+    setLogisticsBusy(true);
+    try {
+      await assignLogisticsItem(id, "auto-dispatch");
+      const queue = await fetchLogisticsQueue();
+      setLogisticsQueue(Array.isArray(queue) ? queue : []);
+    } catch (error) {
+      console.error("[tl hub] assignAutoDispatch failed", error);
+    } finally {
+      setLogisticsBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-8 max-w-5xl pb-16">
@@ -97,6 +131,47 @@ export function TransportLogisticsHub() {
           );
         })}
       </div>
+
+      <Card className="border-slate-800 bg-[#0a1628]/90">
+        <CardHeader className="border-b border-slate-800">
+          <p className="font-black text-white">Logistics Queue</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {logisticsQueue.length ? (
+            <div className="overflow-x-auto rounded-xl border border-slate-800 bg-[#020715]/80">
+              <table className="w-full text-sm text-slate-200">
+                <thead>
+                  <tr className="text-left border-b border-slate-700 text-slate-400">
+                    <th className="py-2 pe-4">Item</th>
+                    <th className="py-2 pe-4">Status</th>
+                    <th className="py-2">Assign</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logisticsQueue.map((item) => (
+                    <tr key={item.id} className="border-t border-slate-800">
+                      <td className="py-2">{item.title ?? item.id}</td>
+                      <td className="py-2 text-slate-300">{item.status ?? "pending"}</td>
+                      <td className="py-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={logisticsBusy}
+                          onClick={() => void assignAutoDispatch(item.id)}
+                        >
+                          Assign
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-slate-400">No logistics queue items available.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="rounded-xl border border-cyan-500/20 bg-cyan-950/20 p-4 text-sm text-cyan-100/90">
         <p className="flex items-center gap-2 font-semibold text-cyan-300">

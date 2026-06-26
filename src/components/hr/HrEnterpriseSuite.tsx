@@ -6,7 +6,10 @@ import {
   ClipboardList,
   Download,
   FileText,
+  ImagePlus,
   Loader2,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import { AiGenerateButton } from "@/components/AiGenerateButton";
 import { Button } from "@/components/ui/button";
@@ -31,6 +34,7 @@ import { downloadHtmlAsWord } from "@/lib/wordExport";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { todayIsoLocal } from "@/lib/todayIso";
+import { tlSendMessage, tlWorkers, type TlWorker } from "@/lib/tlApi";
 
 type Employee = {
   id: string;
@@ -49,6 +53,26 @@ type AbsenceRow = {
   reason: string;
 };
 
+type PayrollForm = {
+  employeeName: string;
+  employeeId: string;
+  period: string;
+  gross: string;
+  cnss: string;
+  amo: string;
+  ipe: string;
+  mutual: string;
+  mutualId: string;
+  paidLeave: string;
+  overtime125: string;
+  overtime150: string;
+  overtime200: string;
+  seniorityBonus: string;
+  attendanceBonus: string;
+  productivityBonus: string;
+  advanceSalary: string;
+};
+
 function minutesFromTime(value: string): number | null {
   const [h, m] = value.split(":").map(Number);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
@@ -63,12 +87,53 @@ function analyzeAttendance(scheduledStart: string, actualCheckIn: string) {
   return { minutesLate, absent: minutesLate >= 240, late: minutesLate >= 10 };
 }
 
-function payrollFromGross(gross: string) {
-  const grossSalary = Math.max(0, Number(gross) || 0);
-  const cnss = Math.min(grossSalary, 6000) * 0.0448;
-  const amo = grossSalary * 0.0226;
-  const netSalary = Math.max(0, grossSalary - cnss - amo);
-  return { grossSalary, cnss, amo, netSalary };
+function numericAmount(value: string): number {
+  return Math.max(0, Number(String(value || "").replace(",", ".")) || 0);
+}
+
+function payrollFromForm(form: PayrollForm) {
+  const baseSalary = numericAmount(form.gross);
+  const paidLeave = numericAmount(form.paidLeave);
+  const overtime125 = numericAmount(form.overtime125);
+  const overtime150 = numericAmount(form.overtime150);
+  const overtime200 = numericAmount(form.overtime200);
+  const seniorityBonus = numericAmount(form.seniorityBonus);
+  const attendanceBonus = numericAmount(form.attendanceBonus);
+  const productivityBonus = numericAmount(form.productivityBonus);
+  const totalBrut =
+    baseSalary +
+    paidLeave +
+    overtime125 +
+    overtime150 +
+    overtime200 +
+    seniorityBonus +
+    attendanceBonus +
+    productivityBonus;
+  const cnss = form.cnss.trim() ? numericAmount(form.cnss) : Math.min(totalBrut, 6000) * 0.0448;
+  const amo = form.amo.trim() ? numericAmount(form.amo) : totalBrut * 0.0226;
+  const ipe = form.ipe.trim() ? numericAmount(form.ipe) : totalBrut * 0.0019;
+  const mutual = numericAmount(form.mutual);
+  const advanceSalary = numericAmount(form.advanceSalary);
+  const totalCotisations = cnss + amo + ipe + mutual;
+  const netSalary = Math.max(0, totalBrut - totalCotisations - advanceSalary);
+  return {
+    baseSalary,
+    paidLeave,
+    overtime125,
+    overtime150,
+    overtime200,
+    seniorityBonus,
+    attendanceBonus,
+    productivityBonus,
+    cnss,
+    amo,
+    ipe,
+    mutual,
+    advanceSalary,
+    totalBrut,
+    totalCotisations,
+    netSalary,
+  };
 }
 
 function pdfLang(locale: AppLocale): string {
@@ -85,6 +150,9 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
 
   const [branding, setBranding] = useState<HrBranding>({ companyName: "" });
   const [loadingBrand, setLoadingBrand] = useState(true);
+  const [savingBranding, setSavingBranding] = useState(false);
+  const [brandingStatus, setBrandingStatus] = useState("");
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const [absences, setAbsences] = useState<AbsenceRow[]>([]);
   const [absForm, setAbsForm] = useState({
@@ -141,17 +209,34 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
     endDate: "",
   });
 
-  const [certSalary, setCertSalary] = useState({
+  const [certSalary, setCertSalary] = useState<PayrollForm>({
     employeeName: "",
     employeeId: "",
     period: "",
     gross: "",
     cnss: "",
     amo: "",
+    ipe: "",
     mutual: "",
     mutualId: "",
+    paidLeave: "0",
+    overtime125: "0",
+    overtime150: "0",
+    overtime200: "0",
+    seniorityBonus: "0",
+    attendanceBonus: "0",
+    productivityBonus: "0",
+    advanceSalary: "0",
   });
-  const salaryCalc = useMemo(() => payrollFromGross(certSalary.gross), [certSalary.gross]);
+  const salaryCalc = useMemo(() => payrollFromForm(certSalary), [certSalary]);
+  const [bridgeWorkers, setBridgeWorkers] = useState<TlWorker[]>([]);
+  const [bridgeInventoryCount, setBridgeInventoryCount] = useState(0);
+  const [bridgeSenderId, setBridgeSenderId] = useState("");
+  const [bridgeRecipientId, setBridgeRecipientId] = useState("");
+  const [bridgeBody, setBridgeBody] = useState("");
+  const [bridgeStatus, setBridgeStatus] = useState("");
+  const [isBridgeLoading, setIsBridgeLoading] = useState(false);
+  const [isBridgeSending, setIsBridgeSending] = useState(false);
   const attendanceCalc = useMemo(
     () => analyzeAttendance(attendanceAi.scheduledStart, attendanceAi.actualCheckIn),
     [attendanceAi.actualCheckIn, attendanceAi.scheduledStart]
@@ -179,6 +264,96 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
   useEffect(() => {
     void loadBranding();
   }, [loadBranding]);
+
+  const saveBranding = async () => {
+    if (!token) return;
+    setSavingBranding(true);
+    setBrandingStatus("");
+    try {
+      await api("/user/branding", {
+        method: "PUT",
+        token,
+        body: JSON.stringify({
+          companyName: branding.companyName,
+          logoDataUrl: branding.logoDataUrl ?? "",
+        }),
+      });
+      setBrandingStatus(t("hr.enterprise.brandingSaved"));
+    } catch (error) {
+      setBrandingStatus(error instanceof Error ? error.message : t("auth.errGeneric"));
+    } finally {
+      setSavingBranding(false);
+    }
+  };
+
+  const handleLogoUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const logoDataUrl = String(reader.result || "");
+      if (logoDataUrl.startsWith("data:image")) {
+        setBranding((current) => ({ ...current, logoDataUrl }));
+        setBrandingStatus(t("hr.enterprise.logoReady"));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const loadBridgeData = useCallback(async () => {
+    if (!token) return;
+    setIsBridgeLoading(true);
+    try {
+      const [workersResult, inventoryResult] = await Promise.allSettled([
+        tlWorkers(token),
+        api<{ products?: unknown[] }>("/inventory/products", { token }),
+      ]);
+      const workers = workersResult.status === "fulfilled" ? workersResult.value.workers : [];
+      const products =
+        inventoryResult.status === "fulfilled" && Array.isArray(inventoryResult.value.products)
+          ? inventoryResult.value.products.length
+          : 0;
+      setBridgeWorkers(workers);
+      setBridgeInventoryCount(products);
+      setBridgeSenderId((prev) => prev || workers[0]?.id || "");
+      setBridgeRecipientId((prev) => prev || workers.find((worker) => worker.id !== workers[0]?.id)?.id || workers[1]?.id || "");
+    } finally {
+      setIsBridgeLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void loadBridgeData();
+  }, [loadBridgeData]);
+
+  const payrollBridgeSummary = useMemo(
+    () =>
+      `${t("hr.enterprise.salarySlipTitle")} - ${certSalary.employeeName || "—"} / ${certSalary.period || "—"}\n` +
+      `${t("hr.enterprise.totalBrut")}: ${salaryCalc.totalBrut.toFixed(2)} MAD\n` +
+      `${t("hr.enterprise.totalCotisations")}: ${salaryCalc.totalCotisations.toFixed(2)} MAD\n` +
+      `${t("hr.enterprise.netSalary")}: ${salaryCalc.netSalary.toFixed(2)} MAD`,
+    [certSalary.employeeName, certSalary.period, salaryCalc.netSalary, salaryCalc.totalBrut, salaryCalc.totalCotisations, t]
+  );
+
+  const sendBridgeMessage = async () => {
+    if (!token || !bridgeSenderId || !bridgeRecipientId) return;
+    setIsBridgeSending(true);
+    setBridgeStatus("");
+    try {
+      await tlSendMessage(token, {
+        from_worker_id: bridgeSenderId,
+        to_worker_id: bridgeRecipientId,
+        body: bridgeBody.trim() || payrollBridgeSummary,
+      });
+      setBridgeBody("");
+      setBridgeStatus(t("hr.enterprise.bridgeSent"));
+    } catch (error) {
+      setBridgeStatus(error instanceof Error ? error.message : t("auth.errGeneric"));
+    } finally {
+      setIsBridgeSending(false);
+    }
+  };
 
   const applyEmployeePick = (id: string) => {
     const e = employees.find((x) => x.id === id);
@@ -841,7 +1016,35 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
               <CardTitle className="text-base">{t("hr.enterprise.certSalaryTitle")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid sm:grid-cols-2 gap-3">
+              <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+              <div className="rounded-2xl border border-cyan-300/30 bg-gradient-to-br from-cyan-500/15 via-slate-950/80 to-emerald-500/10 p-4">
+                <div className="grid gap-3 lg:grid-cols-[120px_1fr_auto] lg:items-end">
+                  <div className="flex h-24 w-full items-center justify-center rounded-2xl border border-white/10 bg-white/10 p-2">
+                    {branding.logoDataUrl?.startsWith("data:image") ? (
+                      <img src={branding.logoDataUrl} alt="" className="max-h-20 max-w-full object-contain" />
+                    ) : (
+                      <ImagePlus className="size-8 text-cyan-200" />
+                    )}
+                  </div>
+                  <Field
+                    label={t("hr.enterprise.companyName")}
+                    value={branding.companyName}
+                    onChange={(companyName) => setBranding((current) => ({ ...current, companyName }))}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" className="gap-2" onClick={() => logoInputRef.current?.click()}>
+                      <ImagePlus className="size-4" />
+                      {t("hr.enterprise.uploadLogo")}
+                    </Button>
+                    <Button type="button" className="gap-2 bg-emerald-400 text-emerald-950 hover:bg-emerald-300" disabled={savingBranding} onClick={() => void saveBranding()}>
+                      {savingBranding ? t("common.processing") : t("common.save")}
+                    </Button>
+                  </div>
+                </div>
+                {brandingStatus && <p className="mt-3 text-xs text-emerald-100">{brandingStatus}</p>}
+              </div>
+
+              <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
                 <Field
                   label={t("auth.fullName")}
                   value={certSalary.employeeName}
@@ -864,14 +1067,54 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                   onChange={(v) => setCertSalary((f) => ({ ...f, gross: v }))}
                 />
                 <Field
-                  label="CNSS"
+                  label={t("hr.enterprise.paidLeave")}
+                  value={certSalary.paidLeave}
+                  onChange={(v) => setCertSalary((f) => ({ ...f, paidLeave: v }))}
+                />
+                <Field
+                  label={t("hr.enterprise.overtime125")}
+                  value={certSalary.overtime125}
+                  onChange={(v) => setCertSalary((f) => ({ ...f, overtime125: v }))}
+                />
+                <Field
+                  label={t("hr.enterprise.overtime150")}
+                  value={certSalary.overtime150}
+                  onChange={(v) => setCertSalary((f) => ({ ...f, overtime150: v }))}
+                />
+                <Field
+                  label={t("hr.enterprise.overtime200")}
+                  value={certSalary.overtime200}
+                  onChange={(v) => setCertSalary((f) => ({ ...f, overtime200: v }))}
+                />
+                <Field
+                  label={t("hr.enterprise.seniorityBonus")}
+                  value={certSalary.seniorityBonus}
+                  onChange={(v) => setCertSalary((f) => ({ ...f, seniorityBonus: v }))}
+                />
+                <Field
+                  label={t("hr.enterprise.attendanceBonus")}
+                  value={certSalary.attendanceBonus}
+                  onChange={(v) => setCertSalary((f) => ({ ...f, attendanceBonus: v }))}
+                />
+                <Field
+                  label={t("hr.enterprise.productivityBonus")}
+                  value={certSalary.productivityBonus}
+                  onChange={(v) => setCertSalary((f) => ({ ...f, productivityBonus: v }))}
+                />
+                <Field
+                  label={t("hr.enterprise.cnss")}
                   value={certSalary.cnss}
                   onChange={(v) => setCertSalary((f) => ({ ...f, cnss: v }))}
                 />
                 <Field
-                  label="AMO"
+                  label={t("hr.enterprise.amo")}
                   value={certSalary.amo}
                   onChange={(v) => setCertSalary((f) => ({ ...f, amo: v }))}
+                />
+                <Field
+                  label={t("hr.enterprise.ipe")}
+                  value={certSalary.ipe}
+                  onChange={(v) => setCertSalary((f) => ({ ...f, ipe: v }))}
                 />
                 <Field
                   label={t("hr.enterprise.mutual")}
@@ -883,14 +1126,78 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                   value={certSalary.mutualId}
                   onChange={(v) => setCertSalary((f) => ({ ...f, mutualId: v }))}
                 />
+                <Field
+                  label={t("hr.enterprise.advanceSalary")}
+                  value={certSalary.advanceSalary}
+                  onChange={(v) => setCertSalary((f) => ({ ...f, advanceSalary: v }))}
+                />
               </div>
               <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm shadow-[0_0_28px_rgba(52,211,153,0.18)]">
                 <div className="font-bold text-emerald-100">{t("hr.enterprise.autoDeductions")}</div>
-                <div className="mt-2 grid sm:grid-cols-4 gap-2 text-slate-200">
-                  <span>Brut: {salaryCalc.grossSalary.toFixed(2)} MAD</span>
+                <div className="mt-2 grid sm:grid-cols-3 xl:grid-cols-6 gap-2 text-slate-200">
+                  <span>{t("hr.enterprise.totalBrut")}: {salaryCalc.totalBrut.toFixed(2)} MAD</span>
                   <span>CNSS: {salaryCalc.cnss.toFixed(2)} MAD</span>
                   <span>AMO: {salaryCalc.amo.toFixed(2)} MAD</span>
+                  <span>IPE: {salaryCalc.ipe.toFixed(2)} MAD</span>
+                  <span>{t("hr.enterprise.totalCotisations")}: {salaryCalc.totalCotisations.toFixed(2)} MAD</span>
                   <span className="font-bold text-emerald-200">{t("hr.enterprise.netSalary")}: {salaryCalc.netSalary.toFixed(2)} MAD</span>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-sky-300/25 bg-sky-500/10 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="flex items-center gap-2 font-bold text-sky-100">
+                      <MessageSquare className="size-4" />
+                      {t("hr.enterprise.bridgeTitle")}
+                    </p>
+                    <p className="text-xs text-slate-400">{t("hr.enterprise.bridgeDesc")}</p>
+                  </div>
+                  <Button type="button" size="sm" variant="outline" disabled={isBridgeLoading} onClick={() => void loadBridgeData()}>
+                    {isBridgeLoading ? t("common.processing") : t("barcode.refresh")}
+                  </Button>
+                </div>
+                <div className="mb-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                  <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    {t("hr.enterprise.bridgeWorkers")}: {bridgeWorkers.length}
+                  </span>
+                  <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                    {t("hr.enterprise.bridgeInventory")}: {bridgeInventoryCount}
+                  </span>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-semibold text-slate-300">{t("hr.enterprise.bridgeSender")}</span>
+                    <select className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-white" value={bridgeSenderId} onChange={(event) => setBridgeSenderId(event.target.value)}>
+                      {bridgeWorkers.map((worker) => (
+                        <option key={worker.id} value={worker.id}>
+                          {worker.full_name} · {worker.department}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1.5">
+                    <span className="text-xs font-semibold text-slate-300">{t("hr.enterprise.bridgeRecipient")}</span>
+                    <select className="h-10 w-full rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-white" value={bridgeRecipientId} onChange={(event) => setBridgeRecipientId(event.target.value)}>
+                      {bridgeWorkers.filter((worker) => worker.id !== bridgeSenderId).map((worker) => (
+                        <option key={worker.id} value={worker.id}>
+                          {worker.full_name} · {worker.department}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <textarea
+                  className="mt-3 min-h-20 w-full rounded-xl border border-slate-700 bg-slate-900/50 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+                  value={bridgeBody}
+                  onChange={(event) => setBridgeBody(event.target.value)}
+                  placeholder={payrollBridgeSummary}
+                />
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button type="button" className="gap-2 bg-sky-400 text-sky-950 hover:bg-sky-300" disabled={isBridgeSending || !bridgeSenderId || !bridgeRecipientId} onClick={() => void sendBridgeMessage()}>
+                    <Send className="size-4" />
+                    {isBridgeSending ? t("common.processing") : t("hr.enterprise.bridgeSend")}
+                  </Button>
+                  {bridgeStatus && <span className="text-xs text-sky-100">{bridgeStatus}</span>}
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -905,10 +1212,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                         employeeName: certSalary.employeeName || "—",
                         employeeId: certSalary.employeeId || "—",
                         period: certSalary.period || "—",
-                        grossSalary: salaryCalc.grossSalary,
-                        cnss: salaryCalc.cnss,
-                        amo: salaryCalc.amo,
-                        netSalary: salaryCalc.netSalary,
+                        ...salaryCalc,
                         dir,
                         locale: appLocale,
                       }),
@@ -931,10 +1235,7 @@ export function HrEnterpriseSuite({ employees }: { employees: Employee[] }) {
                         employeeName: certSalary.employeeName || "—",
                         employeeId: certSalary.employeeId || "—",
                         period: certSalary.period || "—",
-                        grossSalary: salaryCalc.grossSalary,
-                        cnss: salaryCalc.cnss,
-                        amo: salaryCalc.amo,
-                        netSalary: salaryCalc.netSalary,
+                        ...salaryCalc,
                         dir,
                         locale: appLocale,
                       }),

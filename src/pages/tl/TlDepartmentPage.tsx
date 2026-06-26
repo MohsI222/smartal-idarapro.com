@@ -33,7 +33,7 @@ import {
   tlCreateVehicle,
   tlDeleteOps,
   tlDeleteVehicle,
-  tlFetchMessageAttachmentBlob,
+  tlDownloadMessageAttachment,
   tlIncidents,
   tlMessageRecipients,
   tlMessages,
@@ -405,10 +405,7 @@ export function TlDepartmentPage() {
   const openAttachment = async (m: TlMessage) => {
     if (!token || !m.attachment_stored_path) return;
     try {
-      const blob = await tlFetchMessageAttachmentBlob(token, m.id);
-      const u = URL.createObjectURL(blob);
-      window.open(u, "_blank", "noopener,noreferrer");
-      window.setTimeout(() => URL.revokeObjectURL(u), 60_000);
+      await tlDownloadMessageAttachment(token, m.id, m.attachment_original_name || "download");
     } catch {
       toast.error(t("tl.downloadFail"));
     }
@@ -685,13 +682,11 @@ export function TlDepartmentPage() {
                             onClick={async () => {
                               if (!token) return;
                               try {
-                                const blob = await tlFetchMessageAttachmentBlob(token, m.id);
-                                const u = URL.createObjectURL(blob);
-                                const a = document.createElement("a");
-                                a.href = u;
-                                a.download = m.attachment_original_name ?? "attachment";
-                                a.click();
-                                URL.revokeObjectURL(u);
+                                await tlDownloadMessageAttachment(
+                                  token,
+                                  m.id,
+                                  m.attachment_original_name ?? "attachment"
+                                );
                               } catch {
                                 toast.error(t("tl.downloadFail"));
                               }

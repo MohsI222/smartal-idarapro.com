@@ -39,10 +39,11 @@ export function isPrimaryAdminUser(email: string, name: string): boolean {
 export const PRIMARY_ADMIN_SESSION_MS =
   (Number(process.env.PRIMARY_ADMIN_JWT_YEARS) || 10) * 365 * 864e5;
 
-/** كل الأقسام — اشتراك معتمد فوراً (SaaS). رادار التأشيرة يُدار بموافقة منفصلة (visa_unlock_approved). */
+/** كل الأقسام — اشتراك معتمد فوراً (SaaS). رادار التأشيرة مدمج في libraries_plus و enterprises_schools. */
 export const FULL_MODULES_JSON = JSON.stringify([
   "hr",
   "law",
+  "lawyer",
   "acc",
   "public",
   "edu",
@@ -53,6 +54,13 @@ export const FULL_MODULES_JSON = JSON.stringify([
   "gov",
   "legal_ai",
   "media_lab",
+  "transport_logistics",
+  "chat",
+  "edu_print",
+  "tools",
+  "reminders",
+  "auto_real_estate",
+  "visa",
 ]);
 
 /** مدة الاشتراك بعد الموافقة (بالأيام) */

@@ -3,6 +3,7 @@ import { escapeHtmlPdf } from "@/lib/htmlEscape";
 import { applyBordersToRange, styleDataRow, styleHeaderRow, styleTitleRow } from "@/lib/excelStyles";
 import { ensureExportLibrariesReady } from "@/lib/exportLibraries";
 import { exportSmartAlIdaraPdfPreferBackend } from "@/lib/pdfExport";
+import { fixArabicText } from "@/lib/arabicPdfText";
 
 export type DashboardExportPayload = {
   companyName: string;
@@ -31,7 +32,7 @@ function logoBlock(logoDataUrl: string, companyName: string, isRtl: boolean): st
   return `
     <div style="margin-bottom:16px;text-align:${align};">
       <img class="print-keep" src="${logoDataUrl}" alt="" style="max-height:64px;max-width:200px;object-fit:contain;" />
-      ${companyName ? `<p style="margin:8px 0 0;font-weight:800;font-size:14px;">${escapeHtmlPdf(companyName)}</p>` : ""}
+      ${companyName ? `<p style="margin:8px 0 0;font-weight:800;font-size:14px;">${escapeHtmlPdf(fixArabicText(companyName))}</p>` : ""}
     </div>
   `;
 }
@@ -55,8 +56,8 @@ export async function exportDashboardPdf(
         ${rows
           .map(
             (r) =>
-              `<tr><td style="border:1px solid #0f172a;padding:8px;font-weight:700;">${escapeHtmlPdf(String(r[0]))}</td>` +
-              `<td style="border:1px solid #0f172a;padding:8px;">${escapeHtmlPdf(String(r[1]))}</td></tr>`
+              `<tr><td style="border:1px solid #0f172a;padding:8px;font-weight:700;">${escapeHtmlPdf(fixArabicText(String(r[0])))}</td>` +
+              `<td style="border:1px solid #0f172a;padding:8px;">${escapeHtmlPdf(fixArabicText(String(r[1])))}</td></tr>`
           )
           .join("")}
       </tbody>
@@ -64,7 +65,7 @@ export async function exportDashboardPdf(
   `;
   const inner = `
     ${logoBlock(logoDataUrl, companyName, opts.isRtl)}
-    <h2 style="color:#0f172a;font-size:16px;font-weight:800;margin-bottom:12px;">${escapeHtmlPdf(labels.title)}</h2>
+    <h2 style="color:#0f172a;font-size:16px;font-weight:800;margin-bottom:12px;">${escapeHtmlPdf(fixArabicText(labels.title))}</h2>
     ${table}
   `;
   await exportSmartAlIdaraPdfPreferBackend({

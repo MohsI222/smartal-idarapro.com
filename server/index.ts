@@ -79,6 +79,7 @@ import {
 const TRIAL_MODULE_IDS = new Set([
   "hr",
   "law",
+  "lawyer",
   "acc",
   "public",
   "edu",
@@ -115,10 +116,15 @@ const uploadTl = multer({
     const mime = (file.mimetype || "").toLowerCase();
     const ok =
       mime.includes("pdf") ||
+      mime.startsWith("image/") ||
       mime.includes("spreadsheet") ||
       mime.includes("excel") ||
       mime.includes("csv") ||
       n.endsWith(".pdf") ||
+      n.endsWith(".jpg") ||
+      n.endsWith(".jpeg") ||
+      n.endsWith(".png") ||
+      n.endsWith(".webp") ||
       n.endsWith(".xlsx") ||
       n.endsWith(".xls") ||
       n.endsWith(".csv");
@@ -215,14 +221,24 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "smart-al-idara-pro" });
 });
 
-const dbReady = (async () => {
-  await initDatabase();
-  await ensureSuperAdmin();
-})();
+let dbReadyPromise: Promise<void> | null = null;
+
+async function ensureDbReady(): Promise<void> {
+  if (!dbReadyPromise) {
+    dbReadyPromise = (async () => {
+      await initDatabase();
+      await ensureSuperAdmin();
+    })().catch((e) => {
+      dbReadyPromise = null;
+      throw e;
+    });
+  }
+  await dbReadyPromise;
+}
 
 app.get("/api/health/db", async (_req, res, next) => {
   try {
-    await dbReady;
+    await ensureDbReady();
     await db.prepare("SELECT 1 AS o").get();
     res.json({ ok: true, db: true });
   } catch (e) {
@@ -232,7 +248,7 @@ app.get("/api/health/db", async (_req, res, next) => {
 
 app.use(async (_req, _res, next) => {
   try {
-    await dbReady;
+    await ensureDbReady();
     next();
   } catch (e) {
     next(e);
@@ -247,6 +263,33 @@ const upload = multer({ dest: uploadDir, limits: { fileSize: 8 * 1024 * 1024 } }
 const uploadMemory = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 12 * 1024 * 1024 },
+});
+const uploadInternal = multer({
+  dest: uploadDir,
+  limits: { fileSize: 12 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const name = String(file.originalname ?? "").toLowerCase();
+    const mime = String(file.mimetype ?? "").toLowerCase();
+    const ok =
+      mime.startsWith("image/") ||
+      mime.includes("pdf") ||
+      mime.includes("spreadsheet") ||
+      mime.includes("excel") ||
+      mime.includes("csv") ||
+      mime.includes("word") ||
+      mime.includes("text") ||
+      mime.includes("zip") ||
+      name.endsWith(".pdf") ||
+      name.endsWith(".xlsx") ||
+      name.endsWith(".xls") ||
+      name.endsWith(".csv") ||
+      name.endsWith(".doc") ||
+      name.endsWith(".docx") ||
+      name.endsWith(".txt") ||
+      name.endsWith(".zip");
+    if (ok) cb(null, true);
+    else cb(new Error("file_type"));
+  },
 });
 
 const MAX_DEVICES = 3;
@@ -283,6 +326,10 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
         const method = req.method;
         const allowed =
           path === "/api/me" ||
+          path === "/api/subscription/request" ||
+          path === "/api/subscription/status" ||
+          path === "/api/visa/request-unlock" ||
+          path === "/api/devices/remove" ||
           (path === "/api/support/messages" && (method === "GET" || method === "POST"));
         if (!allowed) {
           res.status(403).json({ error: "account_locked", code: "ACCOUNT_LOCKED" });
@@ -1052,13 +1099,14 @@ app.post("/api/admin/approve/:subId", authMiddleware, superAdminOnly, async (req
   const subId = paramString(req.params.subId);
   const row = await db
     .prepare(
-      `SELECT id, user_id, plan_id, billing_period FROM subscriptions WHERE id = ? AND status = 'pending'`
+      `SELECT id, user_id, plan_id, modules, billing_period FROM subscriptions WHERE id = ? AND status = 'pending'`
     )
     .get(subId) as
     | {
         id: string;
         user_id: string;
         plan_id: string;
+        modules: string;
         billing_period: string | null;
       }
     | undefined;
@@ -1071,7 +1119,12 @@ app.post("/api/admin/approve/:subId", authMiddleware, superAdminOnly, async (req
       ? 365
       : SUBSCRIPTION_PERIOD_DAYS;
   const endsAt = new Date(Date.now() + days * 86400000).toISOString();
-  if (row.plan_id === "visa_premium") {
+  const unlockVisa =
+    row.plan_id === "visa_premium" ||
+    row.modules.includes('"visa"') ||
+    row.plan_id === "libraries_plus" ||
+    row.plan_id === "enterprises_schools";
+  if (unlockVisa) {
     await db.prepare(`UPDATE users SET visa_unlock_approved = 1 WHERE id = ?`).run(row.user_id);
   }
   const r = await db
@@ -1193,6 +1246,33 @@ app.post("/api/admin/users/:targetUserId/locked", authMiddleware, superAdminOnly
   await db.prepare("UPDATE users SET account_locked = ? WHERE id = ?").run(locked ? 1 : 0, targetUserId);
   res.json({ ok: true });
 });
+
+app.post(
+  "/api/admin/users/:targetUserId/reset-devices",
+  authMiddleware,
+  superAdminOnly,
+  async (req, res) => {
+    const adminId = (req as express.Request & { userId: string }).userId;
+    const targetUserId = paramString(req.params.targetUserId);
+    if (targetUserId === adminId) {
+      res.status(400).json({ error: "cannot_reset_self" });
+      return;
+    }
+    const target = await db.prepare("SELECT id, role FROM users WHERE id = ?").get(targetUserId) as
+      | { id: string; role: string }
+      | undefined;
+    if (!target) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+    if (target.role === "superadmin") {
+      res.status(400).json({ error: "cannot_modify_superadmin" });
+      return;
+    }
+    await db.prepare("DELETE FROM devices WHERE user_id = ?").run(targetUserId);
+    res.json({ ok: true });
+  }
+);
 
 /** يدوي: اشتراك «نشط» (معتمد + تاريخ انتهاء في المستقبل) أو «منتهٍ» (معتمد + انتهى) — تخزين محلي فقط */
 app.post(
@@ -1328,6 +1408,77 @@ app.post("/api/support/messages", authMiddleware, async (req, res) => {
     text
   );
   res.json({ ok: true, id });
+});
+
+app.get("/api/internal/messages", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const messages = await db
+    .prepare(
+      `SELECT id, from_admin, body, attachment_name, attachment_path, created_at
+       FROM internal_chat_messages
+       WHERE user_id = ?
+       ORDER BY created_at ASC`
+    )
+    .all(userId);
+  res.json({
+    messages: messages.map((m) => ({
+      ...m,
+      attachment_url: m.attachment_path ? `/api/internal/attachments/${m.id}` : null,
+    })),
+  });
+});
+
+app.post(
+  "/api/internal/messages",
+  authMiddleware,
+  uploadInternal.single("attachment"),
+  async (req, res) => {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const text = String((req.body as { body?: string }).body ?? "").trim();
+    const file = req.file;
+    if (!text && !file) {
+      res.status(400).json({ error: "invalid_message" });
+      return;
+    }
+    if (text.length > 8000) {
+      res.status(400).json({ error: "invalid_message" });
+      return;
+    }
+    const id = randomUUID();
+    await db
+      .prepare(
+        `INSERT INTO internal_chat_messages (id, user_id, from_admin, body, attachment_name, attachment_path)
+         VALUES (?, ?, 0, ?, ?, ?)`
+      )
+      .run(id, userId, text || null, file?.originalname ?? null, file?.path ?? null);
+    res.json({ ok: true, id });
+  }
+);
+
+app.get("/api/internal/attachments/:messageId", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const messageId = String(req.params.messageId ?? "").trim();
+  if (!messageId) {
+    res.status(400).json({ error: "invalid_message_id" });
+    return;
+  }
+  const msg = await db
+    .prepare(
+      `SELECT attachment_name, attachment_path FROM internal_chat_messages WHERE id = ? AND user_id = ?`
+    )
+    .get(messageId, userId) as { attachment_name?: string | null; attachment_path?: string | null } | undefined;
+  if (!msg || !msg.attachment_path) {
+    res.status(404).json({ error: "attachment_not_found" });
+    return;
+  }
+  const filePath = msg.attachment_path;
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ error: "attachment_not_found" });
+    return;
+  }
+  const attachmentName = msg.attachment_name ?? "attachment";
+  res.setHeader("Content-Disposition", `attachment; filename="${attachmentName.replace(/"/g, "\"")}"`);
+  res.sendFile(filePath);
 });
 
 /** تجميع مبيعات المخزون (pos_invoices) عبر كل المستخدمين — يطابق منطق /dashboard/financial-summary */
@@ -1551,8 +1702,35 @@ async function getUserGateFlags(userId: string): Promise<{ bypass: boolean }> {
 
 async function moduleAllowed(userId: string, mod: string): Promise<boolean> {
   if ((await getUserGateFlags(userId)).bypass) return true;
-  /** رادار التأشيرة: لا يُفتح إلا بعد موافقة الأدمن (عمود visa_unlock_approved) */
+  /** رادار التأشيرة: مدمج في الخطة أو موافقة الأدمن (visa_unlock_approved) */
   if (mod === "visa") {
+    const sub = (await db
+      .prepare(
+        `SELECT modules, ends_at, status FROM subscriptions WHERE user_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 1`
+      )
+      .get(userId)) as { modules: string; ends_at: string | null; status: string } | undefined;
+    if (sub) {
+      if (sub.ends_at) {
+        const end = new Date(sub.ends_at).getTime();
+        if (!Number.isFinite(end) || end <= Date.now()) {
+          /* expired — fall through */
+        } else {
+          try {
+            const mods = JSON.parse(sub.modules) as string[];
+            if (Array.isArray(mods) && mods.includes("visa")) return true;
+          } catch {
+            /* ignore */
+          }
+        }
+      } else {
+        try {
+          const mods = JSON.parse(sub.modules) as string[];
+          if (Array.isArray(mods) && mods.includes("visa")) return true;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
     const u = (await db.prepare("SELECT visa_unlock_approved FROM users WHERE id = ?").get(userId)) as
       | { visa_unlock_approved: number }
       | undefined;
@@ -1991,6 +2169,62 @@ app.put("/api/settings/platform", authMiddleware, platformSettingsEditor, async 
     ).run(k, v);
   }
   res.json({ ok: true });
+});
+
+async function hasModuleAccess(userId: string, moduleId: string): Promise<boolean> {
+  const user = await db.prepare("SELECT role, email, name FROM users WHERE id = ?").get(userId) as
+    | { role: string; email: string; name: string }
+    | undefined;
+  if (!user) return false;
+  
+  const isSuperAdmin = user.role === "superadmin" || 
+    user.email?.toLowerCase() === SUPER_ADMIN_EMAIL ||
+    isPrimaryAdminUser(user.email, user.name);
+  if (isSuperAdmin) return true;
+  
+  const sub = await db.prepare(
+    `SELECT modules, status, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
+  ).get(userId) as { modules: string; status: string; ends_at: string | null } | undefined;
+  
+  if (!sub || sub.status !== "approved") return false;
+  
+  if (sub.ends_at) {
+    const end = new Date(sub.ends_at).getTime();
+    if (Number.isFinite(end) && end <= Date.now()) return false;
+  }
+  
+  try {
+    const modules = JSON.parse(sub.modules) as string[];
+    return Array.isArray(modules) && modules.includes(moduleId);
+  } catch {
+    return false;
+  }
+}
+
+app.post("/api/auto-real-estate/save", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const hasAccess = await hasModuleAccess(userId, "auto_real_estate");
+  if (!hasAccess) {
+    res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذا القسم" });
+    return;
+  }
+  const data = req.body as Record<string, unknown>;
+  await db.prepare(
+    `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`
+  ).run(`auto_real_estate_${userId}`, JSON.stringify(data));
+  res.json({ ok: true });
+});
+
+app.get("/api/auto-real-estate/load", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const hasAccess = await hasModuleAccess(userId, "auto_real_estate");
+  if (!hasAccess) {
+    res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذا القسم" });
+    return;
+  }
+  const row = await db.prepare("SELECT value FROM app_settings WHERE key = ?").get(`auto_real_estate_${userId}`) as { value: string } | undefined;
+  res.json({ data: row?.value ? JSON.parse(row.value) : null });
 });
 
 /** ملف تأشيرة — بيانات محفوظة للحجز التلقائي */
@@ -2492,6 +2726,149 @@ app.get("/api/inventory/invoices", authMiddleware, async (req, res) => {
   res.json({ invoices: rows });
 });
 
+function parseProductionRequestRow(row: Record<string, unknown>) {
+  return {
+    ...row,
+    bom_items: (() => {
+      const raw = row.bom_items_json;
+      if (typeof raw !== "string" || !raw.trim()) return [];
+      try {
+        return JSON.parse(raw) as unknown[];
+      } catch {
+        return [];
+      }
+    })(),
+  };
+}
+
+app.get("/api/inventory/production-requests", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const rows = (await db
+    .prepare("SELECT * FROM production_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 200")
+    .all(userId)) as Record<string, unknown>[];
+  res.json({ requests: rows.map(parseProductionRequestRow) });
+});
+
+app.post("/api/inventory/production-requests", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const b = req.body as {
+    title?: string;
+    target_quantity?: number;
+    status?: string;
+    requested_by?: string;
+    bom_items?: Array<{ material_id: string; quantity: number; name?: string; reference?: string; source?: string }>;
+  };
+  const bom = Array.isArray(b.bom_items) ? b.bom_items : [];
+  if (!bom.length) {
+    res.status(400).json({ error: "أضف مواد للإنتاج أولاً" });
+    return;
+  }
+  const id = randomUUID();
+  const title = (b.title ?? "طلب إنتاج").trim().slice(0, 240);
+  const targetQty = Math.max(
+    1,
+    Number(b.target_quantity) || bom.reduce((s, i) => s + Math.max(1, Number(i.quantity) || 1), 0)
+  );
+  const requestedBy = (b.requested_by ?? "inventory-module").trim().slice(0, 120);
+  const status = (b.status ?? "pending").trim().slice(0, 40);
+  const bomJson = JSON.stringify(
+    bom.map((item) => ({
+      material_id: String(item.material_id),
+      quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)),
+      name: item.name?.trim() ?? "",
+      reference: item.reference?.trim() ?? "",
+      source: item.source?.trim() ?? "inventory_products",
+    }))
+  );
+  await db.prepare(
+    `INSERT INTO production_requests (id, user_id, title, target_quantity, status, requested_by, bom_items_json, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`
+  ).run(id, userId, title, targetQty, status, requestedBy, bomJson);
+  const logId = randomUUID();
+  await db.prepare(
+    `INSERT INTO logistics_queue (id, user_id, production_request_id, product_id, assigned_to, status, created_at)
+     VALUES (?, ?, ?, ?, ?, 'scheduled', NOW())`
+  ).run(logId, userId, id, id, requestedBy);
+  const row = (await db.prepare("SELECT * FROM production_requests WHERE id = ? AND user_id = ?").get(id, userId)) as
+    | Record<string, unknown>
+    | undefined;
+  res.json({ request: row ? parseProductionRequestRow(row) : { id, title, target_quantity: targetQty, status } });
+});
+
+app.get("/api/inventory/logistics-queue", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const rows = await db
+    .prepare("SELECT * FROM logistics_queue WHERE user_id = ? ORDER BY created_at DESC LIMIT 200")
+    .all(userId);
+  res.json({ items: rows });
+});
+
+app.patch("/api/inventory/logistics-queue/:id/assign", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const logisticsId = paramString(req.params.id);
+  const assignedTo = String((req.body as { assigned_to?: string }).assigned_to ?? "").trim();
+  if (!assignedTo) {
+    res.status(400).json({ error: "اختر الموظف المكلف" });
+    return;
+  }
+  const r = await db
+    .prepare(
+      `UPDATE logistics_queue SET assigned_to = ?, status = 'scheduled' WHERE id = ? AND user_id = ?`
+    )
+    .run(assignedTo, logisticsId, userId);
+  if (r.changes === 0) {
+    res.status(404).json({ error: "عنصر اللوجستيك غير موجود" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post("/api/inventory/production-reserve", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const b = req.body as { product_id?: string; quantity?: number; source?: string };
+  const productId = String(b.product_id ?? "").trim();
+  const qty = Math.max(1, Math.floor(Number(b.quantity) || 1));
+  if (!productId) {
+    res.status(400).json({ error: "معرف المادة مطلوب" });
+    return;
+  }
+  const row = (await db
+    .prepare("SELECT id, stock_pieces FROM inventory_products WHERE id = ? AND user_id = ?")
+    .get(productId, userId)) as { id: string; stock_pieces: number } | undefined;
+  if (!row) {
+    res.status(404).json({ error: "المنتج غير موجود" });
+    return;
+  }
+  const current = Math.max(0, Number(row.stock_pieces) || 0);
+  if (current < qty) {
+    res.status(400).json({ error: "الكمية غير متوفرة في المخزون" });
+    return;
+  }
+  const next = current - qty;
+  await db.prepare("UPDATE inventory_products SET stock_pieces = ? WHERE id = ? AND user_id = ?").run(next, productId, userId);
+  res.json({ ok: true, previous: current, next });
+});
+
 registerTlErpRoutes(app, authMiddleware, moduleAllowed, { uploadTl, tlUploadRoot });
 registerBase44StudioRoutes(app, { authMiddleware, uploadDir, aiGenerateAllowed });
 registerBackendServices(app, authMiddleware);
@@ -2568,6 +2945,15 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
     res.status(503).json({
       error:
         "فشل الاتصال بقاعدة البيانات — تحقق من كلمة مرور Postgres في Supabase Settings → Database، وحدّث DATABASE_URL و DIRECT_URL في .env ثم أعد تشغيل npm run dev",
+    });
+    return;
+  }
+
+  if (code === "ENOTFOUND" || lowerMsg.includes("getaddrinfo") || lowerMsg.includes("not found")) {
+    console.error("[api] database dns failed:", code || msg, req.method, req.path);
+    res.status(503).json({
+      error:
+        "فشل حل اسم مضيف قاعدة البيانات — تأكد من DATABASE_URL أو DIRECT_URL وأن جهازك متصل بالإنترنت ثم أعد تشغيل npm run dev",
     });
     return;
   }

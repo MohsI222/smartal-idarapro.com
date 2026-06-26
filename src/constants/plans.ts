@@ -21,10 +21,13 @@ export const ALL_SAAS_MODULE_IDS: SectionId[] = [
   "edu_print",
   "tools",
   "reminders",
+  "auto_real_estate",
 ];
 
-/** تجربة 5 أيام — كل الأقسام عدا التأشيرة (موافقة منفصلة) */
-export const TRIAL_MODULE_IDS: SectionId[] = ALL_SAAS_MODULE_IDS.filter((m) => m !== "visa");
+/** تجربة 5 أيام — كل الأقسام عدا التأشيرة وقسم السيارات والعقارات (اشتراك مستقل) */
+export const TRIAL_MODULE_IDS: SectionId[] = ALL_SAAS_MODULE_IDS.filter(
+  (m) => m !== "visa" && m !== "auto_real_estate"
+);
 
 export type BillingPeriod = "monthly" | "yearly";
 
@@ -53,7 +56,7 @@ export type PlanOption = {
 
 /**
  * خطط المنصة — كل مشترك يستفيد من المراسلات الداخلية + واتساب الإدارة (يُدمج في approvedModules)
- * رادار التأشيرة: خطة المكتبات المتقدمة أو موافقة منفصلة
+ * رادار التأشيرة: مدمج في libraries_plus و enterprises_schools بدون موافقة إضافية
  */
 export const PLAN_OPTIONS: PlanOption[] = [
   {
@@ -64,22 +67,7 @@ export const PLAN_OPTIONS: PlanOption[] = [
     priceYearlyDh: 8000,
     accent: "amber",
     spotlight: true,
-    modules: [
-      "edu",
-      "academy",
-      "chat",
-      "members",
-      "acc",
-      "legal_ai",
-      "edu_print",
-      "transport_logistics",
-      "inventory",
-      "gov",
-      "public",
-      "hr",
-      "tools",
-      "reminders",
-    ],
+    modules: [...ALL_SAAS_MODULE_IDS],
   },
   {
     id: "lawyers",
@@ -106,7 +94,16 @@ export const PLAN_OPTIONS: PlanOption[] = [
     priceMonthlyDh: 599,
     priceYearlyDh: 5000,
     accent: "fuchsia",
-    modules: ["visa", "legal_ai", "inventory", "acc", "public", "gov", "chat"],
+    modules: ["visa", "legal_ai", "inventory", "acc", "public", "gov", "chat", "reminders"],
+  },
+  {
+    id: "cars_real_estate",
+    labelKey: "plan.carsRealEstate",
+    blurbKey: "plan.carsRealEstate.blurb",
+    priceMonthlyDh: 399,
+    priceYearlyDh: 3830,
+    accent: "emerald",
+    modules: ["auto_real_estate", "chat", "reminders"],
   },
   {
     id: "retail",
@@ -164,6 +161,24 @@ export const PLAN_OPTIONS: PlanOption[] = [
 /** إضافة رادار التأشيرة (Premium) — موافقة الأدمن */
 export const VISA_PREMIUM_ADDON_DH = 100;
 export const VISA_PREMIUM_PLAN_ID = "visa_premium";
+
+/** خطط تتضمن رادار التأشيرة بدون موافقة إضافية */
+export const PLANS_WITH_INCLUDED_VISA = new Set(["libraries_plus", "enterprises_schools"]);
+
+export function modulesJsonIncludesVisa(modulesJson: string): boolean {
+  try {
+    const mods = JSON.parse(modulesJson) as string[];
+    return Array.isArray(mods) && mods.includes("visa");
+  } catch {
+    return false;
+  }
+}
+
+export function planIncludesVisa(planId: string): boolean {
+  if (PLANS_WITH_INCLUDED_VISA.has(planId)) return true;
+  const plan = PLAN_OPTIONS.find((p) => p.id === planId);
+  return Boolean(plan?.modules.includes("visa"));
+}
 
 /** خطط قديمة — للعرض في لوحة الإدارة فقط */
 export const LEGACY_PLAN_IDS = new Set([

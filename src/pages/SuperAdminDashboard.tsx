@@ -248,6 +248,15 @@ export function SuperAdminDashboard() {
     await load();
   };
 
+  const resetDevices = async (targetUserId: string) => {
+    if (!token) return;
+    await api(`/admin/users/${targetUserId}/reset-devices`, {
+      method: "POST",
+      token,
+    });
+    await load();
+  };
+
   if (user?.role !== "superadmin") {
     return (
       <div className="text-center py-16">
@@ -585,6 +594,7 @@ export function SuperAdminDashboard() {
                         <th className="py-2 pe-3">{t("admin.colEnds")}</th>
                         <th className="py-2 pe-3">{t("admin.colSubControl")}</th>
                         <th className="py-2">{t("admin.colLock")}</th>
+                        <th className="py-2">{t("admin.colResetDevices")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -651,6 +661,17 @@ export function SuperAdminDashboard() {
                                   onClick={() => void setLocked(u.id, !u.account_locked)}
                                 >
                                   {u.account_locked ? t("admin.unlock") : t("admin.lock")}
+                                </Button>
+                              )}
+                            </td>
+                            <td className="py-2 align-top">
+                              {u.role !== "superadmin" && (
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => void resetDevices(u.id)}
+                                >
+                                  {t("admin.resetDevices")}
                                 </Button>
                               )}
                             </td>
