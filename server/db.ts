@@ -142,6 +142,177 @@ export async function initDatabase(): Promise<void> {
         const initPool = new Pool({ ...cfg, max: 1 });
         try {
           await initPool.query(sql);
+
+          // Add social media fields to delivery_hub_stores if they don't exist
+          try {
+            await initPool.query(`
+              ALTER TABLE public.delivery_hub_stores
+              ADD COLUMN IF NOT EXISTS facebook_url TEXT,
+              ADD COLUMN IF NOT EXISTS instagram_url TEXT,
+              ADD COLUMN IF NOT EXISTS tiktok_url TEXT,
+              ADD COLUMN IF NOT EXISTS youtube_url TEXT
+            `);
+            console.log("[db] Added social media fields to delivery_hub_stores");
+          } catch (alterErr) {
+            // If the table doesn't exist or other error, log but don't fail
+            console.warn("[db] Could not add social media fields (table may not exist yet):", alterErr instanceof Error ? alterErr.message : alterErr);
+          }
+
+          // Add custom_domain field to delivery_hub_stores if it doesn't exist
+          try {
+            await initPool.query(`
+              ALTER TABLE public.delivery_hub_stores
+              ADD COLUMN IF NOT EXISTS custom_domain TEXT UNIQUE
+            `);
+            console.log("[db] Added custom_domain field to delivery_hub_stores");
+          } catch (alterErr) {
+            console.warn("[db] Could not add custom_domain field:", alterErr instanceof Error ? alterErr.message : alterErr);
+          }
+
+          // Create delivery_hub_owners table if it doesn't exist
+          try {
+            await initPool.query(`
+              CREATE TABLE IF NOT EXISTS public.delivery_hub_owners (
+                app_user_id TEXT PRIMARY KEY,
+                owner_id TEXT UNIQUE NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_hub_owners_owner ON public.delivery_hub_owners(owner_id);
+              ALTER TABLE public.delivery_hub_owners ENABLE ROW LEVEL SECURITY;
+            `);
+            console.log("[db] Created delivery_hub_owners table");
+          } catch (ownersErr) {
+            console.warn("[db] Could not create delivery_hub_owners table:", ownersErr instanceof Error ? ownersErr.message : ownersErr);
+          }
+
+          // Create demo store for public access if it doesn't exist
+          let demoStoreId: string | null = null;
+          try {
+            // First, try to get existing demo store
+            const existingStoreResult = await initPool.query(`
+              SELECT id FROM public.delivery_hub_stores WHERE slug = 'demo-store' LIMIT 1
+            `);
+            if (existingStoreResult.rows.length > 0) {
+              demoStoreId = existingStoreResult.rows[0].id;
+              console.log("[db] Found existing demo store:", demoStoreId);
+            } else {
+              // Create new demo store
+              const insertResult = await initPool.query(`
+                INSERT INTO public.delivery_hub_stores (id, user_id, name, slug, tagline, theme, banner_url, is_active)
+                VALUES (
+                  '00000000-0000-0000-0000-000000000001',
+                  '00000000-0000-0000-0000-000000000001',
+                  'متجر التميز والسرعة',
+                  'demo-store',
+                  'أسرع توصيل بأفضل جودة 🚀',
+                  'neon-modern',
+                  'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=60',
+                  true
+                )
+                ON CONFLICT (slug) DO NOTHING
+                RETURNING id
+              `);
+              if (insertResult.rows.length > 0) {
+                demoStoreId = insertResult.rows[0].id;
+                console.log("[db] Created demo store:", demoStoreId);
+              }
+            }
+          } catch (demoStoreErr) {
+            console.warn("[db] Could not create demo store:", demoStoreErr instanceof Error ? demoStoreErr.message : demoStoreErr);
+          }
+
+          // Add updated_at column to inventory_products if it doesn't exist
+          try {
+            await initPool.query(`
+              ALTER TABLE public.inventory_products 
+              ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()
+            `);
+            console.log("[db] Added updated_at column to inventory_products");
+          } catch (alterErr) {
+            console.warn("[db] Could not add updated_at column to inventory_products:", alterErr instanceof Error ? alterErr.message : alterErr);
+          }
+
+          // Create function and trigger for updated_at on inventory_products
+          try {
+            await initPool.query(`
+              CREATE OR REPLACE FUNCTION update_inventory_products_updated_at()
+              RETURNS TRIGGER AS $$
+              BEGIN
+                NEW.updated_at = NOW();
+                RETURN NEW;
+              END;
+              $$ LANGUAGE plpgsql
+            `);
+            await initPool.query(`
+              DROP TRIGGER IF EXISTS trigger_update_inventory_products_updated_at ON public.inventory_products
+            `);
+            await initPool.query(`
+              CREATE TRIGGER trigger_update_inventory_products_updated_at
+                BEFORE UPDATE ON public.inventory_products
+                FOR EACH ROW
+                EXECUTE FUNCTION update_inventory_products_updated_at()
+            `);
+            console.log("[db] Created updated_at trigger for inventory_products");
+          } catch (triggerErr) {
+            console.warn("[db] Could not create updated_at trigger for inventory_products:", triggerErr instanceof Error ? triggerErr.message : triggerErr);
+          }
+
+          // Create demo products for demo store if they don't exist
+          if (demoStoreId) {
+            try {
+              await initPool.query(`
+                INSERT INTO public.delivery_hub_products (id, store_id, title, category, description, price, original_price, image_url, in_stock, sort_order, stock_quantity, low_stock_threshold)
+                VALUES 
+                  (
+                    '00000000-0000-0000-0000-000000000002',
+                    $1,
+                    'برجر لحم مشوي فاخر',
+                    'أطباق رئيسية',
+                    'برجر لحم طازج مع جبنة وصلصة خاصة',
+                    45,
+                    60,
+                    'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=800&q=60',
+                    true,
+                    0,
+                    50,
+                    5
+                  ),
+                  (
+                    '00000000-0000-0000-0000-000000000003',
+                    $1,
+                    'بيتزا مارغريتا',
+                    'بيتزا',
+                    'عجينة رقيقة مع جبنة موزاريلا وصلصة طماطم طازجة',
+                    65,
+                    null,
+                    'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=60',
+                    true,
+                    1,
+                    30,
+                    5
+                  ),
+                  (
+                    '00000000-0000-0000-0000-000000000004',
+                    $1,
+                    'عصير طبيعي مثلج',
+                    'مشروبات',
+                    'عصير فواكه طازج بدون سكر مضاف',
+                    20,
+                    25,
+                    'https://images.unsplash.com/photo-1571091718767-18b5b1457add?auto=format&fit=crop&w=800&q=60',
+                    true,
+                    2,
+                    100,
+                    10
+                  )
+                ON CONFLICT (id) DO NOTHING
+              `, [demoStoreId]);
+              console.log("[db] Created demo products");
+            } catch (demoProductsErr) {
+              console.warn("[db] Could not create demo products:", demoProductsErr instanceof Error ? demoProductsErr.message : demoProductsErr);
+            }
+          }
+
           return;
         } catch (e) {
           lastErr = e;

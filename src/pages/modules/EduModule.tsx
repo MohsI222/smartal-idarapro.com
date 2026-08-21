@@ -12,6 +12,7 @@ import * as XLSX from "xlsx";
 import { useI18n } from "@/i18n/I18nProvider";
 import { ExamGeneratorModule } from "@/pages/modules/ExamGeneratorModule";
 import { toast } from "sonner";
+import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
 
 const STORAGE_KEY = "idara_edu_schedule_rows";
 
@@ -22,10 +23,10 @@ type ScheduleRow = {
   level: string;
 };
 
-export function EduModule() {
+function EduModule() {
   const { t, locale, isRtl } = useI18n();
-  const { isApproved, approvedModules, user } = useAuth();
-  const allowed = isApproved && approvedModules.includes("edu");
+  const { isApproved, approvedModules, user, isAdmin } = useAuth();
+  const allowed = isAdmin || (isApproved && approvedModules.includes("edu"));
   const uid = user?.id ?? "guest";
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get("tab") ?? "substitute";
@@ -111,6 +112,7 @@ export function EduModule() {
       lang: locale,
       mainTitle: t("brand"),
       dateLocale: locale,
+      userId: user?.id,
     });
   };
 
@@ -276,6 +278,14 @@ export function EduModule() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <GlobalAiAssistant
+        section="education"
+        context="Education Management - Schedule planning, curriculum, teaching materials, and student management"
+        availableFields={["subject", "level", "time", "day", "notes"]}
+      />
     </div>
   );
 }
+
+export default EduModule;

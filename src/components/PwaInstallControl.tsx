@@ -27,12 +27,12 @@ export function PwaInstallControl({
   const [guideOpen, setGuideOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const runInstall = async () => {
+  const runInstall = () => {
     if (installed) return;
     if (canNativeInstall) {
       setBusy(true);
       try {
-        const r = await install();
+        const r = install(); // Call synchronously - no await
         if (r === "unavailable") setGuideOpen(true);
       } finally {
         setBusy(false);

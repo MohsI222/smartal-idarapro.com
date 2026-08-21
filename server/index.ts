@@ -3,14 +3,18 @@ import "express-async-errors";
 import cors from "cors";
 import express from "express";
 import fs from "node:fs";
+import path from "node:path";
 import multer from "multer";
 import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import sharp from "sharp";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { registerBackendServices } from "./backendServices.js";
 import { registerBase44StudioRoutes } from "./base44Studio.js";
 import { registerTlErpRoutes } from "./tlErpRoutes.js";
+import { registerDeliveryHubRoutes } from "./deliveryHubRoutes.js";
 import { getTlUploadRoot, getUploadDir } from "./paths.js";
+import { getVisaRadarProService } from "./visaRadarPro.js";
 import { randomUUID } from "node:crypto";
 import { db, initDatabase } from "./db.js";
 import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto.js";
@@ -27,8 +31,68 @@ import {
 import { sanitizeEmail, sanitizeUserDisplayName } from "./stringUtil.js";
 import { paramString } from "./reqParams.js";
 import { vercelApiUrlRestore } from "./vercelUrlMiddleware.js";
+import { customDomainMiddleware } from "./customDomainMiddleware.js";
+import {
+  resolveGeminiImageApiKey,
+} from "./aiImageGeneration.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
+
+async function migrateDeliveryHubStockFields() {
+  try {
+    // Check if stock_quantity column exists
+    const checkResult = await db.prepare(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'delivery_hub_products' 
+      AND column_name = 'stock_quantity'
+    `).get();
+    
+    if (!checkResult) {
+      console.log("[Migration] Adding stock_quantity and low_stock_threshold columns to delivery_hub_products table...");
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_products 
+        ADD COLUMN stock_quantity INTEGER NOT NULL DEFAULT 0
+      `).run();
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_products 
+        ADD COLUMN low_stock_threshold INTEGER NOT NULL DEFAULT 5
+      `).run();
+      console.log("[Migration] Stock fields added successfully");
+    } else {
+      console.log("[Migration] Stock fields already exist, checking for NULL values...");
+      // Update existing products that have NULL values
+      const updateResult = await db.prepare(`
+        UPDATE public.delivery_hub_products 
+        SET stock_quantity = 0, low_stock_threshold = 5
+        WHERE stock_quantity IS NULL OR low_stock_threshold IS NULL
+      `).run();
+      if (updateResult.changes > 0) {
+        console.log(`[Migration] Updated ${updateResult.changes} products with default stock values`);
+      }
+    }
+
+    // Check if sku column exists
+    const skuCheckResult = await db.prepare(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'delivery_hub_products' 
+      AND column_name = 'sku'
+    `).get();
+    
+    if (!skuCheckResult) {
+      console.log("[Migration] Adding sku column to delivery_hub_products table...");
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_products 
+        ADD COLUMN sku VARCHAR(50)
+      `).run();
+      console.log("[Migration] SKU column added successfully");
+    }
+  } catch (error: any) {
+    console.error("[Migration] Error adding stock fields:", error.message);
+    // Don't throw - allow app to start even if migration fails
+  }
+}
 
 async function fetchSupabaseUserFromAccessToken(accessToken: string): Promise<{
   id: string;
@@ -89,7 +153,6 @@ const TRIAL_MODULE_IDS = new Set([
   "academy",
   "gov",
   "legal_ai",
-  "media_lab",
   "transport_logistics",
   "chat",
   "edu_print",
@@ -216,6 +279,48 @@ app.use(vercelApiUrlRestore);
 applySecurityMiddleware(app);
 app.use(cors(createProductionCorsOptions()));
 
+// Custom domain middleware for Delivery Hub stores
+app.use(customDomainMiddleware);
+
+// Serve uploaded files statically
+const uploadsDir = getUploadDir();
+app.use('/uploads', express.static(uploadsDir, {
+  setHeaders: (res, filepath) => {
+    const ext = path.extname(filepath).toLowerCase();
+    // Set proper headers for video streaming
+    if (['.mp4'].includes(ext)) {
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Accept-Ranges', 'bytes');
+    } else if (['.webm'].includes(ext)) {
+      res.setHeader('Content-Type', 'video/webm');
+      res.setHeader('Accept-Ranges', 'bytes');
+    } else if (['.mov'].includes(ext)) {
+      res.setHeader('Content-Type', 'video/quicktime');
+      res.setHeader('Accept-Ranges', 'bytes');
+    } else if (['.ogg'].includes(ext)) {
+      res.setHeader('Content-Type', 'video/ogg');
+      res.setHeader('Accept-Ranges', 'bytes');
+    }
+    // Set proper headers for images
+    if (['.png'].includes(ext)) {
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+    } else if (['.jpg', '.jpeg'].includes(ext)) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+    } else if (['.webp'].includes(ext)) {
+      res.setHeader('Content-Type', 'image/webp');
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+    } else if (['.svg'].includes(ext)) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+    } else if (['.gif'].includes(ext)) {
+      res.setHeader('Content-Type', 'image/gif');
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+    }
+  }
+}));
+
 /** يعمل بدون انتظار قاعدة البيانات — للتحقق أن السيرفر يستمع وأن البروكسي يصل */
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "smart-al-idara-pro" });
@@ -257,7 +362,10 @@ app.use(async (_req, _res, next) => {
 
 const authOriginGuard = createAuthOriginGuard();
 app.use("/api/auth", authOriginGuard);
-app.use(express.json({ limit: "12mb" }));
+app.use(express.json({ limit: "50mb" }));
+
+// Register AI controller routes - DISABLED to use DB-based endpoint instead
+// app.use("/api/ai", aiController);
 
 const upload = multer({ dest: uploadDir, limits: { fileSize: 8 * 1024 * 1024 } });
 const uploadMemory = multer({
@@ -767,6 +875,7 @@ app.get("/api/me", authMiddleware, async (req, res) => {
     user.role === "superadmin" ||
     user.email === SUPER_ADMIN_EMAIL ||
     isPrimaryAdminUser(user.email, user.name);
+
   const maxDevices = isSuperAdmin ? 999 : MAX_DEVICES;
 
   const tb =
@@ -780,6 +889,277 @@ app.get("/api/me", authMiddleware, async (req, res) => {
     devices,
     maxDevices,
   });
+});
+
+// Super Admin API endpoints to bypass RLS
+// These endpoints allow Super Admin to manage all data across all users
+app.get("/api/super-admin/inventory-products", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    // Get all inventory products (bypass RLS)
+    const products = await db
+      .prepare(`SELECT * FROM inventory_products ORDER BY name ASC`)
+      .all();
+    res.json(products);
+  } catch (error) {
+    console.error("[Super Admin] Error fetching inventory products:", error);
+    res.status(500).json({ error: "Failed to fetch inventory products" });
+  }
+});
+
+app.post("/api/super-admin/inventory-products", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const products = Array.isArray(req.body) ? req.body : [req.body];
+    const insertedIds: string[] = [];
+    const updatedIds: string[] = [];
+
+    for (const product of products) {
+      const { user_id, name, sku, retail_type, pieces_per_carton, unit_price, stock_pieces, unit_kind, cost_price, expiry_date, low_stock_alert } = product;
+      
+      if (!name || !user_id) {
+        res.status(400).json({ error: "Missing required fields: name, user_id" });
+        return;
+      }
+      
+      // Check if product with same SKU or name already exists (UPSERT logic)
+      const existingBySku = sku?.trim() 
+        ? await db.prepare("SELECT id FROM inventory_products WHERE user_id = ? AND sku = ?").get(user_id, sku.trim())
+        : null;
+      const existingByName = await db.prepare("SELECT id FROM inventory_products WHERE user_id = ? AND name = ?").get(user_id, name.trim());
+      const existingId = existingBySku?.id || existingByName?.id;
+      
+      if (existingId) {
+        // Update existing product
+        await db.prepare(
+          `UPDATE inventory_products 
+           SET name = ?, sku = ?, retail_type = ?, pieces_per_carton = ?, unit_price = ?, stock_pieces = ?, 
+               unit_kind = ?, cost_price = ?, expiry_date = ?, low_stock_alert = ?, updated_at = NOW()
+           WHERE id = ? AND user_id = ?`
+        ).run(name, sku || null, retail_type || 'retail', pieces_per_carton || 1, unit_price || 0, stock_pieces || 0, unit_kind || 'piece', cost_price || 0, expiry_date || null, low_stock_alert || 10, existingId, user_id);
+        updatedIds.push(existingId);
+      } else {
+        // Insert new product
+        const id = randomUUID();
+        await db.prepare(
+          `INSERT INTO inventory_products (id, user_id, name, sku, retail_type, pieces_per_carton, unit_price, stock_pieces, unit_kind, cost_price, expiry_date, low_stock_alert, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+        ).run(id, user_id, name, sku || null, retail_type || 'retail', pieces_per_carton || 1, unit_price || 0, stock_pieces || 0, unit_kind || 'piece', cost_price || 0, expiry_date || null, low_stock_alert || 10);
+        insertedIds.push(id);
+      }
+    }
+    
+    res.json({ 
+      inserted: insertedIds, 
+      updated: updatedIds,
+      message: `Successfully created ${insertedIds.length} product(s) and updated ${updatedIds.length} product(s)` 
+    });
+  } catch (error) {
+    console.error("[Super Admin] Error creating/updating inventory product(s):", error);
+    console.error("[Super Admin] Error details:", error instanceof Error ? error.message : String(error));
+    console.error("[Super Admin] Stack:", error instanceof Error ? error.stack : undefined);
+    res.status(500).json({ error: "Failed to create/update inventory product(s)", details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.put("/api/super-admin/inventory-products/:id", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, sku, retail_type, pieces_per_carton, unit_price, stock_pieces, unit_kind, cost_price, expiry_date, low_stock_alert } = req.body;
+    
+    if (!name) {
+      res.status(400).json({ error: "Missing required field: name" });
+      return;
+    }
+    
+    await db.prepare(
+      `UPDATE inventory_products 
+       SET name = ?, sku = ?, retail_type = ?, pieces_per_carton = ?, unit_price = ?, stock_pieces = ?, 
+           unit_kind = ?, cost_price = ?, expiry_date = ?, low_stock_alert = ?, updated_at = NOW()
+       WHERE id = ?`
+    ).run(name, sku || null, retail_type || 'retail', pieces_per_carton || 1, unit_price || 0, stock_pieces || 0, unit_kind || 'piece', cost_price || 0, expiry_date || null, low_stock_alert || 10, id);
+    
+    res.json({ message: "Product updated successfully" });
+  } catch (error) {
+    console.error("[Super Admin] Error updating inventory product:", error);
+    res.status(500).json({ error: "Failed to update inventory product" });
+  }
+});
+
+app.delete("/api/super-admin/inventory-products/:id", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await db.prepare(`DELETE FROM inventory_products WHERE id = ?`).run(id);
+    
+    res.json({ message: "Product deleted successfully" });
+  } catch (error) {
+    console.error("[Super Admin] Error deleting inventory product:", error);
+    res.status(500).json({ error: "Failed to delete inventory product" });
+  }
+});
+
+app.get("/api/super-admin/hr-employees", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    // Get all HR employees (bypass RLS)
+    const employees = await db
+      .prepare(`SELECT * FROM hr_employees ORDER BY created_at DESC`)
+      .all();
+    res.json(employees);
+  } catch (error) {
+    console.error("[Super Admin] Error fetching HR employees:", error);
+    res.status(500).json({ error: "Failed to fetch HR employees" });
+  }
+});
+
+app.post("/api/super-admin/hr-employees", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { user_id, name, national_id, employee_id, work_number, role, salary, contract_type, contract_end, start_date, birth_date, marital_status, uniform_color, city, address, rib, bank_name } = req.body;
+    
+    if (!name || !user_id) {
+      res.status(400).json({ error: "Missing required fields: name, user_id" });
+      return;
+    }
+    
+    const id = randomUUID();
+    await db.prepare(
+      `INSERT INTO hr_employees (id, user_id, name, national_id, employee_id, work_number, role, salary, contract_type, contract_end, start_date, birth_date, marital_status, uniform_color, city, address, rib, bank_name, created_at, updated_at, work_days)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)`
+    ).run(id, user_id, name, national_id || null, employee_id || null, work_number || null, role || null, salary || null, contract_type || null, contract_end || null, start_date || null, birth_date || null, marital_status || null, uniform_color || null, city || null, address || null, rib || null, bank_name || null);
+    
+    res.json({ id, message: "Employee created successfully" });
+  } catch (error) {
+    console.error("[Super Admin] Error creating HR employee:", error);
+    res.status(500).json({ error: "Failed to create HR employee" });
+  }
+});
+
+app.put("/api/super-admin/hr-employees/:id", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, national_id, employee_id, work_number, role, salary, contract_type, contract_end, start_date, birth_date, marital_status, uniform_color, city, address, rib, bank_name } = req.body;
+    
+    if (!name) {
+      res.status(400).json({ error: "Missing required field: name" });
+      return;
+    }
+    
+    await db.prepare(
+      `UPDATE hr_employees 
+       SET name = ?, national_id = ?, employee_id = ?, work_number = ?, role = ?, salary = ?, 
+           contract_type = ?, contract_end = ?, start_date = ?, birth_date = ?, marital_status = ?, 
+           uniform_color = ?, city = ?, address = ?, rib = ?, bank_name = ?, updated_at = NOW()
+       WHERE id = ?`
+    ).run(name, national_id || null, employee_id || null, work_number || null, role || null, salary || null, contract_type || null, contract_end || null, start_date || null, birth_date || null, marital_status || null, uniform_color || null, city || null, address || null, rib || null, bank_name || null, id);
+    
+    res.json({ message: "Employee updated successfully" });
+  } catch (error) {
+    console.error("[Super Admin] Error updating HR employee:", error);
+    res.status(500).json({ error: "Failed to update HR employee" });
+  }
+});
+
+app.delete("/api/super-admin/hr-employees/:id", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await db.prepare(`DELETE FROM hr_employees WHERE id = ?`).run(id);
+    
+    res.json({ message: "Employee deleted successfully" });
+  } catch (error) {
+    console.error("[Super Admin] Error deleting HR employee:", error);
+    res.status(500).json({ error: "Failed to delete HR employee" });
+  }
+});
+
+app.get("/api/super-admin/hr-absence-records", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    // Get all HR absence records (bypass RLS)
+    const records = await db
+      .prepare(`SELECT * FROM hr_absence_records ORDER BY created_at DESC`)
+      .all();
+    res.json(records);
+  } catch (error) {
+    console.error("[Super Admin] Error fetching HR absence records:", error);
+    res.status(500).json({ error: "Failed to fetch HR absence records" });
+  }
+});
+
+app.get("/api/super-admin/shift-reports", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    // Get all shift reports (bypass RLS)
+    const reports = await db
+      .prepare(`SELECT * FROM shift_reports ORDER BY shift_date DESC`)
+      .all();
+    res.json(reports);
+  } catch (error) {
+    console.error("[Super Admin] Error fetching shift reports:", error);
+    res.status(500).json({ error: "Failed to fetch shift reports" });
+  }
+});
+
+app.post("/api/super-admin/shift-reports", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { user_id, shift_date, shift_group, customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations, start_time } = req.body;
+    
+    if (!user_id || !shift_date || !shift_group) {
+      res.status(400).json({ error: "Missing required fields: user_id, shift_date, shift_group" });
+      return;
+    }
+    
+    const id = randomUUID();
+    
+    // Safely handle all fields with proper null/undefined checks
+    const customerName = customer_name !== null && customer_name !== undefined && customer_name !== "" ? String(customer_name) : null;
+    const customerNumber = customer_number !== null && customer_number !== undefined && customer_number !== "" ? String(customer_number) : null;
+    const weekValue = week !== null && week !== undefined && week !== "" ? String(week) : null;
+    const operationsLog = operations_log !== null && operations_log !== undefined ? operations_log : [];
+    const salesCount = sales_count !== null && sales_count !== undefined && !isNaN(Number(sales_count)) ? Number(sales_count) : 0;
+    const stockAddCount = stock_add_count !== null && stock_add_count !== undefined && !isNaN(Number(stock_add_count)) ? Number(stock_add_count) : 0;
+    const stockEditCount = stock_edit_count !== null && stock_edit_count !== undefined && !isNaN(Number(stock_edit_count)) ? Number(stock_edit_count) : 0;
+    const totalOperations = total_operations !== null && total_operations !== undefined && !isNaN(Number(total_operations)) ? Number(total_operations) : 0;
+    const startTime = start_time !== null && start_time !== undefined && start_time !== "" ? String(start_time) : new Date().toISOString();
+    
+    await db.prepare(
+      `INSERT INTO shift_reports (id, user_id, shift_date, shift_group, start_time, customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+    ).run(id, user_id, shift_date, shift_group, startTime, customerName, customerNumber, weekValue, JSON.stringify(operationsLog), salesCount, stockAddCount, stockEditCount, totalOperations);
+    
+    res.json({ id, message: "Shift report created successfully" });
+  } catch (error) {
+    console.error("[Super Admin] Error creating shift report:", error);
+    res.status(500).json({ error: "Failed to create shift report", details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.put("/api/super-admin/shift-reports/:id", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations } = req.body;
+    
+    await db.prepare(
+      `UPDATE shift_reports 
+       SET customer_name = ?, customer_number = ?, week = ?, operations_log = ?, 
+           sales_count = ?, stock_add_count = ?, stock_edit_count = ?, total_operations = ?, updated_at = NOW()
+       WHERE id = ?`
+    ).run(customer_name || null, customer_number || null, week || null, JSON.stringify(operations_log || []), sales_count || 0, stock_add_count || 0, stock_edit_count || 0, total_operations || 0, id);
+    
+    res.json({ message: "Shift report updated successfully" });
+  } catch (error) {
+    console.error("[Super Admin] Error updating shift report:", error);
+    res.status(500).json({ error: "Failed to update shift report" });
+  }
+});
+
+app.delete("/api/super-admin/shift-reports/:id", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await db.prepare(`DELETE FROM shift_reports WHERE id = ?`).run(id);
+    
+    res.json({ message: "Shift report deleted successfully" });
+  } catch (error) {
+    console.error("[Super Admin] Error deleting shift report:", error);
+    res.status(500).json({ error: "Failed to delete shift report" });
+  }
 });
 
 const brandingSettingsKey = (uid: string) => `user_branding_${uid}`;
@@ -963,6 +1343,175 @@ app.post("/api/devices/remove", authMiddleware, async (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+
+/** Save user's custom AI API key with provider */
+app.post("/api/user/ai-api-key", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { apiKey, provider } = req.body as { apiKey?: string; provider?: string };
+
+  if (!apiKey || typeof apiKey !== "string") {
+    res.status(400).json({ error: "مفتاح API مطلوب" });
+    return;
+  }
+
+  if (apiKey.trim().length < 10) {
+    res.status(400).json({ error: "مفتاح API غير صالح" });
+    return;
+  }
+
+  // Auto-detect provider if not specified
+  let detectedProvider = provider || 'gemini';
+  if (!provider) {
+    if (apiKey.startsWith('sk-')) {
+      detectedProvider = 'openai';
+    } else if (apiKey.startsWith('AIza')) {
+      detectedProvider = 'gemini';
+    } else if (apiKey.startsWith('gsk_')) {
+      detectedProvider = 'groq';
+    } else if (provider === 'pollinations') {
+      detectedProvider = 'pollinations';
+    }
+  }
+
+  try {
+    await db.prepare("UPDATE users SET ai_api_key = ?, ai_provider = ? WHERE id = ?").run(
+      apiKey.trim(), 
+      detectedProvider, 
+      userId
+    );
+    res.json({ success: true, provider: detectedProvider });
+  } catch (error) {
+    console.error("Error saving AI API key:", error);
+    res.status(500).json({ error: "فشل حفظ مفتاح API" });
+  }
+});
+
+/** Get user's custom AI API key (masked) and provider */
+app.get("/api/user/ai-api-key", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+
+  try {
+    const user = await db.prepare("SELECT ai_api_key, ai_provider FROM users WHERE id = ?").get(userId) as
+      | { ai_api_key: string | null; ai_provider: string | null }
+      | undefined;
+
+    if (!user) {
+      res.status(404).json({ error: "المستخدم غير موجود" });
+      return;
+    }
+
+    // Return masked key for security and provider
+    const hasKey = user.ai_api_key && user.ai_api_key.trim().length > 0;
+    const provider = user.ai_provider || 'gemini';
+    res.json({ hasKey, provider });
+  } catch (error) {
+    console.error("Error getting AI API key:", error);
+    res.status(500).json({ error: "فشل جلب مفتاح API" });
+  }
+});
+
+/** Remove user's custom AI API key */
+app.delete("/api/user/ai-api-key", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+
+  try {
+    await db.prepare("UPDATE users SET ai_api_key = NULL, ai_provider = 'gemini' WHERE id = ?").run(userId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error removing AI API key:", error);
+    res.status(500).json({ error: "فشل حذف مفتاح API" });
+  }
+});
+
+/** Test user's AI API key */
+app.post("/api/user/ai-api-key/test", authMiddleware, async (req, res) => {
+  const { apiKey, provider } = req.body as { apiKey?: string; provider?: string };
+
+  if (!apiKey || typeof apiKey !== "string") {
+    res.status(400).json({ error: "مفتاح API مطلوب" });
+    return;
+  }
+
+  const detectedProvider = provider || 
+    (apiKey.startsWith('sk-') ? 'openai' : 
+     apiKey.startsWith('AIza') ? 'gemini' : 
+     apiKey.startsWith('gsk_') ? 'groq' : 
+     apiKey.startsWith('hf_') ? 'huggingface' : 'gemini');
+
+  try {
+    if (detectedProvider === 'gemini') {
+      // Test with Gemini API
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(apiKey.trim());
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+      const result = await model.generateContent("Test");
+      const response = result.response;
+
+      if (response) {
+        res.json({ valid: true, message: "مفتاح Gemini صالح" });
+      } else {
+        res.status(400).json({ valid: false, error: "مفتاح Gemini غير صالح" });
+      }
+    } else if (detectedProvider === 'groq') {
+      // Test with Groq API
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: 'Test' }],
+          max_tokens: 10,
+        }),
+      });
+
+      if (response.ok) {
+        res.json({ valid: true, message: "مفتاح Groq صالح" });
+      } else {
+        const error = await response.json();
+        res.status(400).json({ valid: false, error: `مفتاح Groq غير صالح: ${error.error?.message || 'Unknown error'}` });
+      }
+    } else if (detectedProvider === 'openai') {
+      // Test with OpenAI API
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'Test' }],
+          max_tokens: 10,
+        }),
+      });
+
+      if (response.ok) {
+        res.json({ valid: true, message: "مفتاح OpenAI صالح" });
+      } else {
+        const error = await response.json();
+        res.status(400).json({ valid: false, error: `مفتاح OpenAI غير صالح: ${error.error?.message || 'Unknown error'}` });
+      }
+    } else if (detectedProvider === 'huggingface') {
+      // HuggingFace keys are generally valid format-wise
+      res.json({ valid: true, message: "مفتاح HuggingFace صالح (تنسيق)" });
+    } else {
+      res.status(400).json({ valid: false, error: "مزود غير مدعوم" });
+    }
+  } catch (error: any) {
+    console.error("AI API key test error:", error);
+
+    if (error?.status === 401 || error?.message?.includes("401")) {
+      res.status(401).json({ valid: false, error: "مفتاح API غير صالح (401 Unauthorized)" });
+    } else if (error?.status === 429 || error?.message?.includes("429")) {
+      res.status(429).json({ valid: false, error: "مفتاح API نفذت حصته (429 Quota Exceeded)" });
+    } else {
+      res.status(400).json({ valid: false, error: "فشل اختبار مفتاح API" });
+    }
+  }
 });
 
 app.post(
@@ -1551,11 +2100,11 @@ app.get("/api/admin/sales-analytics", authMiddleware, superAdminOnly, async (_re
     hourRevenue: Math.round(hourRevenue * 100) / 100,
     todayNetProfit: Math.round(todayProfit * 100) / 100,
     hourNetProfit: Math.round(hourProfit * 100) / 100,
+    salesCount: invoices.length,
     chart,
   });
 });
 
-/** HR + modules data (scoped to user) */
 app.get("/api/hr/employees", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   if (!(await moduleAllowed(userId, "hr"))) {
@@ -1575,23 +2124,48 @@ app.post("/api/hr/employees", authMiddleware, async (req, res) => {
   const b = req.body as {
     name: string;
     employee_id: string;
+    work_number?: string;
+    national_id?: string;
     role: string;
     salary: number;
+    work_days?: number;
     contract_type: string;
-    contract_end?: string;
+    contract_end?: string | null;
+    start_date?: string;
+    birth_date?: string;
+    marital_status?: string;
+    uniform_color?: string;
+    city?: string;
+    address?: string;
+    rib?: string;
+    bank_name?: string;
   };
   const id = randomUUID();
   await db.prepare(
-    `INSERT INTO hr_employees (id, user_id, name, employee_id, role, salary, contract_type, contract_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO hr_employees (
+      id, user_id, name, employee_id, work_number, national_id, role, salary, work_days, contract_type, contract_end,
+      start_date, birth_date, marital_status, uniform_color, city, address, rib, bank_name
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     userId,
     b.name,
     b.employee_id,
+    b.work_number ?? b.employee_id,
+    b.national_id ?? "",
     b.role,
     b.salary,
+    Number(b.work_days ?? 0) || 0,
     b.contract_type,
-    b.contract_end ?? null
+    b.contract_end ?? null,
+    b.start_date ?? "",
+    b.birth_date ?? "",
+    b.marital_status ?? "",
+    b.uniform_color ?? "",
+    b.city ?? "",
+    b.address ?? "",
+    b.rib ?? "",
+    b.bank_name ?? ""
   );
   res.json({ id });
 });
@@ -1606,22 +2180,47 @@ app.patch("/api/hr/employees/:id", authMiddleware, async (req, res) => {
   const b = req.body as {
     name: string;
     employee_id: string;
+    work_number?: string;
+    national_id?: string;
     role: string;
     salary: number;
+    work_days?: number;
     contract_type: string;
     contract_end?: string | null;
+    start_date?: string;
+    birth_date?: string;
+    marital_status?: string;
+    uniform_color?: string;
+    city?: string;
+    address?: string;
+    rib?: string;
+    bank_name?: string;
   };
   const r = await db
     .prepare(
-      `UPDATE hr_employees SET name = ?, employee_id = ?, role = ?, salary = ?, contract_type = ?, contract_end = ? WHERE id = ? AND user_id = ?`
+      `UPDATE hr_employees
+       SET name = ?, employee_id = ?, work_number = ?, national_id = ?, role = ?, salary = ?, work_days = ?, contract_type = ?, contract_end = ?,
+           start_date = ?, birth_date = ?, marital_status = ?, uniform_color = ?, city = ?, address = ?, rib = ?, bank_name = ?
+       WHERE id = ? AND user_id = ?`
     )
     .run(
       b.name,
       b.employee_id,
+      b.work_number ?? b.employee_id,
+      b.national_id ?? "",
       b.role,
       b.salary,
+      Number(b.work_days ?? 0) || 0,
       b.contract_type,
       b.contract_end ?? null,
+      b.start_date ?? "",
+      b.birth_date ?? "",
+      b.marital_status ?? "",
+      b.uniform_color ?? "",
+      b.city ?? "",
+      b.address ?? "",
+      b.rib ?? "",
+      b.bank_name ?? "",
       id,
       userId
     );
@@ -1631,6 +2230,66 @@ app.patch("/api/hr/employees/:id", authMiddleware, async (req, res) => {
   }
   res.json({ ok: true });
 });
+
+app.delete("/api/hr/employees/:id", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const id = paramString(req.params.id);
+  if (!(await moduleAllowed(userId, "hr"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  
+  // Delete employee's permissions first
+  try {
+    await db.prepare("DELETE FROM permissions WHERE employee_id = ?").run(id);
+  } catch (permErr) {
+    // Don't fail if permissions table doesn't exist or other error
+    console.error("[HR] Error deleting permissions:", permErr);
+  }
+  
+  const r = await db.prepare("DELETE FROM hr_employees WHERE id = ? AND user_id = ?").run(id, userId);
+  if (r.changes === 0) {
+    res.status(404).json({ error: "غير موجود" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post("/api/hr/employees/:id/parse-document", authMiddleware, uploadMemory.single("file"), async (req, res) => {
+    const userId = (req as express.Request & { userId: string }).userId;
+    if (!(await moduleAllowed(userId, "hr"))) {
+      res.status(403).json({ error: "القسم غير مفعّل" });
+      return;
+    }
+    const file = req.file;
+    if (!file?.buffer?.length) {
+      res.status(400).json({ error: "ملف مفقود" });
+      return;
+    }
+    const name = (file.originalname || "").toLowerCase();
+    const mime = file.mimetype || "";
+    try {
+      if (mime === "application/pdf" || name.endsWith(".pdf")) {
+        const data = await pdfParse(file.buffer);
+        res.json({ text: (data.text || "").trim() });
+        return;
+      }
+      if (
+        mime.includes("wordprocessingml") ||
+        mime.includes("msword") ||
+        name.endsWith(".docx") ||
+        name.endsWith(".doc")
+      ) {
+        const r = await mammoth.extractRawText({ buffer: file.buffer });
+        res.json({ text: (r.value || "").trim() });
+        return;
+      }
+      res.status(415).json({ error: "نوع غير مدعوم. استعمل PDF أو Word." });
+    } catch (e) {
+      res.status(500).json({ error: e instanceof Error ? e.message : "فشل القراءة" });
+    }
+  }
+);
 
 app.patch("/api/hr/metrics/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
@@ -1758,8 +2417,6 @@ async function moduleAllowed(userId: string, mod: string): Promise<boolean> {
 async function aiGenerateAllowed(userId: string, moduleName: string): Promise<boolean> {
   if ((await getUserGateFlags(userId)).bypass) return true;
   switch (moduleName) {
-    case "mediaLab":
-      return await moduleAllowed(userId, "media_lab");
     case "legalAi":
       return (
         (await moduleAllowed(userId, "legal_ai")) ||
@@ -2075,9 +2732,15 @@ app.post("/api/ai/generate", authMiddleware, async (req, res) => {
 app.get("/api/studio/capabilities", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const allowed = await aiGenerateAllowed(userId, "mediaLab");
+  const user = await db.prepare("SELECT ai_api_key FROM users WHERE id = ?").get(userId) as
+    | { ai_api_key: string | null }
+    | undefined;
   const openAiKeyConfigured = Boolean(process.env.OPENAI_API_KEY?.trim());
-  const textToImage = Boolean(allowed && openAiKeyConfigured);
-  res.json({ textToImage, openAiKeyConfigured });
+  const geminiKeyConfigured = Boolean(
+    resolveGeminiImageApiKey(user?.ai_api_key, process.env.GEMINI_API_KEY)
+  );
+  const textToImage = Boolean(allowed && (openAiKeyConfigured || geminiKeyConfigured));
+  res.json({ textToImage, openAiKeyConfigured, geminiKeyConfigured });
 });
 
 app.post("/api/studio/text-to-image", authMiddleware, async (req, res) => {
@@ -2132,6 +2795,1192 @@ app.post("/api/studio/text-to-image", authMiddleware, async (req, res) => {
   } catch {
     res.status(500).json({ error: "فشل الاتصال بتوليد الصورة" });
   }
+});
+
+/** Google Gemini AI - Administrative Chatbot */
+app.post("/api/ai/chat", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { message, locale } = req.body as { message?: string; locale?: string };
+
+  if (!message || typeof message !== "string" || message.trim().length === 0) {
+    res.status(400).json({ error: "الرسالة ناقصة" });
+    return;
+  }
+
+  // Check if user has valid subscription (not just "ai" module)
+  const user = await db.prepare("SELECT role, email, name, ai_api_key, ai_provider FROM users WHERE id = ?").get(userId) as
+    | { role: string; email: string; name: string; ai_api_key: string | null; ai_provider: string | null }
+    | undefined;
+  if (!user) {
+    res.status(403).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+
+  const isSuperAdmin = user.role === "superadmin" ||
+    user.email?.toLowerCase() === SUPER_ADMIN_EMAIL ||
+    isPrimaryAdminUser(user.email, user.name);
+
+  if (!isSuperAdmin) {
+    const sub = await db.prepare(
+      `SELECT status, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(userId) as { status: string; ends_at: string | null } | undefined;
+
+    if (!sub || sub.status !== "approved") {
+      res.status(403).json({ error: "الاشتراك غير مفعّل. يرجى تفعيل اشتراكك للوصول إلى المساعد الذكي." });
+      return;
+    }
+
+    if (sub.ends_at) {
+      const end = new Date(sub.ends_at).getTime();
+      if (Number.isFinite(end) && end <= Date.now()) {
+        res.status(403).json({ error: "انتهى الاشتراك. يرجى تجديد اشتراكك للوصول إلى المساعد الذكي." });
+        return;
+      }
+    }
+  }
+
+  // Professional System Prompt for Smart Al-Idara Pro
+  const SYSTEM_INSTRUCTION = `
+أَنْتَ الخَبِير الإِدَارِي والمُسَاعِد الذَّكِي المُعْتَمَد لِمَنَصَّة "سْمَارْت الإِدَارَة بْرُو" (Smart Al-Idara Pro).
+مُهِمَّتُكَ هِيَ مَسَاعَدَة المُدَرَاء، المَسْؤُولِين، والمُوَظَّفِينَ فِي تَدْبِير أَعْمَالِهِم اليَوْمِيَّة بِكُلِّ احْتِرَافِيَّة.
+
+شُرُوط الإِجَابَة:
+1. الجَوْدَة والمِهْنِيَّة: يَجِب أَن تَكُونَ الإِجَابَات دَقِيقَة، مَبْنِيَّة عَلَى أُسُس تَدْبِيرِيَّة حَدِيثَة، وَمُنَظَّمَة فَقَرَات أَوْ نُقَاط.
+2. اللُّغَة: أَجِب بِنَفْس اللُّغَة الَّتِي كَتَبَ بِهَا المُسْتَخْدِم (العَرَبِيَّة الفُصْحَى هِيَ الأَسَاس لِلشَّأْن الإِدَارِي، أَوِ الدَّارِجَة المَغْرِبِيَّة المِهْنِيَّة إِذَا طُلِبَ ذَلِك).
+3. الهُوِيَّة: لاَ تَذْكُر أَبَداً أَنَّكَ نَمُوذَج جُوجِل (Gemini). أَنْتَ دَائِماً "مُسَاعِد سْمَارْت الإِدَارَة بْرُو الذَّكِي".
+4. السِّيَاق: رَكِّز عَلَى تَقْدِيم حُلُول عَمَلِيَّة (تَقَارِير، جَدَاوِل زَمَنِيَّة، رَسَائِل إِيلِكْتُرُونِيَّة إِدَارِيَّة، نَمَاذِج تَقْيِيم الأَدَاء).
+`;
+
+  // Use user's custom API key if available, otherwise fallback to system key
+  let provider = user.ai_provider || 'gemini';
+  const apiKey = user.ai_api_key?.trim() || process.env.GEMINI_API_KEY?.trim();
+  
+  console.log('AI Chat Debug - User ID:', userId);
+  console.log('AI Chat Debug - Provider from DB:', user.ai_provider);
+  console.log('AI Chat Debug - API Key from DB:', user.ai_api_key ? 'EXISTS' : 'NULL');
+  console.log('AI Chat Debug - Final Provider:', provider);
+  console.log('AI Chat Debug - Final API Key:', apiKey ? 'EXISTS' : 'NULL');
+  
+  // Auto-detect provider from key prefix if provider is not set correctly
+  if (apiKey && !user.ai_provider) {
+    if (apiKey.startsWith('sk-')) provider = 'openai';
+    else if (apiKey.startsWith('AIza')) provider = 'gemini';
+    else if (apiKey.startsWith('gsk_')) provider = 'groq';
+    else if (apiKey.startsWith('hf_')) provider = 'huggingface';
+    else if (apiKey.startsWith('key_')) provider = 'together';
+    console.log('AI Chat Debug - Auto-detected Provider:', provider);
+  }
+  
+  if (!apiKey) {
+    console.log('AI Chat Debug - No API key available, returning error');
+    res.status(503).json({ error: "خدمة الذكاء الاصطناعي غير مفعّلة. يرجى إضافة مفتاح API في الإعدادات." });
+    return;
+  }
+
+  // For Gemini provider, use Google SDK directly (DEFAULT)
+  if (provider === 'gemini') {
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-2.5-flash",
+        systemInstruction: SYSTEM_INSTRUCTION
+      });
+
+      const currentDate = new Date();
+      const dateStr = currentDate.toLocaleDateString('ar-MA', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      const contextPrompt = locale === "ar-MA" || locale === "ar"
+        ? `[معلومات النظام الهامة: التاريخ الحالي اليوم هو ${dateStr} ونحن الآن في سنة 2026 ميلادية. أجب دائماً بناءً على هذا التاريخ الحالي بدقة وموثوقية وتجنب تماماً الإشارة إلى سنة 2024].`
+        : `[Important System Information: Today's date is ${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} and we are now in the year 2026. Always answer based on this current date accurately and reliably, avoid any reference to the year 2024].`;
+
+      const fullPrompt = `${contextPrompt}\n\nسؤال المستخدم: ${message}`;
+      const result = await model.generateContent(fullPrompt);
+      const reply = result.response.text() || '';
+      res.json({ reply, provider: 'gemini' });
+      return;
+    } catch (error) {
+      console.error('Gemini chat error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'فشل الاتصال بـ Google Gemini';
+      res.status(500).json({ error: `فشل الاتصال بـ Gemini: ${errorMessage}` });
+      return;
+    }
+  }
+
+  // For OpenAI provider, use OpenAI API
+  if (provider === 'openai') {
+    try {
+      const openaiKey = apiKey;
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: message }],
+          max_tokens: 1000,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        // Check if response is HTML (Cloudflare error)
+        if (errorText.includes('<!DOCTYPE') || errorText.includes('<html')) {
+          throw new Error('فشل الاتصال بخادم OpenAI - قد يكون هناك مشكلة في الشبكة أو الحماية');
+        }
+        try {
+          const error = JSON.parse(errorText);
+          throw new Error(error.error?.message || 'OpenAI API error');
+        } catch {
+          throw new Error('فشل الاتصال بخادم OpenAI');
+        }
+      }
+
+      const data = await response.json();
+      const reply = data.choices[0]?.message?.content || '';
+      res.json({ reply, provider: 'openai' });
+      return;
+    } catch (error) {
+      console.error('OpenAI chat error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'فشل الاتصال بـ OpenAI';
+      res.status(500).json({ error: `فشل الاتصال بـ OpenAI: ${errorMessage}` });
+      return;
+    }
+  }
+
+  // For Groq provider, use Groq API
+  if (provider === 'groq') {
+    try {
+      const groqKey = apiKey;
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: message }],
+          max_tokens: 1000,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        // Check if response is HTML (Cloudflare error)
+        if (errorText.includes('<!DOCTYPE') || errorText.includes('<html')) {
+          throw new Error('فشل الاتصال بخادم Groq - قد يكون هناك مشكلة في الشبكة أو الحماية');
+        }
+        try {
+          const error = JSON.parse(errorText);
+          throw new Error(error.error?.message || 'Groq API error');
+        } catch {
+          throw new Error('فشل الاتصال بخادم Groq');
+        }
+      }
+
+      const data = await response.json();
+      const reply = data.choices[0]?.message?.content || '';
+      res.json({ reply, provider: 'groq' });
+      return;
+    } catch (error) {
+      console.error('Groq chat error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'فشل الاتصال بـ Groq';
+      res.status(500).json({ error: `فشل الاتصال بـ Groq: ${errorMessage}` });
+      return;
+    }
+  }
+
+  // For Together AI provider, use Together AI API
+  if (provider === 'together') {
+    try {
+      const togetherKey = apiKey;
+      console.log('Together AI Chat - Attempting connection with key:', togetherKey.substring(0, 10) + '...');
+      
+      const response = await fetch('https://api.together.xyz/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${togetherKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+          messages: [
+            { role: 'system', content: SYSTEM_INSTRUCTION },
+            { role: 'user', content: message }
+          ],
+          max_tokens: 1000,
+        }),
+      });
+
+      console.log('Together AI Chat - Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log('Together AI Chat - Error response:', errorText);
+        
+        // Check if response is HTML (Cloudflare error)
+        if (errorText.includes('<!DOCTYPE') || errorText.includes('<html')) {
+          throw new Error('فشل الاتصال بخادم Together AI - قد يكون هناك مشكلة في الشبكة أو الحماية');
+        }
+        try {
+          const error = JSON.parse(errorText);
+          const errorMsg = error.error?.message || error.message || 'Together AI API error';
+          console.log('Together AI Chat - Parsed error:', errorMsg);
+          throw new Error(errorMsg);
+        } catch (parseError) {
+          console.log('Together AI Chat - Parse error:', parseError);
+          throw new Error('فشل الاتصال بخادم Together AI - ' + errorText.substring(0, 200));
+        }
+      }
+
+      const data = await response.json();
+      const reply = data.choices[0]?.message?.content || '';
+      res.json({ reply, provider: 'together' });
+      return;
+    } catch (error) {
+      console.error('Together AI chat error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'فشل الاتصال بـ Together AI';
+      res.status(500).json({ error: `فشل الاتصال بـ Together AI: ${errorMessage}` });
+      return;
+    }
+  }
+
+  // If provider is unknown or not set, return error
+  if (provider === 'huggingface') {
+    res.status(400).json({ error: "HuggingFace غير مدعوم للمحادثة حالياً. يرجى استخدام Gemini أو Groq أو OpenAI أو Together AI." });
+    return;
+  }
+  
+  res.status(400).json({ error: `مزود الذكاء الاصطناعي غير معروف: ${provider}. يرجى اختيار مزود صالح (gemini, openai, groq, together).` });
+});
+
+/** Google Gemini AI - Document Summarization */
+app.post("/api/ai/summarize", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { content, locale } = req.body as { content?: string; locale?: string };
+
+  if (!content || typeof content !== "string" || content.trim().length === 0) {
+    res.status(400).json({ error: "محتوى الوثيقة ناقص" });
+    return;
+  }
+
+  // Check if user has valid subscription (not just "ai" module)
+  const user = await db.prepare("SELECT role, email, name FROM users WHERE id = ?").get(userId) as
+    | { role: string; email: string; name: string }
+    | undefined;
+  if (!user) {
+    res.status(403).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+  
+  const isSuperAdmin = user.role === "superadmin" || 
+    user.email?.toLowerCase() === SUPER_ADMIN_EMAIL ||
+    isPrimaryAdminUser(user.email, user.name);
+  
+  if (!isSuperAdmin) {
+    const sub = await db.prepare(
+      `SELECT status, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(userId) as { status: string; ends_at: string | null } | undefined;
+    
+    if (!sub || sub.status !== "approved") {
+      res.status(403).json({ error: "الاشتراك غير مفعّل. يرجى تفعيل اشتراكك للوصول إلى المساعد الذكي." });
+      return;
+    }
+    
+    if (sub.ends_at) {
+      const end = new Date(sub.ends_at).getTime();
+      if (Number.isFinite(end) && end <= Date.now()) {
+        res.status(403).json({ error: "انتهى الاشتراك. يرجى تجديد اشتراكك للوصول إلى المساعد الذكي." });
+        return;
+      }
+    }
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    res.status(503).json({ error: "خدمة الذكاء الاصطناعي غير مفعّلة" });
+    return;
+  }
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+
+    const currentDate = new Date();
+    const dateStr = currentDate.toLocaleDateString('ar-MA', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+
+    const systemPrompt = locale === "ar-MA" || locale === "ar"
+      ? `[معلومات النظام الهامة: التاريخ الحالي اليوم هو ${dateStr} ونحن الآن في سنة 2026 ميلادية. أجب دائماً بناءً على هذا التاريخ الحالي بدقة وموثوقية وتجنب تماماً الإشارة إلى سنة 2024].
+         
+         لخص الوثيقة التالية إلى نقاط واضحة ومهنية. ركز على المعلومات الأساسية والأرقام والتواريخ المهمة.
+         استخدم الدارجة المغربية أو العربية الفصحى. اجعل التلخيص سهل القراءة والفهم.`
+      : `[Important System Information: Today's date is ${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} and we are now in the year 2026. Always answer based on this current date accurately and reliably, avoid any reference to the year 2024].
+         
+         Summarize the following document into clear, professional bullet points. Focus on key information, numbers, and important dates.
+         Make the summary easy to read and understand.`;
+
+    const fullPrompt = `${systemPrompt}\n\nمحتوى الوثيقة:\n${content}`;
+    const result = await model.generateContent(fullPrompt);
+
+    const response = result.response;
+    const text = response.text();
+
+    res.json({ summary: text });
+  } catch (error: any) {
+    console.error("Gemini summarize error:", error);
+    const errorMessage = error?.message || String(error);
+    console.error("Error details:", errorMessage);
+    
+    res.status(500).json({ 
+      error: (locale?.startsWith("ar") ?? false) 
+        ? "فشل في تلخيص الوثيقة. الخدمة قد تكون مشغولة حالياً. يرجى المحاولة مرة أخرى لاحقاً."
+        : "Failed to summarize document. The service may be busy. Please try again later.",
+      details: errorMessage
+    });
+  }
+});
+
+/** Google Gemini AI - OCR for ID Cards and Documents */
+app.post("/api/ai/ocr", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { imageData, locale, documentType } = req.body as {
+    imageData?: string;
+    locale?: string;
+    documentType?: "id_card" | "document" | "general";
+  };
+
+  if (!imageData || typeof imageData !== "string") {
+    res.status(400).json({ error: "بيانات الصورة ناقصة" });
+    return;
+  }
+
+  // Check if user has valid subscription (not just "ai" module)
+  const user = await db.prepare("SELECT role, email, name FROM users WHERE id = ?").get(userId) as
+    | { role: string; email: string; name: string }
+    | undefined;
+  if (!user) {
+    res.status(403).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+  
+  const isSuperAdmin = user.role === "superadmin" || 
+    user.email?.toLowerCase() === SUPER_ADMIN_EMAIL ||
+    isPrimaryAdminUser(user.email, user.name);
+  
+  if (!isSuperAdmin) {
+    const sub = await db.prepare(
+      `SELECT status, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(userId) as { status: string; ends_at: string | null } | undefined;
+    
+    if (!sub || sub.status !== "approved") {
+      res.status(403).json({ error: "الاشتراك غير مفعّل. يرجى تفعيل اشتراكك للوصول إلى المساعد الذكي." });
+      return;
+    }
+    
+    if (sub.ends_at) {
+      const end = new Date(sub.ends_at).getTime();
+      if (Number.isFinite(end) && end <= Date.now()) {
+        res.status(403).json({ error: "انتهى الاشتراك. يرجى تجديد اشتراكك للوصول إلى المساعد الذكي." });
+        return;
+      }
+    }
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) {
+    res.status(503).json({ error: "خدمة الذكاء الاصطناعي غير مفعّلة" });
+    return;
+  }
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+
+    const currentDate = new Date();
+    const dateStr = currentDate.toLocaleDateString('ar-MA', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+
+    const dateContext = locale === "ar-MA" || locale === "ar"
+      ? `[معلومات النظام الهامة: التاريخ الحالي اليوم هو ${dateStr} ونحن الآن في سنة 2026 ميلادية. أجب دائماً بناءً على هذا التاريخ الحالي بدقة وموثوقية وتجنب تماماً الإشارة إلى سنة 2024].`
+      : `[Important System Information: Today's date is ${currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} and we are now in the year 2026. Always answer based on this current date accurately and reliably, avoid any reference to the year 2024].`;
+
+    let systemPrompt = "";
+    if (documentType === "id_card") {
+      systemPrompt = locale === "ar-MA" || locale === "ar"
+        ? `${dateContext}
+           
+           أنت خبير في قراءة البطاقات الوطنية المغربية. استخرج المعلومات بدقة عالية من الصورة.
+           يجب أن تُرجع JSON فقط بالتنسيق التالي:
+           {
+             "firstName": "الاسم الشخصي",
+             "lastName": "اسم العائلة",
+             "nationalId": "رقم البطاقة الوطنية",
+             "dateOfBirth": "تاريخ الميلاد (YYYY-MM-DD)",
+             "placeOfBirth": "مكان الولادة",
+             "address": "العنوان الكامل",
+             "gender": "الجنس (ذكر/أنثى)"
+           }
+           تأكد من عدم وجود أخطاء إملائية. استخرج النص بالعربية والفرنسية كما هو مكتوب.`
+        : `${dateContext}
+           
+           You are an expert in reading Moroccan national ID cards. Extract information with high accuracy from the image.
+           Return ONLY JSON in the following format:
+           {
+             "firstName": "First name",
+             "lastName": "Last name",
+             "nationalId": "National ID number",
+             "dateOfBirth": "Date of birth (YYYY-MM-DD)",
+             "placeOfBirth": "Place of birth",
+             "address": "Full address",
+             "gender": "Gender (male/female)"
+           }
+           Ensure no typos. Extract text in Arabic and French as written.`;
+    } else {
+      systemPrompt = locale === "ar-MA" || locale === "ar"
+        ? `استخرج جميع النصوص من الصورة بدقة عالية. يدعم العربية والفرنسية والإنجليزية والإسبانية.
+           ركز على الأرقام والتواريخ والأسماء والعناوين. أرجع النص المستخرج فقط.`
+        : `Extract all text from the image with high accuracy. Supports Arabic, French, English, and Spanish.
+           Focus on numbers, dates, names, and addresses. Return only the extracted text.`;
+    }
+
+    const imagePart = {
+      inlineData: {
+        data: imageData.split(",")[1],
+        mimeType: "image/jpeg",
+      },
+    };
+
+    const result = await model.generateContent([systemPrompt, imagePart]);
+
+    const response = result.response;
+    const text = response.text();
+
+    if (documentType === "id_card") {
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const jsonData = JSON.parse(jsonMatch[0]);
+          res.json({ extracted: jsonData });
+        } else {
+          res.json({ extracted: { rawText: text } });
+        }
+      } catch {
+        res.json({ extracted: { rawText: text } });
+      }
+    } else {
+      res.json({ extracted: { text } });
+    }
+  } catch (error: any) {
+    console.error("Gemini OCR error:", error);
+    const errorMessage = error?.message || String(error);
+    console.error("Error details:", errorMessage);
+    
+    res.status(500).json({ 
+      error: (locale?.startsWith("ar") ?? false) 
+        ? "فشل في معالجة الصورة. الخدمة قد تكون مشغولة حالياً. يرجى المحاولة مرة أخرى لاحقاً."
+        : "Failed to process image. The service may be busy. Please try again later.",
+      details: errorMessage
+    });
+  }
+});
+
+/** Google Gemini AI - Image Generation (using Imagen) */
+app.post("/api/ai/image", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { prompt } = req.body as { prompt?: string };
+  
+  // Support header-based API keys (from the new hybrid system)
+  const headerOpenAIKey = req.headers['x-openai-api-key'] as string;
+  const headerGeminiKey = req.headers['x-gemini-api-key'] as string;
+
+  if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
+    res.status(400).json({ error: "الوصف ناقص" });
+    return;
+  }
+
+  // Check if user has valid subscription (not just "ai" module)
+  const user = await db.prepare("SELECT role, email, name, ai_api_key, ai_provider FROM users WHERE id = ?").get(userId) as
+    | { role: string; email: string; name: string; ai_api_key: string | null; ai_provider: string | null }
+    | undefined;
+  if (!user) {
+    res.status(403).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+  
+  const isSuperAdmin = user.role === "superadmin" || 
+    user.email?.toLowerCase() === SUPER_ADMIN_EMAIL ||
+    isPrimaryAdminUser(user.email, user.name);
+  
+  if (!isSuperAdmin) {
+    const sub = await db.prepare(
+      `SELECT status, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(userId) as { status: string; ends_at: string | null } | undefined;
+    
+    if (!sub || sub.status !== "approved") {
+      res.status(403).json({ error: "الاشتراك غير مفعّل. يرجى تفعيل اشتراكك للوصول إلى المساعد الذكي." });
+      return;
+    }
+    
+    if (sub.ends_at) {
+      const end = new Date(sub.ends_at).getTime();
+      if (Number.isFinite(end) && end <= Date.now()) {
+        res.status(403).json({ error: "انتهى الاشتراك. يرجى تجديد اشتراكك للوصول إلى المساعد الذكي." });
+        return;
+      }
+    }
+  }
+
+  // Priority: Use Pollinations.ai as default (free, no API key required)
+  // Only use paid APIs if user explicitly provides valid keys
+  let finalProvider = 'pollinations';
+  let apiKey = null;
+  
+  // Check for user-provided API keys (from headers first, then from database)
+  if (headerOpenAIKey && headerOpenAIKey.trim().length > 15) {
+    finalProvider = 'openai';
+    apiKey = headerOpenAIKey.trim();
+  } else if (headerGeminiKey && headerGeminiKey.trim().length > 15) {
+    finalProvider = 'gemini';
+    apiKey = headerGeminiKey.trim();
+  } else if (user.ai_api_key && user.ai_api_key.trim().length > 15) {
+    apiKey = user.ai_api_key.trim();
+    // Auto-detect provider from key
+    if (user.ai_provider) {
+      finalProvider = user.ai_provider;
+    } else {
+      if (apiKey.startsWith('sk-')) finalProvider = 'openai';
+      else if (apiKey.startsWith('AIza')) finalProvider = 'gemini';
+      else if (apiKey.startsWith('gsk_')) finalProvider = 'groq';
+      else if (apiKey.startsWith('hf_')) finalProvider = 'huggingface';
+      else if (apiKey.startsWith('key_')) finalProvider = 'together';
+    }
+    console.log('Using API key from database for user:', userId, 'Provider:', finalProvider);
+  } else if (process.env.GEMINI_API_KEY?.trim()) {
+    finalProvider = 'gemini';
+    apiKey = process.env.GEMINI_API_KEY.trim();
+    console.log('Using GEMINI_API_KEY from environment as fallback');
+  } else if (process.env.OPENAI_API_KEY?.trim()) {
+    finalProvider = 'openai';
+    apiKey = process.env.OPENAI_API_KEY.trim();
+    console.log('Using OPENAI_API_KEY from environment as fallback');
+  }
+  
+  // Always try Pollinations.ai first (free, reliable)
+  try {
+    // Translate Arabic to English for better image generation
+    let englishPrompt = prompt;
+    console.log('Pollinations AI - Generating image for prompt:', prompt.substring(0, 50) + '...');
+    
+    try {
+      const translationRes = await fetch(`https://text.pollinations.ai/${encodeURIComponent('Translate this Arabic text to English for image generation. Return ONLY the English translation: ' + prompt)}`);
+      const translatedText = await translationRes.text();
+      if (translatedText && translatedText.trim()) {
+        englishPrompt = translatedText.trim();
+        console.log('Pollinations AI - Translated prompt:', englishPrompt.substring(0, 50) + '...');
+      }
+    } catch (e) {
+      console.log("Pollinations AI - Translation failed, using original prompt");
+    }
+
+    const encodedPrompt = encodeURIComponent(englishPrompt);
+    const imageUrl = `https://gen.pollinations.ai/image/${encodedPrompt}?model=flux&width=1024&height=1024&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
+    
+    console.log('Pollinations AI - Fetching image from:', imageUrl);
+    
+    // Fetch image as arraybuffer
+    const imageResponse = await fetch(imageUrl, {
+      headers: {
+        'Accept': 'image/*',
+      }
+    });
+    
+    console.log('Pollinations AI - Response status:', imageResponse.status);
+    console.log('Pollinations AI - Content-Type:', imageResponse.headers.get('content-type'));
+    
+    if (!imageResponse.ok) {
+      const errorText = await imageResponse.text();
+      console.log('Pollinations AI - Error response:', errorText.substring(0, 200));
+      throw new Error(`Pollinations returned status ${imageResponse.status}`);
+    }
+    
+    const buffer = await imageResponse.arrayBuffer();
+    
+    if (buffer.byteLength === 0) {
+      throw new Error('Empty image buffer from Pollinations');
+    }
+    
+    console.log('Pollinations AI - Buffer size:', buffer.byteLength);
+    
+    // Check content type to ensure it's an image
+    const contentType = imageResponse.headers.get('content-type');
+    if (contentType && !contentType.startsWith('image/')) {
+      console.log('Pollinations returned non-image content:', contentType);
+      // Try to convert anyway if it's not HTML error page
+      if (contentType.includes('text/html')) {
+        throw new Error('Pollinations returned HTML error page instead of image');
+      }
+    }
+    
+    // Use sharp to optimize and convert to base64 with better error handling
+    try {
+      const sharp = (await import('sharp')).default;
+      const optimizedBuffer = await sharp(Buffer.from(buffer))
+        .toFormat('jpeg', { quality: 85 })
+        .toBuffer();
+      
+      const base64 = optimizedBuffer.toString('base64');
+      
+      console.log('Pollinations AI - Successfully generated image');
+      res.json({ b64: base64, imageUrl: `data:image/jpeg;base64,${base64}`, provider: 'Pollinations AI (Free)' });
+      return;
+    } catch (sharpError) {
+      console.error('Sharp processing error:', sharpError);
+      // Fallback: convert buffer directly to base64 without sharp optimization
+      const base64 = Buffer.from(buffer).toString('base64');
+      console.log('Pollinations AI - Using raw buffer conversion');
+      res.json({ b64: base64, imageUrl: `data:image/jpeg;base64,${base64}`, provider: 'Pollinations AI (Raw)' });
+      return;
+    }
+  } catch (pollinationsError) {
+    console.error('Pollinations.ai image generation error:', pollinationsError);
+    
+    // If Pollinations fails and we have a paid API key, try that as fallback
+    if (finalProvider !== 'pollinations' && apiKey) {
+      // For OpenAI provider (header or DB key)
+      if (finalProvider === 'openai') {
+        const openaiKey = headerOpenAIKey || user.ai_api_key?.trim() || process.env.OPENAI_API_KEY?.trim();
+        if (!openaiKey) {
+          res.status(503).json({ error: "خدمة الذكاء الاصطناعي غير مفعّلة. يرجى إضافة مفتاح API في الإعدادات." });
+          return;
+        }
+        
+        try {
+          const response = await fetch('https://api.openai.com/v1/images/generations', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${openaiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'dall-e-3',
+              prompt: prompt,
+              n: 1,
+              size: '1024x1024',
+              response_format: 'b64_json',
+            }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'OpenAI API error');
+          }
+
+          const data = await response.json();
+          const b64 = data.data[0]?.b64_json;
+          if (b64) {
+            res.json({ b64, provider: 'OpenAI DALL-E 3' });
+            return;
+          } else {
+            throw new Error('No image data returned');
+          }
+        } catch (error) {
+          console.error('OpenAI image generation error:', error);
+          // Fallback to pollinations.ai
+          try {
+            let englishPrompt = prompt;
+            try {
+              const translationRes = await fetch(`https://text.pollinations.ai/${encodeURIComponent('Translate this Arabic text to English for image generation. Return ONLY the English translation: ' + prompt)}`);
+              const translatedText = await translationRes.text();
+              if (translatedText && translatedText.trim()) {
+                englishPrompt = translatedText.trim();
+              }
+            } catch (e) {
+              console.log("Translation failed, using original prompt");
+            }
+
+            const encodedPrompt = encodeURIComponent(englishPrompt);
+            const imageUrl = `https://gen.pollinations.ai/image/${encodedPrompt}?model=flux&width=1024&height=1024&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
+            
+            const imageResponse = await fetch(imageUrl);
+            
+            if (!imageResponse.ok) {
+              throw new Error(`Pollinations returned status ${imageResponse.status}`);
+            }
+            
+            const buffer = await imageResponse.arrayBuffer();
+            
+            if (buffer.byteLength === 0) {
+              throw new Error('Empty image buffer from Pollinations');
+            }
+            
+            const sharp = (await import('sharp')).default;
+            const optimizedBuffer = await sharp(Buffer.from(buffer))
+              .toFormat('jpeg', { quality: 85 })
+              .toBuffer();
+            
+            const base64 = optimizedBuffer.toString('base64');
+            res.json({ b64: base64, imageUrl: `data:image/jpeg;base64,${base64}`, provider: 'Pollinations AI (OpenAI Fallback)' });
+            return;
+          } catch (fallbackError) {
+            console.error('Pollinations fallback error:', fallbackError);
+            res.status(500).json({ error: 'فشل الاتصال بـ OpenAI والبديل المجاني' });
+            return;
+          }
+        }
+      }
+      
+      // For Gemini provider
+      if (finalProvider === 'gemini') {
+        try {
+          const { generateGeminiImageViaRest, extractGeminiInlineImageData } = await import('./aiImageGeneration');
+          const models = ['imagen-3.0-generate-001', 'imagen-3.0-generate-001:generate-image', 'gemini-2.0-flash-exp'];
+          
+          for (const model of models) {
+            try {
+              const result = await generateGeminiImageViaRest(apiKey, model, prompt);
+              const b64 = extractGeminiInlineImageData(result);
+              if (b64) {
+                res.json({ b64, provider: `Gemini ${model}` });
+                return;
+              }
+            } catch (modelError) {
+              console.log(`Gemini model ${model} failed:`, modelError);
+              continue;
+            }
+          }
+          
+          // All Gemini models failed, fallback to Pollinations
+          throw new Error('All Gemini models failed');
+        } catch (error) {
+          console.error('Gemini image generation error:', error);
+          // Fallback to pollinations.ai
+          try {
+            let englishPrompt = prompt;
+            try {
+              const translationRes = await fetch(`https://text.pollinations.ai/${encodeURIComponent('Translate this Arabic text to English for image generation. Return ONLY the English translation: ' + prompt)}`);
+              const translatedText = await translationRes.text();
+              if (translatedText && translatedText.trim()) {
+                englishPrompt = translatedText.trim();
+              }
+            } catch (e) {
+              console.log("Translation failed, using original prompt");
+            }
+
+            const encodedPrompt = encodeURIComponent(englishPrompt);
+            const imageUrl = `https://gen.pollinations.ai/image/${encodedPrompt}?model=flux&width=1024&height=1024&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
+            
+            const imageResponse = await fetch(imageUrl);
+            
+            if (!imageResponse.ok) {
+              throw new Error(`Pollinations returned status ${imageResponse.status}`);
+            }
+            
+            const buffer = await imageResponse.arrayBuffer();
+            
+            if (buffer.byteLength === 0) {
+              throw new Error('Empty image buffer from Pollinations');
+            }
+            
+            const sharp = (await import('sharp')).default;
+            const optimizedBuffer = await sharp(Buffer.from(buffer))
+              .toFormat('jpeg', { quality: 85 })
+              .toBuffer();
+            
+            const base64 = optimizedBuffer.toString('base64');
+            res.json({ b64: base64, imageUrl: `data:image/jpeg;base64,${base64}`, provider: 'Pollinations AI (Gemini Fallback)' });
+            return;
+          } catch (fallbackError) {
+            console.error('Pollinations fallback error:', fallbackError);
+            res.status(500).json({ error: 'فشل الاتصال بـ Gemini والبديل المجاني' });
+            return;
+          }
+        }
+      }
+      
+      // For Together AI provider
+      if (finalProvider === 'together') {
+        try {
+          console.log('Together AI Image - Attempting connection with key:', apiKey.substring(0, 10) + '...');
+          
+          // Translate Arabic to English for better image generation
+          let englishPrompt = prompt;
+          try {
+            const translationRes = await fetch(`https://text.pollinations.ai/${encodeURIComponent('Translate this Arabic text to English for image generation. Return ONLY the English translation: ' + prompt)}`);
+            const translatedText = await translationRes.text();
+            if (translatedText && translatedText.trim()) {
+              englishPrompt = translatedText.trim();
+            }
+          } catch (e) {
+            console.log("Translation failed, using original prompt");
+          }
+
+          console.log('Together AI Image - Sending request with prompt:', englishPrompt.substring(0, 100) + '...');
+          
+          const response = await fetch('https://api.together.xyz/v1/images/generations', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'black-forest-labs/FLUX.1-schnell',
+              prompt: englishPrompt,
+              width: 1024,
+              height: 1024,
+              steps: 4,
+              n: 1,
+              response_format: 'b64_json',
+            }),
+          });
+
+          console.log('Together AI Image - Response status:', response.status);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.log('Together AI Image - Error response:', errorText);
+            
+            try {
+              const error = JSON.parse(errorText);
+              const errorMsg = error.error?.message || error.message || 'Together AI API error';
+              console.log('Together AI Image - Parsed error:', errorMsg);
+              throw new Error(errorMsg);
+            } catch (parseError) {
+              console.log('Together AI Image - Parse error:', parseError);
+              throw new Error('فشل الاتصال بخادم Together AI - ' + errorText.substring(0, 200));
+            }
+          }
+
+          const data = await response.json();
+          const b64 = data.data?.[0]?.b64_json;
+          if (b64) {
+            res.json({ b64, provider: 'Together AI FLUX.1' });
+            return;
+          } else {
+            throw new Error('No image data returned from Together AI');
+          }
+        } catch (error) {
+          console.error('Together AI image generation error:', error);
+          // Fallback to pollinations.ai
+          try {
+            let englishPrompt = prompt;
+            try {
+              const translationRes = await fetch(`https://text.pollinations.ai/${encodeURIComponent('Translate this Arabic text to English for image generation. Return ONLY the English translation: ' + prompt)}`);
+              const translatedText = await translationRes.text();
+              if (translatedText && translatedText.trim()) {
+                englishPrompt = translatedText.trim();
+              }
+            } catch (e) {
+              console.log("Translation failed, using original prompt");
+            }
+
+            const encodedPrompt = encodeURIComponent(englishPrompt);
+            const imageUrl = `https://gen.pollinations.ai/image/${encodedPrompt}?model=flux&width=1024&height=1024&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
+            
+            const imageResponse = await fetch(imageUrl);
+            
+            if (!imageResponse.ok) {
+              throw new Error(`Pollinations returned status ${imageResponse.status}`);
+            }
+            
+            const buffer = await imageResponse.arrayBuffer();
+            
+            if (buffer.byteLength === 0) {
+              throw new Error('Empty image buffer from Pollinations');
+            }
+            
+            const sharp = (await import('sharp')).default;
+            const optimizedBuffer = await sharp(Buffer.from(buffer))
+              .toFormat('jpeg', { quality: 85 })
+              .toBuffer();
+            
+            const base64 = optimizedBuffer.toString('base64');
+            res.json({ b64: base64, imageUrl: `data:image/jpeg;base64,${base64}`, provider: 'Pollinations AI (Together AI Fallback)' });
+            return;
+          } catch (fallbackError) {
+            console.error('Pollinations fallback error:', fallbackError);
+            res.status(500).json({ error: 'فشل الاتصال بـ Together AI والبديل المجاني' });
+            return;
+          }
+        }
+      }
+    }
+    
+    // If we get here, Pollinations failed and no fallback worked
+    res.status(500).json({ error: 'فشل توليد الصورة. الخدمة قد تكون مشغولة حالياً. يرجى المحاولة مرة أخرى لاحقاً.' });
+    return;
+  }
+});
+
+/** AI Text-to-Speech (TTS) */
+app.post("/api/ai/tts", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { text, locale } = req.body as { text?: string; locale?: string };
+
+  if (!text || typeof text !== "string" || text.trim().length === 0) {
+    res.status(400).json({ error: "النص مطلوب" });
+    return;
+  }
+
+  // Check user subscription
+  const user = await db.prepare("SELECT role, email, name, ai_api_key, ai_provider FROM users WHERE id = ?").get(userId) as
+    | { role: string; email: string; name: string; ai_api_key: string | null; ai_provider: string | null }
+    | undefined;
+  if (!user) {
+    res.status(403).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+
+  const isSuperAdmin = user.role === "superadmin" || 
+    user.email?.toLowerCase() === SUPER_ADMIN_EMAIL ||
+    isPrimaryAdminUser(user.email, user.name);
+
+  if (!isSuperAdmin) {
+    const sub = await db.prepare(
+      `SELECT status, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(userId) as { status: string; ends_at: string | null } | undefined;
+    
+    if (!sub || sub.status !== "approved") {
+      res.status(403).json({ error: "الاشتراك غير مفعّل" });
+      return;
+    }
+    
+    if (sub.ends_at) {
+      const end = new Date(sub.ends_at).getTime();
+      if (Number.isFinite(end) && end <= Date.now()) {
+        res.status(403).json({ error: "انتهى الاشتراك" });
+        return;
+      }
+    }
+  }
+
+  const provider = user.ai_provider || 'openai';
+  const apiKey = user.ai_api_key?.trim() || process.env.OPENAI_API_KEY?.trim();
+
+  // For OpenAI provider
+  if (provider === 'openai' && apiKey) {
+    try {
+      const response = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'tts-1',
+          input: text,
+          voice: 'alloy',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        // Check if response is HTML (Cloudflare error)
+        if (errorText.includes('<!DOCTYPE') || errorText.includes('<html')) {
+          throw new Error('فشل الاتصال بخادم OpenAI - قد يكون هناك مشكلة في الشبكة أو الحماية');
+        }
+        try {
+          const error = JSON.parse(errorText);
+          throw new Error(error.error?.message || 'OpenAI TTS error');
+        } catch {
+          throw new Error('فشل الاتصال بخادم OpenAI');
+        }
+      }
+
+      const audioBuffer = await response.arrayBuffer();
+      const base64 = Buffer.from(audioBuffer).toString('base64');
+      res.json({ audio: base64, provider: 'OpenAI TTS' });
+      return;
+    } catch (error) {
+      console.error('OpenAI TTS error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'فشل الاتصال بـ OpenAI';
+      res.status(500).json({ error: `فشل الاتصال بـ OpenAI TTS: ${errorMessage}` });
+      return;
+    }
+  }
+
+  // For Gemini provider (using Google Cloud TTS)
+  if (provider === 'gemini' && apiKey) {
+    try {
+      // Gemini doesn't have direct TTS, use Google Cloud TTS with the same key
+      const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: { text: text },
+          voice: {
+            languageCode: locale === 'ar-MA' || locale === 'ar-SA' ? 'ar-SA' : 'en-US',
+            ssmlGender: 'NEUTRAL',
+          },
+          audioConfig: { audioEncoding: 'MP3' },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        try {
+          const error = JSON.parse(errorText);
+          throw new Error(error.error?.message || 'Google TTS error');
+        } catch {
+          throw new Error('فشل الاتصال بخادم Google TTS');
+        }
+      }
+
+      const data = await response.json();
+      const audioBase64 = data.audioContent;
+      res.json({ audio: audioBase64, provider: 'Google TTS' });
+      return;
+    } catch (error) {
+      console.error('Google TTS error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'فشل الاتصال بـ Google TTS';
+      res.status(500).json({ error: `فشل الاتصال بـ Google TTS: ${errorMessage}` });
+      return;
+    }
+  }
+
+  // If provider is not supported for TTS
+  res.status(400).json({ error: `المزود ${provider} غير مدعوم لتحويل النص إلى صوت. يرجى استخدام OpenAI أو Gemini.` });
+});
+
+/** AI Speech-to-Text (STT) */
+app.post("/api/ai/stt", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { audio } = req.body as { audio?: string };
+
+  if (!audio || typeof audio !== "string") {
+    res.status(400).json({ error: "الصوت مطلوب" });
+    return;
+  }
+
+  // Check user subscription
+  const user = await db.prepare("SELECT role, email, name, ai_api_key, ai_provider FROM users WHERE id = ?").get(userId) as
+    | { role: string; email: string; name: string; ai_api_key: string | null; ai_provider: string | null }
+    | undefined;
+  if (!user) {
+    res.status(403).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+
+  const isSuperAdmin = user.role === "superadmin" || 
+    user.email?.toLowerCase() === SUPER_ADMIN_EMAIL ||
+    isPrimaryAdminUser(user.email, user.name);
+
+  if (!isSuperAdmin) {
+    const sub = await db.prepare(
+      `SELECT status, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(userId) as { status: string; ends_at: string | null } | undefined;
+    
+    if (!sub || sub.status !== "approved") {
+      res.status(403).json({ error: "الاشتراك غير مفعّل" });
+      return;
+    }
+    
+    if (sub.ends_at) {
+      const end = new Date(sub.ends_at).getTime();
+      if (Number.isFinite(end) && end <= Date.now()) {
+        res.status(403).json({ error: "انتهى الاشتراك" });
+        return;
+      }
+    }
+  }
+
+  const provider = user.ai_provider || 'openai';
+  const apiKey = user.ai_api_key?.trim() || process.env.OPENAI_API_KEY?.trim();
+
+  if (provider === 'openai' && apiKey) {
+    try {
+      const audioBuffer = Buffer.from(audio, 'base64');
+      const formData = new FormData();
+      formData.append('file', new Blob([audioBuffer]), 'audio.webm');
+      formData.append('model', 'whisper-1');
+
+      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error?.message || 'OpenAI STT error');
+      }
+
+      const data = await response.json();
+      res.json({ text: data.text, provider: 'OpenAI Whisper' });
+      return;
+    } catch (error) {
+      console.error('OpenAI STT error:', error);
+    }
+  }
+
+  res.status(503).json({ error: "خدمة تحويل الصوت إلى نص غير متاحة. يرجى إضافة مفتاح OpenAI." });
+});
+
+/** AI Video Generation */
+app.post("/api/ai/video", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { prompt } = req.body as { prompt?: string };
+
+  if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
+    res.status(400).json({ error: "الوصف مطلوب" });
+    return;
+  }
+
+  // Check user subscription
+  const user = await db.prepare("SELECT role, email, name, ai_api_key, ai_provider FROM users WHERE id = ?").get(userId) as
+    | { role: string; email: string; name: string; ai_api_key: string | null; ai_provider: string | null }
+    | undefined;
+  if (!user) {
+    res.status(403).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+
+  const isSuperAdmin = user.role === "superadmin" || 
+    user.email?.toLowerCase() === SUPER_ADMIN_EMAIL ||
+    isPrimaryAdminUser(user.email, user.name);
+
+  if (!isSuperAdmin) {
+    const sub = await db.prepare(
+      `SELECT status, ends_at FROM subscriptions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1`
+    ).get(userId) as { status: string; ends_at: string | null } | undefined;
+    
+    if (!sub || sub.status !== "approved") {
+      res.status(403).json({ error: "الاشتراك غير مفعّل" });
+      return;
+    }
+    
+    if (sub.ends_at) {
+      const end = new Date(sub.ends_at).getTime();
+      if (Number.isFinite(end) && end <= Date.now()) {
+        res.status(403).json({ error: "انتهى الاشتراك" });
+        return;
+      }
+    }
+  }
+
+  // Use pollinations.ai for free video generation
+  const encodedPrompt = encodeURIComponent(prompt);
+  const videoUrl = `https://gen.pollinations.ai/image/${encodedPrompt}?model=flux&width=1024&height=576&seed=${Math.floor(Math.random() * 1000000)}&nologo=true`;
+  res.json({ videoUrl, provider: 'Pollinations AI (Free)' });
 });
 
 /** إعدادات المنصة (عامة) — روابط التواصل ومعلومات الدفع */
@@ -2225,6 +4074,292 @@ app.get("/api/auto-real-estate/load", authMiddleware, async (req, res) => {
   }
   const row = await db.prepare("SELECT value FROM app_settings WHERE key = ?").get(`auto_real_estate_${userId}`) as { value: string } | undefined;
   res.json({ data: row?.value ? JSON.parse(row.value) : null });
+});
+
+// Supabase auto_real_estate endpoints for super admin
+app.get("/api/supabase/auto-real-estate", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const user = await db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
+    
+    // Only allow super admin to access this endpoint
+    if (!user || user.email !== SUPER_ADMIN_EMAIL) {
+      res.status(403).json({ error: "غير مصرح" });
+      return;
+    }
+
+    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    
+    // Get super admin's Supabase user ID - SUPER ADMIN SEES ONLY THEIR OWN DATA
+    const superAdminSupabaseId = 'f13bed00-cd13-4075-8716-d9939ea8ba16'; // lahcenm534@gmail.com
+    
+    // Filter by user_id to ensure data isolation - super admin sees only their own data
+    const response = await fetch(`${supabaseUrl}/rest/v1/auto_real_estate?select=*&user_id=eq.${superAdminSupabaseId}&order=created_at.desc`, {
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Supabase error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.json({ data });
+  } catch (error) {
+    console.error("Error fetching auto_real_estate:", error);
+    res.status(500).json({ error: "فشل جلب البيانات" });
+  }
+});
+
+app.post("/api/supabase/auto-real-estate", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const user = await db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
+    
+    // Only allow super admin to access this endpoint
+    if (!user || user.email !== SUPER_ADMIN_EMAIL) {
+      res.status(403).json({ error: "غير مصرح" });
+      return;
+    }
+
+    const item = req.body;
+    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    
+    console.log('[AutoRealEstate API] Supabase URL:', supabaseUrl);
+    console.log('[AutoRealEstate API] Supabase Key available:', !!supabaseKey);
+    console.log('[AutoRealEstate API] Request body:', item);
+    
+    // Get super admin's Supabase user ID
+    const superAdminSupabaseId = 'f13bed00-cd13-4075-8716-d9939ea8ba16'; // lahcenm534@gmail.com
+    
+    const dbItem = {
+      user_id: superAdminSupabaseId, // Use actual super admin user ID - CRITICAL
+      type: item.type,
+      brand_or_title: item.brandOrTitle,
+      plate_or_address: item.plateOrAddress,
+      specs: item.specs || '',
+      price: item.price || 0,
+      status: item.status || 'Available',
+      expiry_date: item.expiryDate || null,
+      image: item.image || null,
+      color: item.color || null,
+      fuel: item.fuel || null,
+      mileage: item.mileage || null,
+      defects: item.defects || null,
+      rent_start: item.rentStart || null,
+      rent_end: item.rentEnd || null,
+      prop_type: item.propType || null,
+      commercial_type: item.commercialType || null,
+      floor_num: item.floorNum || null,
+      total_floors: item.totalFloors || null,
+      rooms: item.rooms || null,
+      bathrooms: item.bathrooms || null,
+      amenities: item.amenities || null,
+      zoning: item.zoning || null,
+      sqm: item.sqm || null,
+    };
+    
+    // CRITICAL: Ensure user_id is never null
+    if (!dbItem.user_id) {
+      console.error('[AutoRealEstate API] CRITICAL: user_id is null, setting to super admin ID');
+      dbItem.user_id = superAdminSupabaseId;
+    }
+
+    console.log('[AutoRealEstate API] Sending to Supabase:', dbItem);
+    console.log('[AutoRealEstate API] user_id value:', dbItem.user_id);
+    console.log('[AutoRealEstate API] user_id type:', typeof dbItem.user_id);
+    
+    // Final verification before sending
+    if (!dbItem.user_id) {
+      throw new Error('CRITICAL: user_id is still null before sending to Supabase');
+    }
+
+    const jsonBody = JSON.stringify(dbItem);
+    console.log('[AutoRealEstate API] JSON body length:', jsonBody.length);
+    console.log('[AutoRealEstate API] JSON body preview:', jsonBody.substring(0, 200));
+
+    const response = await fetch(`${supabaseUrl}/rest/v1/auto_real_estate`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: jsonBody,
+    });
+
+    console.log('[AutoRealEstate API] Supabase response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[AutoRealEstate API] Supabase error:', response.status, errorText);
+      throw new Error(`Supabase error: ${response.status} - ${errorText}`);
+    }
+
+    const responseText = await response.text();
+    console.log('[AutoRealEstate API] Response text length:', responseText.length);
+    
+    let data;
+    if (responseText.length > 0) {
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('[AutoRealEstate API] JSON parse error:', parseError);
+        console.error('[AutoRealEstate API] Response text:', responseText);
+        throw new Error('Failed to parse Supabase response');
+      }
+    } else {
+      data = null;
+    }
+    
+    console.log('[AutoRealEstate API] Success:', data);
+    res.json({ data });
+  } catch (error) {
+    console.error("[AutoRealEstate API] Error saving auto_real_estate:", error);
+    res.status(500).json({ error: "فشل حفظ البيانات", details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.put("/api/supabase/auto-real-estate/:id", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const user = await db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
+    
+    // Only allow super admin to access this endpoint
+    if (!user || user.email !== SUPER_ADMIN_EMAIL) {
+      res.status(403).json({ error: "غير مصرح" });
+      return;
+    }
+
+    const { id } = req.params;
+    const item = req.body;
+    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    
+    console.log('[AutoRealEstate API PUT] Updating record ID:', id);
+    console.log('[AutoRealEstate API PUT] Request body:', item);
+    
+    // Get super admin's Supabase user ID - SUPER ADMIN CAN ONLY UPDATE THEIR OWN DATA
+    const superAdminSupabaseId = 'f13bed00-cd13-4075-8716-d9939ea8ba16'; // lahcenm534@gmail.com
+    
+    const dbItem = {
+      user_id: superAdminSupabaseId, // Use actual super admin user ID
+      type: item.type,
+      brand_or_title: item.brandOrTitle,
+      plate_or_address: item.plateOrAddress,
+      specs: item.specs || '',
+      price: item.price || 0,
+      status: item.status || 'Available',
+      expiry_date: item.expiryDate || null,
+      image: item.image || null,
+      color: item.color || null,
+      fuel: item.fuel || null,
+      mileage: item.mileage || null,
+      defects: item.defects || null,
+      rent_start: item.rentStart || null,
+      rent_end: item.rentEnd || null,
+      prop_type: item.propType || null,
+      commercial_type: item.commercialType || null,
+      floor_num: item.floorNum || null,
+      total_floors: item.totalFloors || null,
+      rooms: item.rooms || null,
+      bathrooms: item.bathrooms || null,
+      amenities: item.amenities || null,
+      zoning: item.zoning || null,
+      sqm: item.sqm || null,
+    };
+
+    console.log('[AutoRealEstate API PUT] dbItem:', dbItem);
+    
+    // Filter by both id AND user_id to ensure super admin can only update their own records
+    const url = `${supabaseUrl}/rest/v1/auto_real_estate?id=eq.${id}&user_id=eq.${superAdminSupabaseId}`;
+    console.log('[AutoRealEstate API PUT] Supabase URL:', url);
+    
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(dbItem),
+    });
+
+    console.log('[AutoRealEstate API PUT] Supabase response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[AutoRealEstate API PUT] Supabase error:', response.status, errorText);
+      throw new Error(`Supabase error: ${response.status} - ${errorText}`);
+    }
+
+    const responseText = await response.text();
+    console.log('[AutoRealEstate API PUT] Response text length:', responseText.length);
+    
+    let data;
+    if (responseText.length > 0) {
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('[AutoRealEstate API PUT] JSON parse error:', parseError);
+        console.error('[AutoRealEstate API PUT] Response text:', responseText);
+        data = null;
+      }
+    } else {
+      data = null;
+    }
+    
+    console.log('[AutoRealEstate API PUT] Success:', data);
+    res.json({ data });
+  } catch (error) {
+    console.error("[AutoRealEstate API PUT] Error updating auto_real_estate:", error);
+    res.status(500).json({ error: "فشل تحديث البيانات", details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.delete("/api/supabase/auto-real-estate/:id", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const user = await db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
+    
+    // Only allow super admin to access this endpoint
+    if (!user || user.email !== SUPER_ADMIN_EMAIL) {
+      res.status(403).json({ error: "غير مصرح" });
+      return;
+    }
+
+    const { id } = req.params;
+    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    
+    // Get super admin's Supabase user ID - SUPER ADMIN CAN ONLY DELETE THEIR OWN DATA
+    const superAdminSupabaseId = 'f13bed00-cd13-4075-8716-d9939ea8ba16'; // lahcenm534@gmail.com
+    
+    // Filter by both id AND user_id to ensure super admin can only delete their own records
+    const response = await fetch(`${supabaseUrl}/rest/v1/auto_real_estate?id=eq.${id}&user_id=eq.${superAdminSupabaseId}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Supabase error: ${response.status} - ${errorText}`);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting auto_real_estate:", error);
+    res.status(500).json({ error: "فشل حذف البيانات" });
+  }
 });
 
 /** ملف تأشيرة — بيانات محفوظة للحجز التلقائي */
@@ -2327,62 +4462,359 @@ app.post("/api/visa/appointment-status/:centerId/refresh", authMiddleware, async
   });
 });
 
-/** مخزون ونقاط بيع */
-app.get("/api/inventory/products", authMiddleware, async (req, res) => {
+/** رادار التأشيرة الاحترافي - تحكم ومراقبة */
+app.get("/api/visa/radar/status", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!(await moduleAllowed(userId, "inventory"))) {
+  if (!(await moduleAllowed(userId, "visa"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const rows = await db.prepare("SELECT * FROM inventory_products WHERE user_id = ? ORDER BY name").all(userId);
-  res.json({ products: rows });
+  const radar = getVisaRadarProService();
+  const status = radar.getStatus();
+  res.json(status);
+});
+
+app.post("/api/visa/radar/start", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "visa"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const radar = getVisaRadarProService();
+  console.log("🚀 [API] Starting Visa Radar Pro for user:", userId);
+  
+  try {
+    // Ensure radar is enabled
+    radar.updateConfig({ enabled: true });
+    console.log("✅ [API] Radar config updated to enabled");
+    
+    await radar.startRadar();
+    console.log("✅ [API] Radar started successfully");
+    
+    const status = radar.getStatus();
+    console.log("📊 [API] Current radar status:", JSON.stringify(status, null, 2));
+    
+    res.json({ success: true, message: "تم تشغيل الرادار الاحترافي بنجاح", status });
+  } catch (error) {
+    console.error("❌ [API] Failed to start radar:", error);
+    res.status(500).json({ error: "فشل تشغيل الرادار", details: String(error) });
+  }
+});
+
+app.post("/api/visa/radar/stop", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "visa"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const radar = getVisaRadarProService();
+  radar.stopRadar();
+  res.json({ success: true, message: "تم إيقاف الرادار" });
+});
+
+app.post("/api/visa/radar/check-now", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "visa"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const radar = getVisaRadarProService();
+  const { centerId } = req.body as { centerId?: string };
+  
+  try {
+    if (centerId) {
+      const { getCenterById } = await import("./visaRadarConfig.js");
+      const center = getCenterById(centerId);
+      if (!center) {
+        res.status(404).json({ error: "المركز غير موجود" });
+        return;
+      }
+      const result = await radar.checkCenterSlots(center);
+      res.json({ success: true, result });
+    } else {
+      res.status(400).json({ error: "يجب تحديد المركز" });
+    }
+  } catch (error) {
+    res.status(500).json({ error: "فشل الفحص", details: String(error) });
+  }
+});
+
+app.post("/api/visa/radar/config", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "visa"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const radar = getVisaRadarProService();
+  const { baseCheckInterval, extremeModeInterval, telegramBotToken, telegramChatId, whatsappEnabled, whatsappNumber, enabled } = req.body as {
+    baseCheckInterval?: number;
+    extremeModeInterval?: number;
+    telegramBotToken?: string;
+    telegramChatId?: string;
+    whatsappEnabled?: boolean;
+    whatsappNumber?: string;
+    enabled?: boolean;
+  };
+  
+  radar.updateConfig({
+    baseCheckInterval,
+    extremeModeInterval,
+    telegramBotToken,
+    telegramChatId,
+    whatsappEnabled,
+    whatsappNumber,
+    enabled
+  });
+  
+  res.json({ success: true, message: "تم تحديث إعدادات الرادار" });
+});
+
+app.post("/api/visa/radar/clear-detections", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "visa"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const radar = getVisaRadarProService();
+  radar.clearDetections();
+  res.json({ success: true, message: "تم مسح سجل الكشوفات" });
+});
+
+app.post("/api/visa/radar/clear-logs", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "visa"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const radar = getVisaRadarProService();
+  radar.clearLogs();
+  res.json({ success: true, message: "تم مسح سجل السجلات" });
+});
+
+app.get("/api/visa/radar/patterns", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "visa"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const radar = getVisaRadarProService();
+  const patterns = radar.getHistoricalPatterns();
+  res.json({ patterns });
+});
+
+app.get("/api/visa/radar/centers", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "visa"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const { getEnabledCenters } = await import("./visaRadarConfig.js");
+  const centers = getEnabledCenters();
+  res.json({ centers });
+});
+
+/** مخزون ونقاط بيع */
+app.get("/api/inventory/products", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    if (!(await moduleAllowed(userId, "inventory"))) {
+      res.status(403).json({ error: "القسم غير مفعّل" });
+      return;
+    }
+    // Deduplicate products by keeping only the latest version of each product (by id)
+    // This prevents duplicate entries in the UI
+    const rows = await db.prepare(`
+      SELECT DISTINCT ON (id) * FROM inventory_products 
+      WHERE user_id = ? 
+      ORDER BY id, created_at DESC
+    `).all(userId);
+    res.json({ products: rows });
+  } catch (error) {
+    console.error("[api/inventory/products GET] Error:", error);
+    console.error("[api/inventory/products GET] Error details:", error instanceof Error ? error.message : String(error));
+    res.status(500).json({ error: "فشل تحميل المنتجات", details: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 app.post("/api/inventory/products", authMiddleware, async (req, res) => {
-  const userId = (req as express.Request & { userId: string }).userId;
-  if (!(await moduleAllowed(userId, "inventory"))) {
-    res.status(403).json({ error: "القسم غير مفعّل" });
-    return;
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    if (!(await moduleAllowed(userId, "inventory"))) {
+      res.status(403).json({ error: "القسم غير مفعّل" });
+      return;
+    }
+    const b = req.body as {
+      name: string;
+      sku?: string;
+      retail_type?: string;
+      pieces_per_carton?: number;
+      unit_price?: number;
+      stock_pieces?: number;
+      unit_kind?: string;
+      cost_price?: number;
+      expiry_date?: string | null;
+      low_stock_alert?: number;
+    };
+    if (!b.name?.trim()) {
+      res.status(400).json({ error: "اسم المنتج مطلوب" });
+      return;
+    }
+    const ppc = Math.max(1, Number(b.pieces_per_carton) || 1);
+    const unitKind = (b.unit_kind?.trim() || "piece").slice(0, 24);
+    const cost = Math.max(0, Number(b.cost_price) || 0);
+    const expiry = b.expiry_date?.trim() ? b.expiry_date.trim().slice(0, 10) : null;
+    const lowAlert = Math.max(0, Math.floor(Number(b.low_stock_alert) ?? 10) || 10);
+    
+    // Check if product with same SKU or name already exists (UPSERT logic)
+    const existingBySku = b.sku?.trim() 
+      ? await db.prepare("SELECT id FROM inventory_products WHERE user_id = ? AND sku = ?").get(userId, b.sku.trim())
+      : null;
+    const existingByName = await db.prepare("SELECT id FROM inventory_products WHERE user_id = ? AND name = ?").get(userId, b.name.trim());
+    const existingId = existingBySku?.id || existingByName?.id;
+    
+    if (existingId) {
+      // Update existing product
+      await db.prepare(
+        `UPDATE inventory_products SET name = ?, sku = ?, retail_type = ?, pieces_per_carton = ?, unit_price = ?, stock_pieces = ?, unit_kind = ?, cost_price = ?, expiry_date = ?, low_stock_alert = ?, updated_at = NOW() WHERE id = ? AND user_id = ?`
+      ).run(
+        b.name.trim(),
+        b.sku?.trim() ?? "",
+        b.retail_type?.trim() || "retail",
+        ppc,
+        Number(b.unit_price) || 0,
+        Math.max(0, Number(b.stock_pieces) || 0),
+        unitKind,
+        cost,
+        expiry,
+        lowAlert,
+        existingId,
+        userId
+      );
+      res.json({ id: existingId, updated: true });
+    } else {
+      // Insert new product
+      const id = randomUUID();
+      await db.prepare(
+        `INSERT INTO inventory_products (id, user_id, name, sku, retail_type, pieces_per_carton, unit_price, stock_pieces, unit_kind, cost_price, expiry_date, low_stock_alert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        id,
+        userId,
+        b.name.trim(),
+        b.sku?.trim() ?? "",
+        b.retail_type?.trim() || "retail",
+        ppc,
+        Number(b.unit_price) || 0,
+        Math.max(0, Number(b.stock_pieces) || 0),
+        unitKind,
+        cost,
+        expiry,
+        lowAlert
+      );
+      res.json({ id, updated: false });
+    }
+  } catch (error) {
+    console.error("[api/inventory/products POST] Error:", error);
+    console.error("[api/inventory/products POST] Error details:", error instanceof Error ? error.message : String(error));
+    console.error("[api/inventory/products POST] Stack:", error instanceof Error ? error.stack : undefined);
+    res.status(500).json({ error: "فشل إنشاء المنتج", details: error instanceof Error ? error.message : String(error) });
   }
-  const b = req.body as {
-    name: string;
-    sku?: string;
-    retail_type?: string;
-    pieces_per_carton?: number;
-    unit_price?: number;
-    stock_pieces?: number;
-    unit_kind?: string;
-    cost_price?: number;
-    expiry_date?: string | null;
-    low_stock_alert?: number;
-  };
-  if (!b.name?.trim()) {
-    res.status(400).json({ error: "اسم المنتج مطلوب" });
-    return;
+});
+
+// Batch import endpoint for regular users (not Super Admin)
+app.post("/api/inventory/products/batch", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    if (!(await moduleAllowed(userId, "inventory"))) {
+      res.status(403).json({ error: "القسم غير مفعّل" });
+      return;
+    }
+    
+    const products = Array.isArray(req.body) ? req.body : [req.body];
+    const insertedIds: string[] = [];
+    const updatedIds: string[] = [];
+    const errors: Array<{ index: number; error: string }> = [];
+
+    for (let idx = 0; idx < products.length; idx++) {
+      const product = products[idx];
+      const { name, sku, retail_type, pieces_per_carton, unit_price, stock_pieces, unit_kind, cost_price, expiry_date, low_stock_alert } = product;
+      
+      if (!name?.trim()) {
+        errors.push({ index: idx, error: "اسم المنتج مطلوب" });
+        continue;
+      }
+      
+      const ppc = Math.max(1, Number(pieces_per_carton) || 1);
+      const unitKind = (unit_kind?.trim() || "piece").slice(0, 24);
+      const cost = Math.max(0, Number(cost_price) || 0);
+      const expiry = expiry_date?.trim() ? expiry_date.trim().slice(0, 10) : null;
+      const lowAlert = Math.max(0, Math.floor(Number(low_stock_alert) ?? 10) || 10);
+      
+      try {
+        // Check if product with same SKU or name already exists (UPSERT logic)
+        const existingBySku = sku?.trim() 
+          ? await db.prepare("SELECT id FROM inventory_products WHERE user_id = ? AND sku = ?").get(userId, sku.trim())
+          : null;
+        const existingByName = await db.prepare("SELECT id FROM inventory_products WHERE user_id = ? AND name = ?").get(userId, name.trim());
+        const existingId = existingBySku?.id || existingByName?.id;
+        
+        if (existingId) {
+          // Update existing product
+          await db.prepare(
+            `UPDATE inventory_products SET name = ?, sku = ?, retail_type = ?, pieces_per_carton = ?, unit_price = ?, stock_pieces = ?, unit_kind = ?, cost_price = ?, expiry_date = ?, low_stock_alert = ?, updated_at = NOW() WHERE id = ? AND user_id = ?`
+          ).run(
+            name.trim(),
+            sku?.trim() ?? "",
+            retail_type?.trim() || "retail",
+            ppc,
+            Number(unit_price) || 0,
+            Math.max(0, Number(stock_pieces) || 0),
+            unitKind,
+            cost,
+            expiry,
+            lowAlert,
+            existingId,
+            userId
+          );
+          updatedIds.push(existingId);
+        } else {
+          // Insert new product
+          const id = randomUUID();
+          await db.prepare(
+            `INSERT INTO inventory_products (id, user_id, name, sku, retail_type, pieces_per_carton, unit_price, stock_pieces, unit_kind, cost_price, expiry_date, low_stock_alert, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+          ).run(
+            id,
+            userId,
+            name.trim(),
+            sku?.trim() ?? "",
+            retail_type?.trim() || "retail",
+            ppc,
+            Number(unit_price) || 0,
+            Math.max(0, Number(stock_pieces) || 0),
+            unitKind,
+            cost,
+            expiry,
+            lowAlert
+          );
+          insertedIds.push(id);
+        }
+      } catch (err) {
+        console.error(`[api/inventory/products/batch] Error processing product ${idx}:`, err);
+        errors.push({ index: idx, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    
+    res.json({ 
+      inserted: insertedIds, 
+      updated: updatedIds,
+      errors,
+      message: `Successfully created ${insertedIds.length} product(s) and updated ${updatedIds.length} product(s)` + (errors.length > 0 ? ` with ${errors.length} error(s)` : "")
+    });
+  } catch (error) {
+    console.error("[api/inventory/products/batch] Error:", error);
+    console.error("[api/inventory/products/batch] Error details:", error instanceof Error ? error.message : String(error));
+    console.error("[api/inventory/products/batch] Stack:", error instanceof Error ? error.stack : undefined);
+    res.status(500).json({ error: "فشل الاستيراد الجماعي", details: error instanceof Error ? error.message : String(error) });
   }
-  const id = randomUUID();
-  const ppc = Math.max(1, Number(b.pieces_per_carton) || 1);
-  const unitKind = (b.unit_kind?.trim() || "piece").slice(0, 24);
-  const cost = Math.max(0, Number(b.cost_price) || 0);
-  const expiry = b.expiry_date?.trim() ? b.expiry_date.trim().slice(0, 10) : null;
-  const lowAlert = Math.max(0, Math.floor(Number(b.low_stock_alert) ?? 10) || 10);
-  await db.prepare(
-    `INSERT INTO inventory_products (id, user_id, name, sku, retail_type, pieces_per_carton, unit_price, stock_pieces, unit_kind, cost_price, expiry_date, low_stock_alert) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    userId,
-    b.name.trim(),
-    b.sku?.trim() ?? "",
-    b.retail_type?.trim() || "retail",
-    ppc,
-    Number(b.unit_price) || 0,
-    Math.max(0, Number(b.stock_pieces) || 0),
-    unitKind,
-    cost,
-    expiry,
-    lowAlert
-  );
-  res.json({ id });
 });
 
 app.patch("/api/inventory/products/:id", authMiddleware, async (req, res) => {
@@ -2404,33 +4836,67 @@ app.patch("/api/inventory/products/:id", authMiddleware, async (req, res) => {
     expiry_date?: string | null;
     low_stock_alert?: number;
   };
-  const r = await db
-    .prepare(
-      `UPDATE inventory_products SET name = COALESCE(?, name), sku = COALESCE(?, sku), retail_type = COALESCE(?, retail_type),
-       pieces_per_carton = COALESCE(?, pieces_per_carton), unit_price = COALESCE(?, unit_price), stock_pieces = COALESCE(?, stock_pieces),
-       unit_kind = COALESCE(?, unit_kind), cost_price = COALESCE(?, cost_price),
-       expiry_date = COALESCE(?, expiry_date), low_stock_alert = COALESCE(?, low_stock_alert)
-       WHERE id = ? AND user_id = ?`
-    )
-    .run(
-      b.name ?? null,
-      b.sku ?? null,
-      b.retail_type ?? null,
-      b.pieces_per_carton ?? null,
-      b.unit_price ?? null,
-      b.stock_pieces ?? null,
-      b.unit_kind ?? null,
-      b.cost_price ?? null,
-      b.expiry_date ?? null,
-      b.low_stock_alert ?? null,
-      id,
-      userId
-    );
-  if (r.changes === 0) {
-    res.status(404).json({ error: "غير موجود" });
-    return;
+  try {
+    // Check if product exists first
+    const existing = await db.prepare("SELECT id FROM inventory_products WHERE id = ? AND user_id = ?").get(id, userId);
+    if (!existing) {
+      res.status(404).json({ error: "المنتج غير موجود" });
+      return;
+    }
+
+    const r = await db
+      .prepare(
+        `UPDATE inventory_products SET name = COALESCE(?, name), sku = COALESCE(?, sku), retail_type = COALESCE(?, retail_type),
+         pieces_per_carton = COALESCE(?, pieces_per_carton), unit_price = COALESCE(?, unit_price), stock_pieces = COALESCE(?, stock_pieces),
+         unit_kind = COALESCE(?, unit_kind), cost_price = COALESCE(?, cost_price),
+         expiry_date = COALESCE(?, expiry_date), low_stock_alert = COALESCE(?, low_stock_alert)
+         WHERE id = ? AND user_id = ?`
+      )
+      .run(
+        b.name ?? null,
+        b.sku ?? null,
+        b.retail_type ?? null,
+        b.pieces_per_carton ?? null,
+        b.unit_price ?? null,
+        b.stock_pieces ?? null,
+        b.unit_kind ?? null,
+        b.cost_price ?? null,
+        b.expiry_date ?? null,
+        b.low_stock_alert ?? null,
+        id,
+        userId
+      );
+    if (r.changes === 0) {
+      res.status(404).json({ error: "لم يتم تحديث المنتج" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[api/inventory/products/:id] Error:", error);
+    res.status(500).json({ error: "فشل تحديث المنتج" });
   }
-  res.json({ ok: true });
+});
+
+app.delete("/api/inventory/products/:id", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    if (!(await moduleAllowed(userId, "inventory"))) {
+      res.status(403).json({ error: "القسم غير مفعّل" });
+      return;
+    }
+    const id = paramString(req.params.id);
+    const r = await db
+      .prepare(`DELETE FROM inventory_products WHERE id = ? AND user_id = ?`)
+      .run(id, userId);
+    if (r.changes === 0) {
+      res.status(404).json({ error: "غير موجود" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[api/inventory/products DELETE] Error:", error);
+    res.status(500).json({ error: "فشل حذف المنتج" });
+  }
 });
 
 /** استخراج نص من PDF أو DOCX للمخزون (OCR الذكاء يكمّل على العميل للصور) */
@@ -2520,17 +4986,22 @@ app.post("/api/inventory/stock-add", authMiddleware, async (req, res) => {
     res.status(400).json({ error: "بيانات ناقصة" });
     return;
   }
-  const add = Math.max(0, Math.floor(Number(b.add_pieces)));
-  const r = await db
-    .prepare(
-      `UPDATE inventory_products SET stock_pieces = stock_pieces + ? WHERE id = ? AND user_id = ?`
-    )
-    .run(add, b.product_id, userId);
-  if (r.changes === 0) {
-    res.status(404).json({ error: "غير موجود" });
-    return;
+  const add = Math.floor(Number(b.add_pieces));
+  try {
+    const r = await db
+      .prepare(
+        `UPDATE inventory_products SET stock_pieces = stock_pieces + ? WHERE id = ? AND user_id = ?`
+      )
+      .run(add, b.product_id, userId);
+    if (r.changes === 0) {
+      res.status(404).json({ error: "المنتج غير موجود" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[api/inventory/stock-add] Error:", error);
+    res.status(500).json({ error: "فشل تحديث المخزون" });
   }
-  res.json({ ok: true });
 });
 
 app.post("/api/inventory/sale", authMiddleware, async (req, res) => {
@@ -2726,6 +5197,50 @@ app.get("/api/inventory/invoices", authMiddleware, async (req, res) => {
   res.json({ invoices: rows });
 });
 
+app.put("/api/inventory/invoices/:id/void", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+
+  const invoiceId = req.params.id;
+
+  try {
+    // Get the invoice details to restore stock
+    const invoice = await db
+      .prepare("SELECT lines_json FROM pos_invoices WHERE id = ? AND user_id = ?")
+      .get(invoiceId, userId) as { lines_json: string } | undefined;
+
+    if (!invoice) {
+      res.status(404).json({ error: "Invoice not found" });
+      return;
+    }
+
+    // Parse lines to restore stock
+    const lines = JSON.parse(invoice.lines_json || "[]");
+
+    // Restore stock for each line
+    for (const line of lines) {
+      if (line.product_id && line.qty_pieces) {
+        await db
+          .prepare("UPDATE inventory_products SET stock_pieces = stock_pieces + ? WHERE id = ? AND user_id = ?")
+          .run(line.qty_pieces, line.product_id, userId);
+      }
+    }
+
+    // Mark invoice as voided
+    await db
+      .prepare("UPDATE pos_invoices SET status = 'voided' WHERE id = ? AND user_id = ?")
+      .run(invoiceId, userId);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error voiding invoice:", error);
+    res.status(500).json({ error: "Failed to void invoice" });
+  }
+});
+
 function parseProductionRequestRow(row: Record<string, unknown>) {
   return {
     ...row,
@@ -2869,59 +5384,817 @@ app.post("/api/inventory/production-reserve", authMiddleware, async (req, res) =
   res.json({ ok: true, previous: current, next });
 });
 
-registerTlErpRoutes(app, authMiddleware, moduleAllowed, { uploadTl, tlUploadRoot });
-registerBase44StudioRoutes(app, { authMiddleware, uploadDir, aiGenerateAllowed });
-registerBackendServices(app, authMiddleware);
-
-/** معالجة صور احترافية (Sharp) — يتطلب قسم media_lab */
-app.post("/api/media/enhance-image", authMiddleware, upload.single("image"), async (req, res) => {
+app.delete("/api/inventory/production-requests/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!(await moduleAllowed(userId, "media_lab"))) {
+  if (!(await moduleAllowed(userId, "inventory"))) {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const file = (req as express.Request & { file?: Express.Multer.File }).file;
-  if (!file) {
-    res.status(400).json({ error: "ملف الصورة ناقص" });
+  const requestId = paramString(req.params.id);
+  const r = await db
+    .prepare("DELETE FROM production_requests WHERE id = ? AND user_id = ?")
+    .run(requestId, userId);
+  if (r.changes === 0) {
+    res.status(404).json({ error: "طلب الإنتاج غير موجود" });
     return;
   }
-  const removeBg = String((req.body as { removeBg?: string })?.removeBg ?? "") === "1";
+  // Also delete related logistics queue items
+  await db.prepare("DELETE FROM logistics_queue WHERE production_request_id = ? AND user_id = ?")
+    .run(requestId, userId);
+  res.json({ ok: true });
+});
+
+app.post("/api/inventory/production-requests/batch-delete", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const b = req.body as { ids?: string[] };
+  const ids = Array.isArray(b.ids) ? b.ids.map(String).filter(Boolean) : [];
+  if (!ids.length) {
+    res.status(400).json({ error: "قائمة المعرفات فارغة" });
+    return;
+  }
+  const placeholders = ids.map(() => "?").join(",");
+  const r = await db
+    .prepare(`DELETE FROM production_requests WHERE id IN (${placeholders}) AND user_id = ?`)
+    .run(...ids, userId);
+  // Also delete related logistics queue items
+  await db.prepare(`DELETE FROM logistics_queue WHERE production_request_id IN (${placeholders}) AND user_id = ?`)
+    .run(...ids, userId);
+  res.json({ ok: true, deleted: r.changes });
+});
+
+app.delete("/api/inventory/logistics-queue/:id", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const logisticsId = paramString(req.params.id);
+  const r = await db
+    .prepare("DELETE FROM logistics_queue WHERE id = ? AND user_id = ?")
+    .run(logisticsId, userId);
+  if (r.changes === 0) {
+    res.status(404).json({ error: "عنصر اللوجستيك غير موجود" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+// Inventory Activity Logs API - Server-side storage with user isolation
+app.get("/api/inventory/activity-logs", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const { shiftId, date } = req.query;
+  let query = "SELECT * FROM inventory_activity_logs WHERE user_id = ?";
+  const params: any[] = [userId];
+  
+  if (shiftId) {
+    query += " AND shift_id = ?";
+    params.push(String(shiftId));
+  }
+  if (date) {
+    query += " AND date = ?";
+    params.push(String(date));
+  }
+  
+  query += " ORDER BY timestamp DESC LIMIT 200";
+  
+  const rows = await db.prepare(query).all(...params);
+  res.json({ logs: rows });
+});
+
+app.post("/api/inventory/activity-logs", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const { 
+    timestamp, date, time, shift_id, shift_name, 
+    action_type, product_id, product_name, quantity, notes 
+  } = req.body;
+  
+  if (!timestamp || !date || !time || !shift_id || !shift_name || !action_type) {
+    res.status(400).json({ error: "Missing required fields" });
+    return;
+  }
+  
+  const id = randomUUID();
+  await db.prepare(
+    `INSERT INTO inventory_activity_logs (id, user_id, timestamp, date, time, shift_id, shift_name, action_type, product_id, product_name, quantity, notes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+  ).run(id, userId, String(timestamp), String(date), String(time), String(shift_id), String(shift_name), String(action_type), product_id || null, product_name || null, quantity || null, notes || null);
+  
+  res.json({ id, message: "Activity log created successfully" });
+});
+
+app.delete("/api/inventory/activity-logs/:id", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const logId = paramString(req.params.id);
+  const r = await db
+    .prepare("DELETE FROM inventory_activity_logs WHERE id = ? AND user_id = ?")
+    .run(logId, userId);
+  if (r.changes === 0) {
+    res.status(404).json({ error: "Activity log not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+// Exported Documents API - Server-side storage with user isolation
+app.get("/api/exported-documents", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { kind } = req.query;
+  let query = "SELECT * FROM exported_documents WHERE user_id = ?";
+  const params: any[] = [userId];
+  
+  if (kind) {
+    query += " AND document_kind = ?";
+    params.push(String(kind));
+  }
+  
+  query += " ORDER BY export_timestamp DESC LIMIT 100";
+  
+  const rows = await db.prepare(query).all(...params);
+  res.json({ documents: rows });
+});
+
+app.post("/api/exported-documents", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { document_kind, title, filename, file_size, export_timestamp, metadata } = req.body;
+  
+  if (!document_kind || !title || !filename || !export_timestamp) {
+    res.status(400).json({ error: "Missing required fields: document_kind, title, filename, export_timestamp" });
+    return;
+  }
+  
+  const id = randomUUID();
+  await db.prepare(
+    `INSERT INTO exported_documents (id, user_id, document_kind, title, filename, file_size, export_timestamp, metadata, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+  ).run(id, userId, String(document_kind), String(title), String(filename), file_size || null, String(export_timestamp), metadata ? JSON.stringify(metadata) : '{}');
+  
+  res.json({ id, message: "Exported document recorded successfully" });
+});
+
+app.delete("/api/exported-documents/:id", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const docId = paramString(req.params.id);
+  const r = await db
+    .prepare("DELETE FROM exported_documents WHERE id = ? AND user_id = ?")
+    .run(docId, userId);
+  if (r.changes === 0) {
+    res.status(404).json({ error: "Exported document not found" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post("/api/inventory/logistics-queue/batch-delete", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  if (!(await moduleAllowed(userId, "inventory"))) {
+    res.status(403).json({ error: "القسم غير مفعّل" });
+    return;
+  }
+  const b = req.body as { ids?: string[] };
+  const ids = Array.isArray(b.ids) ? b.ids.map(String).filter(Boolean) : [];
+  if (!ids.length) {
+    res.status(400).json({ error: "قائمة المعرفات فارغة" });
+    return;
+  }
+  const placeholders = ids.map(() => "?").join(",");
+  const r = await db
+    .prepare(`DELETE FROM logistics_queue WHERE id IN (${placeholders}) AND user_id = ?`)
+    .run(...ids, userId);
+  res.json({ ok: true, deleted: r.changes });
+});
+
+registerTlErpRoutes(app, authMiddleware, moduleAllowed, { uploadTl, tlUploadRoot });
+registerBase44StudioRoutes(app, { authMiddleware, uploadDir, aiGenerateAllowed });
+registerBackendServices(app, authMiddleware);
+registerDeliveryHubRoutes(app, authMiddleware);
+
+/** TTS API endpoint - using browser Web Speech API (client-side only) */
+app.post("/api/tts", async (_req, res) => {
+  // TTS is now handled client-side using Web Speech API
+  // This endpoint exists for compatibility but returns a message directing to client-side
+  res.status(501).json({
+    error: "TTS is handled client-side using Web Speech API",
+    message: "Please use the browser's native speech synthesis instead of this endpoint"
+  });
+});
+
+/** Media Library API - إدارة الفيديوهات والصور */
+const mediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = [
+      // Images
+      'image/png',
+      'image/jpeg',
+      'image/jpg',
+      'image/webp',
+      'image/svg+xml',
+      // Videos
+      'video/mp4',
+      'video/webm',
+      'video/quicktime',
+      'video/x-msvideo',
+      'video/x-matroska'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('نوع الملف غير مدعوم. يرجى رفع صور (PNG, JPG, WEBP) أو فيديوهات (MP4, WEBM)'));
+    }
+  }
+});
+
+// جلب جميع الفيديوهات والصور
+app.get("/api/media-library", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
   try {
-    const meta = await sharp(file.path).metadata();
-    const w0 = meta.width ?? 1024;
-    const h0 = meta.height ?? 1024;
-    const longEdge = Math.max(w0, h0);
-    /** رفع دقة ذكي للصور الصغيرة + حد أقصى للطباعة */
-    let target = Math.min(4096, Math.max(1800, longEdge < 900 ? longEdge * 2.35 : longEdge < 1600 ? longEdge * 1.42 : longEdge));
-    let pipeline = sharp(file.path)
-      .rotate()
-      .resize({
-        width: target,
-        height: target,
-        fit: "inside",
-        withoutEnlargement: false,
-        kernel: sharp.kernel.lanczos3,
-      });
-    /** تقليل ضوضاء خفيف ثم تحسين تباين */
-    pipeline = pipeline.median(3);
-    pipeline = pipeline.modulate({ brightness: 1.05, saturation: 1.12 });
-    pipeline = pipeline.sharpen(0.85, 1, 1.45);
-    if (removeBg) {
-      pipeline = meta.hasAlpha ? pipeline.ensureAlpha() : pipeline.flatten({ background: { r: 255, g: 255, b: 255 } });
+    const rows = await db.prepare(`
+      SELECT * FROM media_library 
+      WHERE user_id = ? 
+      ORDER BY sort_order ASC, created_at DESC
+    `).all(userId);
+    res.json({ items: rows });
+  } catch (error) {
+    console.error("[api] Error fetching media library:", error);
+    res.status(500).json({ error: "فشل في جلب المكتبة" });
+  }
+});
+
+// جلب الفيديوهات العامة للعرض في صفحة الدخول (بدون تسجيل)
+app.get("/api/media-library/public", async (_req, res) => {
+  try {
+    const rows = await db.prepare(`
+      SELECT id, type, title, url, youtube_video_id, file_path, file_name, file_mime, sort_order
+      FROM media_library 
+      WHERE is_public = 1
+      ORDER BY sort_order ASC, created_at DESC
+      LIMIT 10
+    `).all();
+    res.json({ items: rows });
+  } catch (error) {
+    console.error("[api] Error fetching public media library:", error);
+    res.status(500).json({ error: "فشل في جلب المكتبة العامة" });
+  }
+});
+
+// إضافة عنصر جديد (YouTube أو رابط خارجي)
+app.post("/api/media-library", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { type, title, url, youtube_video_id, is_public } = req.body as {
+    type?: string;
+    title?: string;
+    url?: string;
+    youtube_video_id?: string;
+    is_public?: string;
+  };
+
+  if (!type || !title) {
+    res.status(400).json({ error: "النوع والعنوان مطلوبان" });
+    return;
+  }
+
+  if (type === "youtube" && !youtube_video_id) {
+    res.status(400).json({ error: "معرف فيديو YouTube مطلوب" });
+    return;
+  }
+
+  if (type === "external" && !url) {
+    res.status(400).json({ error: "الرابط مطلوب" });
+    return;
+  }
+
+  try {
+    const id = randomUUID();
+    const maxOrder = await db.prepare(`
+      SELECT COALESCE(MAX(sort_order), 0) as max_order 
+      FROM media_library 
+      WHERE user_id = ?
+    `).get(userId) as { max_order: number };
+    
+    const isPublic = is_public === "1" ? 1 : 0;
+    
+    await db.prepare(`
+      INSERT INTO media_library (id, user_id, type, title, url, youtube_video_id, sort_order, is_public)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, type, title, url || null, youtube_video_id || null, maxOrder.max_order + 1, isPublic);
+
+    const item = await db.prepare(`
+      SELECT * FROM media_library WHERE id = ?
+    `).get(id);
+
+    res.json({ item });
+  } catch (error) {
+    console.error("[api] Error adding media item:", error);
+    res.status(500).json({ error: "فشل في إضافة العنصر" });
+  }
+});
+
+// رفع ملف من الجهاز
+app.post("/api/media-library/upload", authMiddleware, (req, res, next) => {
+  mediaUpload.single("file")(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: "حجم الملف كبير جداً. الحد الأقصى 100MB" });
+      }
+      return res.status(400).json({ error: `خطأ في رفع الملف: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ error: err.message || "خطأ في رفع الملف" });
     }
-    const outBuf = await pipeline.png({ compressionLevel: 6, adaptiveFiltering: true }).toBuffer();
-    res.setHeader("Content-Type", "image/png");
-    res.setHeader("X-Processed-By", "Smart-Al-Idara-Pro");
-    res.send(outBuf);
-  } catch (e) {
-    console.error("[media/enhance-image]", e);
-    res.status(500).json({ error: "فشل معالجة الصورة" });
-  } finally {
-    try {
-      fs.unlinkSync(file.path);
-    } catch {
-      /* ignore */
+    next();
+  });
+}, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { title, is_public } = req.body as { title?: string; is_public?: string };
+  const file = req.file;
+
+  console.log("[api] Upload request:", {
+    userId,
+    title,
+    is_public,
+    file: file ? { name: file.originalname, size: file.size, mimetype: file.mimetype } : null
+  });
+
+  if (!file) {
+    console.log("[api] Upload error: File is required");
+    res.status(400).json({ error: "الملف مطلوب" });
+    return;
+  }
+
+  if (!title) {
+    console.log("[api] Upload error: Title is required");
+    res.status(400).json({ error: "العنوان مطلوب" });
+    return;
+  }
+
+  try {
+    const id = randomUUID();
+    const ext = path.extname(file.originalname) || "";
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1E9);
+    const safeFileName = `${timestamp}-${randomSuffix}${ext}`;
+    const uploadDir = getUploadDir();
+    
+    // إنشاء مجلد uploads إذا لم يكن موجوداً
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+      console.log("[api] Created upload directory:", uploadDir);
     }
+    
+    const filePath = path.join(uploadDir, safeFileName);
+
+    console.log("[api] Saving file to:", filePath);
+
+    // حفظ الملف
+    fs.writeFileSync(filePath, file.buffer);
+
+    const maxOrder = await db.prepare(`
+      SELECT COALESCE(MAX(sort_order), 0) as max_order 
+      FROM media_library 
+      WHERE user_id = ?
+    `).get(userId) as { max_order: number };
+
+    const type = file.mimetype.startsWith("video/") ? "video" : "image";
+    const isPublic = is_public === "1" || is_public === undefined || is_public === null ? 1 : 0;
+    const webUrl = `/uploads/${safeFileName}`;
+
+    console.log("[api] Inserting into database:", {
+      id,
+      userId,
+      type,
+      title,
+      filePath,
+      webUrl,
+      isPublic
+    });
+
+    await db.prepare(`
+      INSERT INTO media_library (id, user_id, type, title, url, file_path, file_name, file_mime, sort_order, is_public)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, type, title, webUrl, filePath, safeFileName, file.mimetype, maxOrder.max_order + 1, isPublic);
+
+    const item = await db.prepare(`
+      SELECT * FROM media_library WHERE id = ?
+    `).get(id);
+
+    console.log("[api] Upload successful:", item);
+    res.json({ item });
+  } catch (error) {
+    console.error("[api] Error uploading file:", error);
+    res.status(500).json({ error: "فشل في رفع الملف" });
+  }
+});
+
+// تعديل عنصر
+app.put("/api/media-library/:id", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const itemId = paramString(req.params.id);
+  const { title, url, youtube_video_id, is_public } = req.body as {
+    title?: string;
+    url?: string;
+    youtube_video_id?: string;
+    is_public?: string;
+  };
+
+  try {
+    const existing = await db.prepare(`
+      SELECT * FROM media_library WHERE id = ? AND user_id = ?
+    `).get(itemId, userId);
+
+    if (!existing) {
+      res.status(404).json({ error: "العنصر غير موجود" });
+      return;
+    }
+
+    const isPublic = is_public === "1" ? 1 : 0;
+
+    await db.prepare(`
+      UPDATE media_library 
+      SET title = COALESCE(?, title),
+          url = COALESCE(?, url),
+          youtube_video_id = COALESCE(?, youtube_video_id),
+          is_public = COALESCE(?, is_public),
+          updated_at = NOW()
+      WHERE id = ? AND user_id = ?
+    `).run(title || null, url || null, youtube_video_id || null, isPublic, itemId, userId);
+
+    const item = await db.prepare(`
+      SELECT * FROM media_library WHERE id = ?
+    `).get(itemId);
+
+    res.json({ item });
+  } catch (error) {
+    console.error("[api] Error updating media item:", error);
+    res.status(500).json({ error: "فشل في تعديل العنصر" });
+  }
+});
+
+// حذف عنصر
+app.delete("/api/media-library/:id", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const itemId = paramString(req.params.id);
+
+  try {
+    const existing = await db.prepare(`
+      SELECT * FROM media_library WHERE id = ? AND user_id = ?
+    `).get(itemId, userId);
+
+    if (!existing) {
+      res.status(404).json({ error: "العنصر غير موجود" });
+      return;
+    }
+
+    // حذف الملف من القرص إذا كان موجوداً
+    if (existing.file_path && fs.existsSync(existing.file_path as string)) {
+      fs.unlinkSync(existing.file_path as string);
+    }
+
+    await db.prepare(`
+      DELETE FROM media_library WHERE id = ? AND user_id = ?
+    `).run(itemId, userId);
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[api] Error deleting media item:", error);
+    res.status(500).json({ error: "فشل في حذف العنصر" });
+  }
+});
+
+// إعادة ترتيب العناصر
+app.post("/api/media-library/reorder", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { items } = req.body as { items: { id: string; sort_order: number }[] };
+
+  if (!Array.isArray(items)) {
+    res.status(400).json({ error: "بيانات غير صحيحة" });
+    return;
+  }
+
+  try {
+    for (const item of items) {
+      await db.prepare(`
+        UPDATE media_library SET sort_order = ? WHERE id = ? AND user_id = ?
+      `).run(item.sort_order, item.id, userId);
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[api] Error reordering media items:", error);
+    res.status(500).json({ error: "فشل في إعادة الترتيب" });
+  }
+});
+
+/** Academy Media API - إدارة ملفات أكاديمية التدريب */
+const academyUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = [
+      // Images
+      'image/png',
+      'image/jpeg',
+      'image/jpg',
+      'image/webp',
+      'image/svg+xml',
+      // Videos
+      'video/mp4',
+      'video/webm',
+      'video/quicktime',
+      'video/x-msvideo',
+      'video/x-matroska'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('نوع الملف غير مدعوم. يرجى رفع صور (PNG, JPG, WEBP) أو فيديوهات (MP4, WEBM)'));
+    }
+  }
+});
+
+// جلب ملفات الأكاديمية للمستخدم
+app.get("/api/academy-media", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  try {
+    const rows = await db.prepare(`
+      SELECT * FROM academy_media 
+      WHERE user_id = ? 
+      ORDER BY sort_order ASC, created_at DESC
+    `).all(userId);
+    res.json({ items: rows });
+  } catch (error) {
+    console.error("[api] Error fetching academy media:", error);
+    res.status(500).json({ error: "فشل في جلب ملفات الأكاديمية" });
+  }
+});
+
+// رفع ملف للأكاديمية
+app.post("/api/academy-media/upload", authMiddleware, (req, res, next) => {
+  academyUpload.single("file")(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: "حجم الملف كبير جداً. الحد الأقصى 100MB" });
+      }
+      return res.status(400).json({ error: `خطأ في رفع الملف: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ error: err.message || "خطأ في رفع الملف" });
+    }
+    next();
+  });
+}, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { title, description } = req.body as { title?: string; description?: string };
+  const file = req.file;
+
+  console.log("[api] Academy upload request:", {
+    userId,
+    title,
+    description,
+    file: file ? { name: file.originalname, size: file.size, mimetype: file.mimetype } : null
+  });
+
+  if (!file) {
+    console.log("[api] Academy upload error: File is required");
+    res.status(400).json({ error: "الملف مطلوب" });
+    return;
+  }
+
+  try {
+    const id = randomUUID();
+    const ext = path.extname(file.originalname) || "";
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1E9);
+    const safeFileName = `${timestamp}-${randomSuffix}${ext}`;
+    const uploadDir = getUploadDir();
+    
+    // إنشاء مجلد uploads إذا لم يكن موجوداً
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+      console.log("[api] Created upload directory:", uploadDir);
+    }
+    
+    const filePath = path.join(uploadDir, safeFileName);
+
+    console.log("[api] Saving academy file to:", filePath);
+
+    // حفظ الملف
+    fs.writeFileSync(filePath, file.buffer);
+
+    const maxOrder = await db.prepare(`
+      SELECT COALESCE(MAX(sort_order), 0) as max_order 
+      FROM academy_media 
+      WHERE user_id = ?
+    `).get(userId) as { max_order: number };
+
+    const type = file.mimetype.startsWith("video/") ? "video" : "image";
+    const webUrl = `/uploads/${safeFileName}`;
+
+    console.log("[api] Inserting academy media into database:", {
+      id,
+      userId,
+      type,
+      title,
+      description,
+      filePath,
+      webUrl
+    });
+
+    await db.prepare(`
+      INSERT INTO academy_media (id, user_id, type, title, description, url, file_path, file_name, file_mime, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, type, title || null, description || null, webUrl, filePath, safeFileName, file.mimetype, maxOrder.max_order + 1);
+
+    const item = await db.prepare(`
+      SELECT * FROM academy_media WHERE id = ?
+    `).get(id);
+
+    console.log("[api] Academy upload successful:", item);
+    res.json({ item });
+  } catch (error) {
+    console.error("[api] Error uploading academy file:", error);
+    res.status(500).json({ error: "فشل في رفع الملف" });
+  }
+});
+
+// حذف ملف من الأكاديمية
+app.delete("/api/academy-media/:id", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const itemId = paramString(req.params.id);
+
+  try {
+    const existing = await db.prepare(`
+      SELECT * FROM academy_media WHERE id = ? AND user_id = ?
+    `).get(itemId, userId);
+
+    if (!existing) {
+      res.status(404).json({ error: "العنصر غير موجود" });
+      return;
+    }
+
+    // حذف الملف من القرص إذا كان موجوداً
+    if (existing.file_path && fs.existsSync(existing.file_path as string)) {
+      fs.unlinkSync(existing.file_path as string);
+    }
+
+    // حذف الصورة المصغرة إذا كانت موجودة
+    if (existing.thumbnail_path && fs.existsSync(existing.thumbnail_path as string)) {
+      fs.unlinkSync(existing.thumbnail_path as string);
+    }
+
+    await db.prepare(`
+      DELETE FROM academy_media WHERE id = ? AND user_id = ?
+    `).run(itemId, userId);
+
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[api] Error deleting academy media item:", error);
+    res.status(500).json({ error: "فشل في حذف العنصر" });
+  }
+});
+
+// تحديث بيانات ملف في الأكاديمية
+app.put("/api/academy-media/:id", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const itemId = paramString(req.params.id);
+  const { title, description } = req.body as { title?: string; description?: string };
+
+  try {
+    const existing = await db.prepare(`
+      SELECT * FROM academy_media WHERE id = ? AND user_id = ?
+    `).get(itemId, userId);
+
+    if (!existing) {
+      res.status(404).json({ error: "العنصر غير موجود" });
+      return;
+    }
+
+    await db.prepare(`
+      UPDATE academy_media 
+      SET title = ?, description = ?, updated_at = NOW()
+      WHERE id = ? AND user_id = ?
+    `).run(title || null, description || null, itemId, userId);
+
+    const updated = await db.prepare(`
+      SELECT * FROM academy_media WHERE id = ?
+    `).get(itemId);
+
+    res.json({ item: updated });
+  } catch (error) {
+    console.error("[api] Error updating academy media item:", error);
+    res.status(500).json({ error: "فشل في تحديث العنصر" });
+  }
+});
+
+// رفع فيديو للمنتج
+app.post("/api/inventory/product-video", authMiddleware, (req, res, next) => {
+  academyUpload.single("file")(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: "حجم الملف كبير جداً. الحد الأقصى 100MB" });
+      }
+      return res.status(400).json({ error: `خطأ في رفع الملف: ${err.message}` });
+    } else if (err) {
+      return res.status(400).json({ error: err.message || "خطأ في رفع الملف" });
+    }
+    next();
+  });
+}, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const file = req.file;
+
+  console.log("[api] Product video upload request:", {
+    userId,
+    file: file ? { name: file.originalname, size: file.size, mimetype: file.mimetype } : null
+  });
+
+  if (!file) {
+    console.log("[api] Product video upload error: File is required");
+    res.status(400).json({ error: "الملف مطلوب" });
+    return;
+  }
+
+  if (!file.mimetype.startsWith("video/")) {
+    res.status(400).json({ error: "يجب أن يكون الملف فيديو" });
+    return;
+  }
+
+  try {
+    const ext = path.extname(file.originalname) || "";
+    const timestamp = Date.now();
+    const randomSuffix = Math.round(Math.random() * 1E9);
+    const safeFileName = `${timestamp}-${randomSuffix}${ext}`;
+    const uploadDir = getUploadDir();
+    
+    // إنشاء مجلد uploads إذا لم يكن موجوداً
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+      console.log("[api] Created upload directory:", uploadDir);
+    }
+    
+    const filePath = path.join(uploadDir, safeFileName);
+
+    console.log("[api] Saving product video to:", filePath);
+
+    // حفظ الملف
+    fs.writeFileSync(filePath, file.buffer);
+
+    const webUrl = `/uploads/${safeFileName}`;
+
+    console.log("[api] Product video upload successful:", {
+      filePath,
+      webUrl,
+      fileName: safeFileName,
+      mime: file.mimetype
+    });
+
+    res.json({ 
+      video_url: webUrl,
+      video_file_path: filePath,
+      video_file_name: safeFileName,
+      video_mime: file.mimetype
+    });
+  } catch (error) {
+    console.error("[api] Error uploading product video:", error);
+    res.status(500).json({ error: "فشل في رفع الملف" });
+  }
+});
+
+// إعادة ترتيب ملفات الأكاديمية
+app.post("/api/academy-media/reorder", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { items } = req.body as { items: { id: string; sort_order: number }[] };
+
+  if (!Array.isArray(items)) {
+    res.status(400).json({ error: "بيانات غير صحيحة" });
+    return;
+  }
+
+  try {
+    for (const item of items) {
+      await db.prepare(`
+        UPDATE academy_media SET sort_order = ? WHERE id = ? AND user_id = ?
+      `).run(item.sort_order, item.id, userId);
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[api] Error reordering academy media items:", error);
+    res.status(500).json({ error: "فشل في إعادة الترتيب" });
   }
 });
 
@@ -2972,8 +6245,18 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
 
 const PORT = Number(process.env.PORT ?? 4000);
 if (!process.env.VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
-  });
+  // Run migration before starting server
+  (async () => {
+    try {
+      await initDatabase();
+      await migrateDeliveryHubStockFields();
+      app.listen(PORT, () => {
+        console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
+      });
+    } catch (error) {
+      console.error("Failed to initialize database:", error);
+      process.exit(1);
+    }
+  })();
 }
 export default app;

@@ -126,18 +126,12 @@ export async function downloadPdfFromFullHtmlDocument(
 
     // استخدام Blob ونوع MIME يفرض التنزيل لتجنب فتح الملف في محرر Cursor أو نافذة المعاينة
     const blob = pdf.output("blob");
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = safeName;
-    link.style.display = "none";
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.setAttribute('download', safeName);
     document.body.appendChild(link);
     link.click();
-    
-    setTimeout(() => {
-      if (document.body.contains(link)) document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }, 1000);
+    link.remove();
   } finally {
     document.body.removeChild(iframe);
   }

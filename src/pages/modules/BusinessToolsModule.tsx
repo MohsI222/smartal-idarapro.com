@@ -6,6 +6,7 @@ import { navItemVisibleForModules } from "@/constants/navModuleMap";
 import type { SectionId } from "@/constants/sections";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
 
 const TOOLS: {
   to: string;
@@ -60,11 +61,11 @@ const TOOLS: {
 
 export function BusinessToolsModule() {
   const { t } = useI18n();
-  const { isApproved, approvedModules } = useAuth();
+  const { isApproved, approvedModules, isAdmin } = useAuth();
   const mods = approvedModules as SectionId[];
   const visibleTools = useMemo(
-    () => TOOLS.filter((tool) => isApproved && navItemVisibleForModules(tool.to, mods)),
-    [isApproved, mods]
+    () => TOOLS.filter((tool) => isAdmin || (isApproved && navItemVisibleForModules(tool.to, mods))),
+    [isApproved, mods, isAdmin]
   );
 
   return (
@@ -107,6 +108,12 @@ export function BusinessToolsModule() {
           );
         })}
       </div>
+
+      <GlobalAiAssistant
+        section="management"
+        context="Business Tools Hub - Company setup, government services, and business management utilities"
+        availableFields={["company_name", "business_type", "registration_number", "status"]}
+      />
     </div>
   );
 }

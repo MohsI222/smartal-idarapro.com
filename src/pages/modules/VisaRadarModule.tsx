@@ -15,6 +15,11 @@ import {
   Smartphone,
   Volume2,
   VolumeX,
+  Radar,
+  Play,
+  Pause,
+  Zap,
+  Activity,
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { VISA_CENTER_ENTRIES, type VisaCenterEntry } from "@/constants/visaCenters";
+import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
 import { api } from "@/lib/api";
 import { VISA_PREMIUM_ADDON_DH } from "@/constants/plans";
 import { exportSmartAlIdaraPdfPreferBackend, buildOfficialPdfTableHtml } from "@/lib/pdfExport";
@@ -39,6 +45,63 @@ const LEGACY_VISA_LS_KEY = "idara_visa_local_profile_v1";
 const DEFAULT_VISA_FULL_NAME = "LAHCEN EL MOUTAOUAKIL";
 
 type VisaLocalProfile = { full_name: string; passport_no: string; phone: string; email: string };
+
+interface RadarProStatus {
+  isRunning: boolean;
+  isExtremeMode: boolean;
+  lastCheckTime: string | null;
+  detections: SlotDetection[];
+  logs: RadarLog[];
+  checkInterval: number;
+  extremeModeInterval: number;
+  config: RadarProConfig;
+  consecutiveFailures: Record<string, number>;
+}
+
+interface SlotDetection {
+  centerId: string;
+  country: string;
+  countryAr: string;
+  city: string;
+  cityAr: string;
+  provider: string;
+  url: string;
+  detectedAt: string;
+  status: "open" | "closed";
+}
+
+interface RadarLog {
+  timestamp: string;
+  centerId: string;
+  centerName: string;
+  action: string;
+  status: string;
+  details?: string;
+}
+
+interface RadarProConfig {
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  whatsappEnabled?: boolean;
+  whatsappNumber?: string;
+  baseCheckInterval?: number;
+  extremeModeInterval?: number;
+  enabled?: boolean;
+  maxRetries?: number;
+  retryDelay?: number;
+}
+
+interface VisaCenter {
+  id: string;
+  country: string;
+  countryAr: string;
+  city: string;
+  cityAr: string;
+  provider: string;
+  url: string;
+  enabled: boolean;
+  priority: number;
+}
 
 const EMPTY_VISA_PROFILE: VisaLocalProfile = {
   full_name: DEFAULT_VISA_FULL_NAME,
@@ -138,8 +201,8 @@ function openVisaCenterExternal(url: string) {
 }
 
 export function VisaRadarModule() {
-  const { token, approvedModules, user } = useAuth();
-  const visaUnlocked = approvedModules.includes("visa");
+  const { token, approvedModules, user, isAdmin } = useAuth();
+  const visaUnlocked = isAdmin || approvedModules.includes("visa");
   const { t, isRtl, locale, formatDateTime } = useI18n();
   const appLocale = locale as AppLocale;
   const [now, setNow] = useState(() => new Date());
@@ -152,6 +215,11 @@ export function VisaRadarModule() {
   const [searchQuery, setSearchQuery] = useState("");
   const [alarmPlaying, setAlarmPlaying] = useState(false);
   const [unlockBusy, setUnlockBusy] = useState(false);
+  const [radarStatus, setRadarStatus] = useState<RadarProStatus | null>(null);
+  const [radarLoading, setRadarLoading] = useState(false);
+  const [radarCenters, setRadarCenters] = useState<VisaCenter[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const [selectedCenterId, setSelectedCenterId] = useState<string | null>(null);
   const prevStatusSnapRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
@@ -388,6 +456,7 @@ export function VisaRadarModule() {
       dateLocale: locale,
       documentMode: "official",
       officialKingdomLine: kingdomLine,
+      userId: user?.id,
     });
   };
 
@@ -439,6 +508,109 @@ export function VisaRadarModule() {
 
   const visaPending = Boolean(user?.visa_unlock_requested_at?.trim());
 
+  const loadRadarStatus = useCallback(async () => {
+    if (!token || !visaUnlocked) return;
+    try {
+      setRadarLoading(true);
+      const r = await api<RadarProStatus>("/visa/radar/status", { token });
+      setRadarStatus(r);
+      
+      // Trigger alarm if new detections found
+      if (r.detections.length > 0 && !alarmPlaying) {
+        startAlarm(true);
+        setAlarmPlaying(true);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setRadarLoading(false);
+    }
+  }, [token, visaUnlocked, alarmPlaying]);
+
+  const loadRadarCenters = useCallback(async () => {
+    if (!token || !visaUnlocked) return;
+    try {
+      const r = await api<{ centers: VisaCenter[] }>("/visa/radar/centers", { token });
+      setRadarCenters(r.centers);
+    } catch (error) {
+      console.error("Failed to load radar centers:", error);
+    }
+  }, [token, visaUnlocked]);
+
+  const startRadar = async () => {
+    if (!token || !visaUnlocked) return;
+    try {
+      setRadarLoading(true);
+      console.log("🚀 [Frontend] Starting radar...");
+      const r = await api<{ success: boolean; message: string; status?: RadarProStatus }>("/visa/radar/start", { method: "POST", token });
+      console.log("✅ [Frontend] Radar start response:", r);
+      
+      if (r.success && r.status) {
+        setRadarStatus(r.status);
+        console.log("✅ [Frontend] Radar status updated:", r.status);
+      }
+      
+      await loadRadarStatus();
+    } catch (error) {
+      console.error("❌ [Frontend] Failed to start radar:", error);
+      pushInAppAlert("فشل تشغيل الرادار");
+    } finally {
+      setRadarLoading(false);
+    }
+  };
+
+  const stopRadar = async () => {
+    if (!token || !visaUnlocked) return;
+    try {
+      setRadarLoading(true);
+      await api("/visa/radar/stop", { method: "POST", token });
+      await loadRadarStatus();
+    } catch {
+      /* ignore */
+    } finally {
+      setRadarLoading(false);
+    }
+  };
+
+  const checkRadarNow = async () => {
+    if (!token || !visaUnlocked) return;
+    try {
+      setRadarLoading(true);
+      console.log("🔍 [Frontend] Checking radar now for center:", selectedCenterId);
+      
+      const r = await api<{ success: boolean; result: { available: boolean; detectedAt: string } }>("/visa/radar/check-now", { 
+        method: "POST", 
+        token,
+        body: selectedCenterId ? { centerId: selectedCenterId } : undefined
+      });
+      
+      console.log("✅ [Frontend] Check result:", r);
+      
+      if (r.result.available) {
+        triggerSlotAlarm();
+        pushInAppAlert("🚨 تم رصد موعد مفتوح الآن!");
+        notifyBrowser("تم رصد موعد مفتوح!");
+      }
+      await loadRadarStatus();
+    } catch (error) {
+      console.error("❌ [Frontend] Failed to check radar:", error);
+      pushInAppAlert("فشل الفحص");
+    } finally {
+      setRadarLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadRadarStatus();
+    void loadRadarCenters();
+    const interval = setInterval(() => {
+      if (radarStatus?.isRunning) {
+        void loadRadarStatus();
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [loadRadarStatus, loadRadarCenters, radarStatus?.isRunning]);
+
   return (
     <div className="relative space-y-8 max-w-6xl pb-16 min-h-[50vh]">
       {alarmPlaying && (
@@ -447,7 +619,7 @@ export function VisaRadarModule() {
             <Volume2 className="size-5 text-red-400 animate-pulse" />
             {t("visa.alarmActive")}
           </span>
-          <Button type="button" variant="secondary" className="font-black gap-2 bg-white text-red-900 hover:bg-red-50" onClick={stopSlotAlarm}>
+          <Button type="button" variant="secondary" className="font-black gap-2 bg-white text-red-900 hover:bg-red-50" data-nav-index="0" data-nav-group="visa-alarm" onClick={stopSlotAlarm}>
             <VolumeX className="size-4" />
             {t("visa.alarmStop")}
           </Button>
@@ -469,15 +641,15 @@ export function VisaRadarModule() {
             <Clock className="size-4" />
             {formatDateTime(now)}
           </span>
-          <Button type="button" size="sm" variant="secondary" className="gap-1" onClick={() => void exportVisaPdf()}>
+          <Button type="button" size="sm" variant="secondary" className="gap-1" data-nav-index="1" data-nav-group="visa-export" onClick={() => void exportVisaPdf()}>
             <Download className="size-3.5" />
             PDF
           </Button>
-          <Button type="button" size="sm" variant="outline" className="gap-1 border-slate-600" onClick={() => void exportVisaXlsx()}>
+          <Button type="button" size="sm" variant="outline" className="gap-1 border-slate-600" data-nav-index="2" data-nav-group="visa-export" onClick={() => void exportVisaXlsx()}>
             <FileSpreadsheet className="size-3.5" />
             Excel
           </Button>
-          <Button type="button" size="sm" variant="ghost" className="text-slate-400 text-xs" onClick={requestNotifyPermission}>
+          <Button type="button" size="sm" variant="ghost" className="text-slate-400 text-xs" data-nav-index="3" data-nav-group="visa-export" onClick={requestNotifyPermission}>
             {t("visa.enableNotify")}
           </Button>
         </div>
@@ -489,6 +661,7 @@ export function VisaRadarModule() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder={t("visa.searchPlaceholder")}
+          data-nav-index="4" data-nav-group="visa-search"
           className="ps-10 bg-[#0c1222] border-slate-700 text-white"
         />
         <p className="text-xs text-slate-500 mt-2">{t("visa.officialHint")}</p>
@@ -497,6 +670,7 @@ export function VisaRadarModule() {
       <Tabs defaultValue="radar" className="w-full">
         <TabsList className="flex flex-wrap h-auto bg-[#0a1628] border border-slate-800 p-1 gap-1">
           <TabsTrigger value="radar">{t("visa.tab.radar")}</TabsTrigger>
+          <TabsTrigger value="realtime-radar">رادار حقيقي</TabsTrigger>
           <TabsTrigger value="alerts">{t("visa.tab.alerts")}</TabsTrigger>
           <TabsTrigger value="profile">{t("visa.tab.profile")}</TabsTrigger>
           <TabsTrigger value="auto">{t("visa.tab.auto")}</TabsTrigger>
@@ -587,6 +761,233 @@ export function VisaRadarModule() {
               />
             ))}
           </div>
+        </TabsContent>
+
+        <TabsContent value="realtime-radar" className="mt-6 space-y-6">
+          <Card className="border-slate-800 bg-[#0a1628]/90 overflow-hidden">
+            <CardHeader className="border-b border-slate-800 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Radar className="size-6 text-emerald-400" />
+                  <div>
+                    <p className="font-black text-white text-lg">رادار التأشيرة الاحترافي</p>
+                    <p className="text-xs text-slate-400">فحص حقيقي كل ثانية مع تنبيهات فورية</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {radarStatus?.isRunning ? (
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/50 animate-pulse">
+                      <Zap className="size-3 mr-1" />
+                      يعمل
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-slate-700 text-slate-300 border-slate-600">
+                      متوقف
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+                  <p className="text-xs text-slate-400 mb-1">الحالة</p>
+                  <p className="text-white font-bold text-lg">
+                    {radarStatus?.isRunning ? "🟢 يعمل" : "🔴 متوقف"}
+                  </p>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+                  <p className="text-xs text-slate-400 mb-1">آخر فحص</p>
+                  <p className="text-white font-bold text-lg">
+                    {radarStatus?.lastCheckTime ? new Date(radarStatus.lastCheckTime).toLocaleTimeString('ar-MA') : "-"}
+                  </p>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+                  <p className="text-xs text-slate-400 mb-1">فترة الفحص</p>
+                  <p className="text-white font-bold text-lg">
+                    {radarStatus?.isExtremeMode ? "🔥 500ms" : radarStatus?.checkInterval ? `${radarStatus.checkInterval / 1000} ثانية` : "-"}
+                  </p>
+                </div>
+                <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+                  <p className="text-xs text-slate-400 mb-1">المراكز النشطة</p>
+                  <p className="text-white font-bold text-lg">
+                    {radarCenters.length}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <label className="text-xs text-slate-400">اختر المركز:</label>
+                  <select
+                    value={selectedCenterId || ""}
+                    onChange={(e) => setSelectedCenterId(e.target.value || null)}
+                    data-nav-index="5" data-nav-group="visa-radar"
+                    className="flex-1 bg-slate-900/50 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="">جميع المراكز</option>
+                    {radarCenters.map((center) => (
+                      <option key={center.id} value={center.id}>
+                        {center.countryAr} - {center.cityAr} ({center.provider})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  type="button"
+                  className="font-black gap-2 bg-emerald-600 hover:bg-emerald-700"
+                  disabled={radarLoading || radarStatus?.isRunning}
+                  data-nav-index="6" data-nav-group="visa-radar"
+                  onClick={startRadar}
+                >
+                  <Play className="size-4" />
+                  تشغيل الرادار
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="font-black gap-2"
+                  disabled={radarLoading || !radarStatus?.isRunning}
+                  data-nav-index="7" data-nav-group="visa-radar"
+                  onClick={stopRadar}
+                >
+                  <Pause className="size-4" />
+                  إيقاف الرادار
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="font-black gap-2 border-slate-600"
+                  disabled={radarLoading}
+                  data-nav-index="8" data-nav-group="visa-radar"
+                  onClick={checkRadarNow}
+                >
+                  <RefreshCw className={`size-4 ${radarLoading ? "animate-spin" : ""}`} />
+                  فحص الآن
+                </Button>
+              </div>
+
+              {radarStatus?.detections && radarStatus.detections.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-black text-white text-sm">آخر الكشوفات:</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs border-slate-600"
+                      data-nav-index="9" data-nav-group="visa-radar"
+                      onClick={() => {
+                        if (token) {
+                          api("/visa/radar/clear-detections", { method: "POST", token }).then(() => {
+                            void loadRadarStatus();
+                          });
+                        }
+                      }}
+                    >
+                      مسح الكشوفات
+                    </Button>
+                  </div>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {radarStatus.detections.slice(-10).reverse().map((detection, idx) => (
+                      <div key={idx} className="bg-emerald-950/30 border border-emerald-500/30 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-emerald-300 font-bold text-sm">{detection.countryAr} - {detection.cityAr} ({detection.provider})</span>
+                          <span className="text-xs text-slate-400">
+                            {new Date(detection.detectedAt).toLocaleString('ar-MA')}
+                          </span>
+                        </div>
+                        <a
+                          href={detection.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-emerald-400 hover:text-emerald-300 underline"
+                        >
+                          فتح رابط الحجز
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {radarStatus?.logs && radarStatus.logs.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-slate-400"
+                      onClick={() => setShowLogs(!showLogs)}
+                    >
+                      <Activity className="size-3 mr-1" />
+                      {showLogs ? "إخفاء السجلات" : "عرض السجلات"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs border-slate-600"
+                      onClick={() => {
+                        if (token) {
+                          api("/visa/radar/clear-logs", { method: "POST", token }).then(() => {
+                            void loadRadarStatus();
+                          });
+                        }
+                      }}
+                    >
+                      مسح السجلات
+                    </Button>
+                  </div>
+                  {showLogs && (
+                    <div className="space-y-1 max-h-40 overflow-y-auto bg-slate-900/50 rounded-lg p-3 border border-slate-700">
+                      {radarStatus.logs.slice(-20).reverse().map((log, idx) => (
+                        <div key={idx} className="text-xs flex items-center gap-2">
+                          <span className="text-slate-500">{new Date(log.timestamp).toLocaleTimeString('ar-MA')}</span>
+                          <span className="text-slate-300">{log.centerName}</span>
+                          <span className="text-slate-400">-</span>
+                          <span className={log.status === "success" ? "text-emerald-400" : log.status === "error" ? "text-red-400" : "text-amber-400"}>
+                            {log.action}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {radarStatus?.consecutiveFailures && Object.keys(radarStatus.consecutiveFailures).length > 0 && (
+                <div className="space-y-2">
+                  <p className="font-black text-amber-300 text-sm">⚠️ فشل متكرر:</p>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {Object.entries(radarStatus.consecutiveFailures)
+                      .filter(([_, count]) => count > 0)
+                      .map(([centerId, count]) => (
+                        <div key={centerId} className="text-xs text-amber-400 flex justify-between">
+                          <span>{centerId}</span>
+                          <span>{count}x فشل</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-amber-950/20 border border-amber-500/30 rounded-lg p-4">
+                <p className="text-amber-300 text-sm font-bold mb-2">⚡ معلومات الرادار:</p>
+                <ul className="text-xs text-slate-300 space-y-1">
+                  <li>• يستخدم Puppeteer للفحص الحقيقي في الوقت الفعلي</li>
+                  <li>• يفحص كل ثانية (قابل للتعديل)</li>
+                  <li>• يرسل تنبيهات تلقائية عبر Telegram عند اكتشاف موعد</li>
+                  <li>• تنبيه صوتي ومكتوب فوري داخل التطبيق</li>
+                  <li>• يعمل في الخلفية حتى لو أغلقت الصفحة</li>
+                </ul>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="alerts" className="mt-6 space-y-4">
@@ -713,6 +1114,12 @@ export function VisaRadarModule() {
           </div>
         </div>
       )}
+
+      <GlobalAiAssistant
+        section="visa"
+        context="Visa Appointment Tracking System - Embassy appointments, visa procedures, and travel documentation"
+        availableFields={["passport_number", "appointment_date", "visa_type", "embassy"]}
+      />
     </div>
   );
 }

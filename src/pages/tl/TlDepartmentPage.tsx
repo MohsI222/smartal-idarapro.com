@@ -106,6 +106,13 @@ export function TlDepartmentPage() {
   const [opsLogs, setOpsLogs] = useState<TlOpsLog[]>([]);
   const [messages, setMessages] = useState<TlMessage[]>([]);
   const [recipients, setRecipients] = useState<{ id: string; full_name: string }[]>([]);
+  const [customRecipients] = useState<{ id: string; full_name: string }[]>([
+    { id: "bank_manager", full_name: "مدير البنك / Bank Manager" },
+    { id: "accountant", full_name: "المحاسب / Accountant" },
+    { id: "hr_manager", full_name: "مدير الموارد البشرية / HR Manager" },
+    { id: "legal_advisor", full_name: "المستشار القانوني / Legal Advisor" },
+    { id: "general_director", full_name: "المدير العام / General Director" },
+  ]);
   const [msgBody, setMsgBody] = useState("");
   const [msgTo, setMsgTo] = useState("");
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -114,7 +121,8 @@ export function TlDepartmentPage() {
   const [brandingLogo, setBrandingLogo] = useState<string | null>(null);
   const [brandingCompany, setBrandingCompany] = useState<string>("");
 
-  const allowed = approvedModules.includes("transport_logistics");
+  const { isAdmin } = useAuth();
+  const allowed = isAdmin || approvedModules.includes("transport_logistics");
   const slug = dept && isTlDept(dept) ? dept : null;
 
   const isVehicle = slug ? tlVehicleDeps(slug) : false;
@@ -224,17 +232,13 @@ export function TlDepartmentPage() {
       });
   }, [token, magicParam, slug]);
 
-  useEffect(() => {
-    if (!magicParam && !pwaInvite) return;
-    const timer = window.setTimeout(() => {
-      if (canNativeInstall) void install();
-    }, 2200);
-    return () => window.clearTimeout(timer);
-  }, [magicParam, pwaInvite, canNativeInstall, install]);
+  // REMOVED: Automatic PWA install trigger - this caused browser error
+  // The install() function must ONLY be called from direct user gesture (button click)
+  // See PwaInstallControl component for proper user-triggered install
 
   const effectiveSender = useMemo(() => {
     if (ctxWorker && ctxWorker.department === slug) return ctxWorker;
-    return workers[0] ?? null;
+    return workers.length > 0 ? workers[0] : null;
   }, [ctxWorker, workers, slug]);
 
   const loadMessages = useCallback(async () => {
@@ -243,12 +247,17 @@ export function TlDepartmentPage() {
       const m = await tlMessages(token, effectiveSender.id);
       setMessages(m.messages);
       const rec = await tlMessageRecipients(token, effectiveSender.id);
-      setRecipients(rec.recipients.map((r) => ({ id: r.id, full_name: r.full_name })));
-      if (!msgTo && rec.recipients[0]) setMsgTo(rec.recipients[0].id);
+      // Combine API recipients with custom recipients
+      const allRecipients = [
+        ...customRecipients,
+        ...rec.recipients.map((r) => ({ id: r.id, full_name: r.full_name }))
+      ];
+      setRecipients(allRecipients);
+      if (!msgTo && allRecipients[0]) setMsgTo(allRecipients[0].id);
     } catch {
       toast.error(t("tl.msgErr"));
     }
-  }, [token, effectiveSender, t, msgTo]);
+  }, [token, effectiveSender, t, msgTo, customRecipients]);
 
   useEffect(() => {
     if (tab === "msg" && effectiveSender) void loadMessages();
@@ -579,6 +588,7 @@ export function TlDepartmentPage() {
                           incidents: inc.incidents,
                           t,
                           fileBase: "tl-work-report",
+                          userId: user?.id,
                         });
                         toast.success(t("tl.pdfDone"));
                       } catch {
@@ -620,9 +630,12 @@ export function TlDepartmentPage() {
                     </Label>
                     <input
                       type="file"
-                      accept=".pdf,.xlsx,.xls,.csv,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+                      accept=".pdf,.xlsx,.xls,.docx,.doc,.csv,.png,.jpg,.jpeg,.mp4,.mov,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/csv,image/png,image/jpeg,image/jpg,video/mp4,video/quicktime"
                       className="text-xs text-slate-400 file:mr-2 file:rounded-lg file:border file:border-white/20 file:bg-white/10 file:px-2 file:py-1"
-                      onChange={(e) => setPendingFile(e.target.files?.[0] ?? null)}
+                      onChange={(e) => {
+                        setPendingFile(e.target.files?.[0] ?? null);
+                        e.target.value = "";
+                      }}
                     />
                     {pendingFile && (
                       <p className="text-xs text-amber-300 flex items-center gap-2">
@@ -1155,6 +1168,7 @@ export function TlDepartmentPage() {
                       incidents: inc.incidents,
                       t,
                       fileBase: "tl-ops-report",
+                      userId: user?.id,
                     });
                     toast.success(t("tl.pdfDone"));
                   } catch {

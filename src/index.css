@@ -86,6 +86,42 @@
   }
 }
 
+/* Global Keyboard Navigation Focus Indicators */
+.nav-focused {
+  outline: 2px solid #0052cc !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(0, 82, 204, 0.2) !important;
+  border-color: #0052cc !important;
+}
+
+[data-nav-index]:focus {
+  outline: 2px solid #0052cc !important;
+  outline-offset: 2px !important;
+  transition: all 0.15s ease-in-out !important;
+}
+
+[data-nav-index]:focus-visible {
+  outline: 2px solid #ff8c00 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(255, 140, 0, 0.2) !important;
+}
+
+/* Skip link for keyboard users */
+.skip-to-content {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #0052cc;
+  color: white;
+  padding: 8px 16px;
+  z-index: 100;
+  transition: top 0.3s;
+}
+
+.skip-to-content:focus {
+  top: 0;
+}
+
 /* طباعة من المتصفح */
 @media print {
   body, #root {
@@ -340,5 +376,32 @@ html[data-visual-theme="neon"] [data-app-shell] main > header {
     unicode-bidi: isolate;
     direction: ltr;
     text-align: inherit;
+  }
+  
+  /* Arabic typography reset for Legal Editor */
+  .arabic-text-reset {
+    direction: rtl !important;
+    text-align: right !important;
+    letter-spacing: normal !important;
+    word-break: normal !important;
+    word-wrap: break-word !important;
+    text-rendering: optimizeLegibility !important;
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    font-family: "Noto Naskh Arabic", "Cairo", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif !important;
+    font-feature-settings: "liga" 1, "calt" 1 !important;
+    font-variant-ligatures: normal !important;
+    font-kerning: auto !important;
+  }
+  
+  /* Force textarea elements to use correct typography */
+  textarea.arabic-text-reset,
+  .arabic-text-reset textarea {
+    direction: rtl !important;
+    text-align: right !important;
+    letter-spacing: normal !important;
+    font-family: "Noto Naskh Arabic", "Cairo", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif !important;
+    font-feature-settings: "liga" 1, "calt" 1 !important;
+    font-variant-ligatures: normal !important;
   }
 }

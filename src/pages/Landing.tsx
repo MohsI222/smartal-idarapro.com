@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { Link, Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import {
   Building2,
   Calculator,
@@ -14,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PremiumPlanCard } from "@/components/pricing/PremiumPlanCard";
+import { PlatformGuideAssistant } from "@/components/PlatformGuideAssistant";
 import { OFFICIAL_EMAIL, OFFICIAL_WHATSAPP_DIGITS } from "@/constants/contact";
 import { PLAN_OPTIONS } from "@/constants/plans";
 import { HOW_IT_WORKS_VIDEO_IDS, YOUTUBE_CHANNEL_URL } from "@/constants/youtube";
@@ -21,11 +23,153 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { getApiUrlPrefix } from "@/lib/api";
+
+function LandingFooter() {
+  const { t } = useI18n();
+  const [socialSettings, setSocialSettings] = useState<Record<string, string> | null>(null);
+  const year = new Date().getFullYear();
+
+  useEffect(() => {
+    fetch("/api/settings/public")
+      .then((r) => r.json())
+      .then((d: { settings?: Record<string, string> }) => setSocialSettings(d.settings ?? null))
+      .catch(() => setSocialSettings(null));
+  }, []);
+
+  const whatsappUrl = socialSettings?.social_whatsapp?.trim() || `https://wa.me/${OFFICIAL_WHATSAPP_DIGITS}`;
+  const facebookUrl = socialSettings?.social_facebook?.trim() || "https://www.facebook.com/";
+  const tiktokUrl = socialSettings?.social_tiktok?.trim() || "https://www.tiktok.com/";
+  const instagramUrl = socialSettings?.social_instagram?.trim() || "https://www.instagram.com/";
+  const youtubeUrl = socialSettings?.social_youtube?.trim() || "https://www.youtube.com/@SmartAlIdaraPro";
+  const linkedinUrl = socialSettings?.social_linkedin?.trim() || "https://www.linkedin.com/";
+
+  return (
+    <footer className="border-t border-slate-800 py-10 text-center space-y-6">
+      <div className="flex flex-wrap justify-center gap-4 text-slate-400 text-sm">
+        <a href={`mailto:${OFFICIAL_EMAIL}`} className="hover:text-orange-400 transition-colors font-medium">
+          {OFFICIAL_EMAIL}
+        </a>
+      </div>
+      <div className="flex justify-center gap-4 flex-wrap">
+        <a
+          href={whatsappUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-2xl bg-[#25D366] p-3 text-white hover:opacity-95 transition-opacity"
+          aria-label="WhatsApp"
+        >
+          <WhatsAppIcon />
+        </a>
+        <a
+          href={facebookUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-2xl bg-[#1877F2] p-3 text-white hover:opacity-95 transition-opacity"
+          aria-label="Facebook"
+        >
+          <Facebook className="size-7" />
+        </a>
+        <a
+          href={tiktokUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-2xl bg-black p-3 text-white border border-slate-700 hover:bg-zinc-900 transition-colors"
+          aria-label="TikTok"
+        >
+          <TikTokIcon />
+        </a>
+        <a
+          href={instagramUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-2xl bg-gradient-to-br from-[#f09433] via-[#dc2743] to-[#bc1888] p-3 text-white hover:opacity-95 transition-opacity"
+          aria-label="Instagram"
+        >
+          <InstagramIcon />
+        </a>
+        <a
+          href={youtubeUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-2xl bg-[#FF0000] p-3 text-white hover:opacity-95 transition-opacity"
+          aria-label="YouTube"
+        >
+          <YouTubeIcon />
+        </a>
+        <a
+          href={linkedinUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-2xl bg-[#0A66C2] p-3 text-white hover:opacity-95 transition-opacity"
+          aria-label="LinkedIn"
+        >
+          <LinkedInIcon />
+        </a>
+      </div>
+      <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm text-slate-500">
+        <Link to="/subscription-contract" className="hover:text-orange-400 transition-colors">
+          {t("landing.linkContract")}
+        </Link>
+        <span className="text-slate-700" aria-hidden>
+          ·
+        </span>
+        <Link to="/security-privacy" className="hover:text-orange-400 transition-colors">
+          {t("landing.linkSecurity")}
+        </Link>
+        <span className="text-slate-700" aria-hidden>
+          ·
+        </span>
+        <Link to="/cgu" className="hover:text-orange-400 transition-colors">
+          {t("landing.linkCgu")}
+        </Link>
+        <span className="text-slate-700" aria-hidden>
+          ·
+        </span>
+        <Link to="/trust" className="hover:text-orange-400 transition-colors">
+          {t("landing.linkTrust")}
+        </Link>
+      </div>
+      <p className="text-slate-600 text-sm">{t("landing.footer").replace("{year}", year)}</p>
+    </footer>
+  );
+}
+
+function extractYoutubeId(line: string): string | null {
+  const u = line.trim();
+  if (!u) return null;
+  const m = u.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9_-]{11}$/.test(u)) return u;
+  return null;
+}
+
+function toYoutubeEmbedUrl(url: string): string | null {
+  const id = extractYoutubeId(url);
+  if (!id) return null;
+  return `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1`;
+}
 
 export function Landing() {
   const { t, isRtl } = useI18n();
   const { token, loading } = useAuth();
   const year = String(new Date().getFullYear());
+  const [howItWorksSettings, setHowItWorksSettings] = useState<{ mediaUrl?: string; mediaType?: string }>({});
+  const [videoError, setVideoError] = useState(false);
+
+  useEffect(() => {
+    void fetch(`${getApiUrlPrefix().replace(/\/$/, "")}/settings/public`)
+      .then((r) => r.json() as Promise<{ settings?: Record<string, string> }>)
+      .then((j) => {
+        if (j.settings) {
+          setHowItWorksSettings({
+            mediaUrl: j.settings.how_it_works_media_url,
+            mediaType: j.settings.how_it_works_media_type,
+          });
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   if (loading) {
     return (
@@ -125,6 +269,19 @@ export function Landing() {
       </section>
 
       <section className="max-w-6xl mx-auto px-4 pb-16">
+        <div className="text-center mb-10">
+          <span className="text-xs font-bold uppercase tracking-widest text-cyan-400/90">
+            {t("guide.title")}
+          </span>
+          <h2 className="text-3xl md:text-4xl font-black mt-2">{t("guide.subtitle")}</h2>
+          <p className="text-slate-500 mt-2 max-w-2xl mx-auto">{t("guide.description")}</p>
+        </div>
+        <div className="max-w-2xl mx-auto">
+          <PlatformGuideAssistant isPreSubscription={true} />
+        </div>
+      </section>
+
+      <section className="max-w-6xl mx-auto px-4 pb-16">
         <div className="rounded-3xl border border-purple-500/25 bg-gradient-to-br from-purple-950/40 via-[#0a1628] to-[#050a12] p-6 md:p-10">
           <div className="flex flex-col md:flex-row md:items-center gap-6 justify-between">
             <div className="text-right max-w-xl">
@@ -158,20 +315,80 @@ export function Landing() {
           </a>
         </div>
         <div className="grid lg:grid-cols-2 gap-6">
-          {HOW_IT_WORKS_VIDEO_IDS.map((vid) => (
-            <div
-              key={vid}
-              className="aspect-video rounded-2xl overflow-hidden border border-slate-800 bg-black shadow-xl"
-            >
-              <iframe
-                title={t("landing.howTitle")}
-                src={`https://www.youtube-nocookie.com/embed/${vid}?rel=0&modestbranding=1`}
-                className="w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+          {howItWorksSettings.mediaUrl && howItWorksSettings.mediaType ? (
+            <div className="aspect-video rounded-2xl overflow-hidden border border-slate-800 bg-black shadow-xl">
+              {videoError ? (
+                <div className="h-full w-full flex flex-col items-center justify-center bg-black/50 p-4 text-center">
+                  <p className="text-sm text-white/90 mb-2">فشل تحميل الوسائط</p>
+                  <a
+                    href={howItWorksSettings.mediaType === 'youtube' 
+                      ? `https://www.youtube.com/watch?v=${extractYoutubeId(howItWorksSettings.mediaUrl)}`
+                      : howItWorksSettings.mediaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-orange-400 hover:text-orange-300"
+                  >
+                    مشاهدة مباشرة
+                  </a>
+                </div>
+              ) : howItWorksSettings.mediaType === 'youtube' ? (
+                <iframe
+                  title={t("landing.howTitle")}
+                  src={toYoutubeEmbedUrl(howItWorksSettings.mediaUrl) || ''}
+                  className="w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  onError={() => setVideoError(true)}
+                />
+              ) : howItWorksSettings.mediaType === 'video' ? (
+                <video
+                  src={howItWorksSettings.mediaUrl}
+                  controls
+                  autoPlay
+                  muted
+                  loop
+                  className="h-full w-full"
+                  onError={() => setVideoError(true)}
+                />
+              ) : (
+                <img
+                  src={howItWorksSettings.mediaUrl}
+                  alt={t("landing.howTitle")}
+                  className="h-full w-full object-cover"
+                  onError={() => setVideoError(true)}
+                />
+              )}
             </div>
-          ))}
+          ) : HOW_IT_WORKS_VIDEO_IDS.length > 0 ? (
+            HOW_IT_WORKS_VIDEO_IDS.map((vid) => (
+              <div
+                key={vid}
+                className="aspect-video rounded-2xl overflow-hidden border border-slate-800 bg-black shadow-xl"
+              >
+                <iframe
+                  title={t("landing.howTitle")}
+                  src={`https://www.youtube-nocookie.com/embed/${vid}?rel=0&modestbranding=1`}
+                  className="w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              </div>
+            ))
+          ) : (
+            <div className="rounded-2xl overflow-hidden border border-slate-800 aspect-video bg-black shadow-xl flex items-center justify-center">
+              <div className="text-center p-6">
+                <p className="text-slate-400 mb-3">لم يتم إضافة فيديوهات بعد</p>
+                <a
+                  href={YOUTUBE_CHANNEL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm font-bold text-orange-400 hover:text-orange-300"
+                >
+                  شاهد قناتنا على YouTube
+                </a>
+              </div>
+            </div>
+          )}
           <div className="rounded-2xl overflow-hidden border border-slate-800 aspect-video lg:aspect-auto min-h-[200px]">
             <img
               src="/hero-team.png"
@@ -202,66 +419,7 @@ export function Landing() {
         <Feature icon={Smartphone} titleKey="feat.ocr.title" descKey="feat.ocr.desc" />
       </section>
 
-      <footer className="border-t border-slate-800 py-10 text-center space-y-6">
-        <div className="flex flex-wrap justify-center gap-4 text-slate-400 text-sm">
-          <a href={`mailto:${OFFICIAL_EMAIL}`} className="hover:text-orange-400 transition-colors font-medium">
-            {OFFICIAL_EMAIL}
-          </a>
-        </div>
-        <div className="flex justify-center gap-4">
-          <a
-            href={`https://wa.me/${OFFICIAL_WHATSAPP_DIGITS}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-2xl bg-[#25D366] p-3 text-white hover:opacity-95 transition-opacity"
-            aria-label="WhatsApp"
-          >
-            <WhatsAppIcon />
-          </a>
-          <a
-            href="https://www.facebook.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-2xl bg-[#1877F2] p-3 text-white hover:opacity-95 transition-opacity"
-            aria-label="Facebook"
-          >
-            <Facebook className="size-7" />
-          </a>
-          <a
-            href="https://www.tiktok.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-2xl bg-black p-3 text-white border border-slate-700 hover:bg-zinc-900 transition-colors"
-            aria-label="TikTok"
-          >
-            <TikTokIcon />
-          </a>
-        </div>
-        <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm text-slate-500">
-          <Link to="/subscription-contract" className="hover:text-orange-400 transition-colors">
-            {t("landing.linkContract")}
-          </Link>
-          <span className="text-slate-700" aria-hidden>
-            ·
-          </span>
-          <Link to="/security-privacy" className="hover:text-orange-400 transition-colors">
-            {t("landing.linkSecurity")}
-          </Link>
-          <span className="text-slate-700" aria-hidden>
-            ·
-          </span>
-          <Link to="/cgu" className="hover:text-orange-400 transition-colors">
-            {t("landing.linkCgu")}
-          </Link>
-          <span className="text-slate-700" aria-hidden>
-            ·
-          </span>
-          <Link to="/trust" className="hover:text-orange-400 transition-colors">
-            {t("landing.linkTrust")}
-          </Link>
-        </div>
-        <p className="text-slate-600 text-sm">{t("landing.footer").replace("{year}", year)}</p>
-      </footer>
+      <LandingFooter />
     </div>
   );
 }
@@ -278,6 +436,30 @@ function TikTokIcon() {
   return (
     <svg className="size-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z" />
+    </svg>
+  );
+}
+
+function InstagramIcon() {
+  return (
+    <svg className="size-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+    </svg>
+  );
+}
+
+function YouTubeIcon() {
+  return (
+    <svg className="size-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+    </svg>
+  );
+}
+
+function LinkedInIcon() {
+  return (
+    <svg className="size-7" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
     </svg>
   );
 }

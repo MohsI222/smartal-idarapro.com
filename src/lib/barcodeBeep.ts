@@ -29,18 +29,23 @@ export async function resumeAudioIfNeeded(): Promise<void> {
 /** نغمة عالية التردد فوراً — مسموعة بوضوح عند القراءة */
 export function playBarcodeScanBeep(): void {
   void (async () => {
-    await resumeAudioIfNeeded();
-    const ctx = getAudioContext();
-    if (!ctx) return;
-    const master = ctx.createGain();
-    master.gain.value = 0.58;
-    master.connect(ctx.destination);
-    const t0 = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    osc.type = "square";
-    osc.frequency.value = 2480;
-    osc.connect(master);
-    osc.start(t0);
-    osc.stop(t0 + 0.06);
+    try {
+      await resumeAudioIfNeeded();
+      const ctx = getAudioContext();
+      if (!ctx) return;
+      const master = ctx.createGain();
+      master.gain.value = 0.58;
+      master.connect(ctx.destination);
+      const t0 = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = 2480;
+      osc.connect(master);
+      osc.start(t0);
+      osc.stop(t0 + 0.06);
+    } catch (err) {
+      // تجاهل أخطاء الصوت لتجنب إزعاج المستخدم
+      console.debug("[BarcodeBeep] Audio error (non-critical):", err);
+    }
   })();
 }

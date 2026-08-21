@@ -54,7 +54,8 @@ export function TransportLogisticsAdmin() {
   const employeeIdWrapRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const allowed = approvedModules.includes("transport_logistics");
+  const { isAdmin } = useAuth();
+  const allowed = isAdmin || (approvedModules?.includes("transport_logistics") ?? false);
 
   /** Normalise query: strip Arabic-Indic digits → Latin, lowercase */
   const normalisedQuery = useMemo(() => {
@@ -108,7 +109,7 @@ export function TransportLogisticsAdmin() {
     setLoading(true);
     try {
       const [w, inc] = await Promise.all([tlWorkers(token), tlIncidents(token)]);
-      setWorkers(w.workers);
+      setWorkers(w);
       setIncidents(inc.incidents);
       const veh: Record<string, TlVehicleLog[]> = {};
       const opsMap: Record<string, TlOpsLog[]> = {};
@@ -138,13 +139,13 @@ export function TransportLogisticsAdmin() {
 
   /** رابط يمر عبر تسجيل الدخول ثم يوجّه للقسم مع الرمز السحري — صالح للأجهزة الجديدة */
   const magicLoginUrl = (w: TlWorker) => {
-    const base = getPublicOrigin();
+    const base = typeof window !== 'undefined' ? window.location.origin : getPublicOrigin();
     const target = `/dept/${w.department}?magic=${encodeURIComponent(w.magic_token ?? "")}&pwa=1`;
     return `${base}/login?next=${encodeURIComponent(target)}`;
   };
 
   const magicRegisterUrl = (w: TlWorker) => {
-    const base = getPublicOrigin();
+    const base = typeof window !== 'undefined' ? window.location.origin : getPublicOrigin();
     const target = `/dept/${w.department}?magic=${encodeURIComponent(w.magic_token ?? "")}&pwa=1`;
     return `${base}/register?next=${encodeURIComponent(target)}`;
   };
@@ -280,6 +281,7 @@ export function TransportLogisticsAdmin() {
         incidents: inc.incidents,
         t,
         fileName: `tl-erp-${Date.now()}.pdf`,
+        userId: user?.id,
       });
       toast.success(t("tl.pdfDone"));
     } catch {
@@ -442,7 +444,7 @@ export function TransportLogisticsAdmin() {
               onChange={(e) => setForm((p) => ({ ...p, reports_to_worker_id: e.target.value }))}
             >
               <option value="">{t("tl.none")}</option>
-              {workers.map((w) => (
+              {(workers ?? []).map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.full_name} — {w.employee_id}
                 </option>
@@ -497,7 +499,7 @@ export function TransportLogisticsAdmin() {
           <p className="text-slate-500 text-sm">{t("tl.noIncidents")}</p>
         ) : (
           <ul className="space-y-2">
-            {incidents.map((i) => (
+            {(incidents ?? []).map((i) => (
               <li
                 key={i.id}
                 className={`flex flex-wrap items-start justify-between gap-2 rounded-xl border p-3 ${
@@ -654,7 +656,7 @@ export function TransportLogisticsAdmin() {
               </tr>
             </thead>
             <tbody>
-              {filteredWorkers.map((w) => (
+              {(filteredWorkers ?? []).map((w) => (
                 <tr key={w.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
                   <td className="p-2 text-white">{w.full_name}</td>
                   <td className="p-2 font-mono text-xs" lang="en" dir="ltr">

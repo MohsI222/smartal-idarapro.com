@@ -1,12 +1,13 @@
 /**
  * طبقة موحّدة لمعالجة Excel / Word في المتصفح — أخطاء مع toast، واستيراد ديناميكي عند الحاجة.
- * لا يمس المصادقة أو قاعدة البيانات.
+ * يستخدم API لحفظ المستندات بدلاً من LocalStorage لعزل البيانات.
  */
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { APP_BRANDING, hexToExcelArgb } from "@/config/branding";
 import { applyBordersToRange, styleDataRow, styleHeaderRow } from "@/lib/excelStyles";
 import { ensureExportLibrariesReady } from "@/lib/exportLibraries";
+import { api } from "@/lib/api";
 
 export function sanitizeSheetName(name: string): string {
   const s = name.replace(/[:\\/?*\[\]]/g, "_").trim() || "Sheet1";
@@ -63,7 +64,6 @@ export type StashedOfficeFile = {
   savedAt: string;
 };
 
-const STASH_KEY = "idara-office-stash-v1";
 const MAX_STASH = 8;
 const MAX_BYTES = 1_200_000;
 
@@ -85,49 +85,81 @@ function triggerDownload(blob: Blob, fileName: string): void {
   }, 1000);
 }
 
-export function listOfficeStash(): StashedOfficeFile[] {
+// API-based functions for office documents
+export async function listOfficeStash(token?: string): Promise<StashedOfficeFile[]> {
   try {
-    const raw = localStorage.getItem(STASH_KEY);
-    if (!raw) return [];
-    const j = JSON.parse(raw) as StashedOfficeFile[];
-    return Array.isArray(j) ? j : [];
-  } catch {
+    if (!token) return [];
+    const response = await api<{ documents: any[] }>('/exported-documents', { token });
+    const documents = response.documents || [];
+    
+    // Filter for office documents only and transform to StashedOfficeFile format
+    return documents
+      .filter((doc: any) => ['xlsx', 'xls', 'docx'].includes(doc.document_kind))
+      .map((doc: any) => ({
+        id: doc.id,
+        name: doc.filename || doc.title,
+        kind: doc.document_kind === 'xls' ? 'xlsx' : doc.document_kind as "xlsx" | "docx",
+        base64: '', // Base64 not stored in DB, loaded on demand
+        savedAt: doc.export_timestamp,
+      }));
+  } catch (error) {
+    console.error('Failed to list office stash from API:', error);
     return [];
   }
 }
 
-export async function saveOfficeFileToStash(file: File): Promise<StashedOfficeFile | null> {
+export async function saveOfficeFileToStash(file: File, token?: string): Promise<StashedOfficeFile | null> {
+  if (!token) {
+    toast.error("Authentication required");
+    return null;
+  }
+
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
   const kind: "xlsx" | "docx" | null = ext === "xlsx" || ext === "xls" ? "xlsx" : ext === "docx" ? "docx" : null;
   if (!kind) {
     toast.error("Only .xlsx or .docx");
     return null;
   }
+
   return new Promise<StashedOfficeFile | null>((resolve) => {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const dataUrl = reader.result as string;
         const b64 = dataUrl.split(",")[1] ?? "";
         const approx = Math.floor((b64.length * 3) / 4);
         if (approx > MAX_BYTES) {
-          toast.error("File too large for browser storage");
+          toast.error("File too large");
           resolve(null);
           return;
         }
+
+        // Save to API
+        const response = await api<{ id: string }>('/exported-documents', {
+          method: 'POST',
+          token,
+          body: JSON.stringify({
+            document_kind: kind,
+            title: file.name,
+            filename: file.name,
+            file_size: file.size,
+            export_timestamp: new Date().toISOString(),
+            metadata: { base64: b64 },
+          }),
+        });
+
         const entry: StashedOfficeFile = {
-          id: uid(),
+          id: response.id || uid(),
           name: file.name,
           kind,
           base64: b64,
           savedAt: new Date().toISOString(),
         };
-        const prev = listOfficeStash();
-        const next = [entry, ...prev.filter((x) => x.name !== file.name)].slice(0, MAX_STASH);
-        localStorage.setItem(STASH_KEY, JSON.stringify(next));
-        toast.success("Saved in this browser");
+
+        toast.success("Saved to server");
         resolve(entry);
-      } catch {
+      } catch (error) {
+        console.error('Failed to save office file to API:', error);
         toast.error("Could not save file");
         resolve(null);
       }
@@ -140,13 +172,40 @@ export async function saveOfficeFileToStash(file: File): Promise<StashedOfficeFi
   });
 }
 
-export function removeOfficeStashEntry(id: string): void {
-  const next = listOfficeStash().filter((x) => x.id !== id);
-  localStorage.setItem(STASH_KEY, JSON.stringify(next));
+export async function removeOfficeStashEntry(id: string, token?: string): Promise<void> {
+  if (!token) {
+    toast.error("Authentication required");
+    return;
+  }
+
+  try {
+    await api(`/exported-documents/${id}`, {
+      method: 'DELETE',
+      token,
+    });
+    toast.success("Deleted successfully");
+  } catch (error) {
+    console.error('Failed to remove office stash entry:', error);
+    toast.error("Could not delete file");
+  }
 }
 
-export function clearOfficeStash(): void {
-  localStorage.removeItem(STASH_KEY);
+export async function clearOfficeStash(token?: string): Promise<void> {
+  if (!token) {
+    toast.error("Authentication required");
+    return;
+  }
+
+  try {
+    const documents = await listOfficeStash(token);
+    for (const doc of documents) {
+      await removeOfficeStashEntry(doc.id, token);
+    }
+    toast.success("All files deleted");
+  } catch (error) {
+    console.error('Failed to clear office stash:', error);
+    toast.error("Could not clear files");
+  }
 }
 
 /** تنزيل مصفوفة كجدول Excel مع ألوان الهوية */

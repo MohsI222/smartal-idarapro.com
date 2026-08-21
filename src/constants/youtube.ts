@@ -1,10 +1,10 @@
 /** قناة المنصة على YouTube */
-export const YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@SmartAlIdaraPro";
+export const YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@alidrapro";
 /** فيديو احتياطي عند عدم ضبط معرف القناة (UC…) في الإعدادات */
-export const YOUTUBE_EMBED_VIDEO_ID = "jNQXAC9IVRw";
+export const YOUTUBE_EMBED_VIDEO_ID = "";
 
 /** فيديوهات تعليمية مباشرة (معرّف YouTube فقط) — أضف معرفات من قناتك */
-export const HOW_IT_WORKS_VIDEO_IDS = ["jNQXAC9IVRw"];
+export const HOW_IT_WORKS_VIDEO_IDS: string[] = [];
 
 /**
  * قائمة «رفع القناة» على YouTube: UC… → UU… (للتضمين داخل المنصة).

@@ -142,15 +142,10 @@ export async function downloadXlsxWorkbook(wb: XLSX.WorkBook, fileName: string):
   const blob = new Blob([bytes], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.style.setProperty("display", "none");
-  document.body.appendChild(a);
-  a.click();
-  window.setTimeout(() => {
-    if (document.body.contains(a)) document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 1000);
+  const link = document.createElement('a');
+  link.href = window.URL.createObjectURL(blob);
+  link.setAttribute('download', name);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }

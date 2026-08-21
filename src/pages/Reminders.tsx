@@ -19,9 +19,9 @@ type Row = {
 };
 
 export function Reminders() {
-  const { token, isApproved, approvedModules } = useAuth();
+  const { token, isApproved, approvedModules, isAdmin } = useAuth();
   const { t } = useI18n();
-  const allowed = isApproved && approvedModules.includes("reminders");
+  const allowed = isAdmin || (isApproved && approvedModules.includes("reminders"));
   const [rows, setRows] = useState<Row[]>([]);
   const [form, setForm] = useState({
     channel: "email",

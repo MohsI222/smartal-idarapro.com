@@ -6,6 +6,10 @@ import {
   FileCheck, X, Sparkles, Loader2, FileUp, ShieldCheck, 
   Image as ImageIcon, Map, Building, DollarSign, FileText, ExternalLink, Clock
 } from "lucide-react";
+import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
+import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/context/AuthContext";
+import html2pdf from 'html2pdf.js';
 
 type ItemType = "Car" | "Property" | "Land";
 type ItemStatus = "Available" | "Rented" | "Sold" | "Maintenance";
@@ -129,6 +133,7 @@ const TRANSLATIONS = {
 // MAIN COMPONENT
 // ----------------------------------------------------------------------
 export default function AutoRealEstateModule() {
+  const { user, supabaseSession, isAdmin } = useAuth();
   const [lang, setLang] = useState<Lang>("ar");
   const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "contracts" | "accounting">("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
@@ -172,20 +177,279 @@ export default function AutoRealEstateModule() {
   const t = TRANSLATIONS[lang];
   const isRTL = lang === "ar";
 
-  // MOCK FETCH
-  useEffect(() => {
-    setLoading(true);
-    setTimeout(() => {
-      setInventory([
-        { id: "1", type: "Car", brandOrTitle: "Mercedes C-Class", plateOrAddress: "12345 | أ | 50", specs: "Auto", price: 450000, status: "Available", createdAt: new Date().toISOString(), color: "Black", fuel: "Diesel", mileage: "12,000", defects: "None" },
-        { id: "2", type: "Car", brandOrTitle: "Range Rover Evoque", plateOrAddress: "9876 | ب | 1", specs: "Auto", price: 600000, status: "Rented", rentStart: "2026-06-01", rentEnd: "2026-06-30", createdAt: new Date().toISOString(), color: "White", fuel: "Diesel", mileage: "45,000" },
-        { id: "3", type: "Property", brandOrTitle: "شقة فاخرة طنجة", plateOrAddress: "Malabata, Tangier", specs: "Sea View", price: 1200000, status: "Sold", createdAt: new Date().toISOString(), propType: "Residential", floorNum: 5, totalFloors: 10, rooms: 3, bathrooms: 2, amenities: ["Elevator", "Parking"] },
-        { id: "4", type: "Land", brandOrTitle: "أرض فلاحية", plateOrAddress: "Route Rabat, Kenitra", specs: "Fenced", price: 800000, status: "Available", createdAt: new Date().toISOString(), zoning: "Agricultural", sqm: 5000 },
-      ]);
-      setLogs([{ id: "1", action: "System Initialized", timestamp: new Date().toISOString(), user: "Admin" }]);
+  // LOAD DATA FROM SUPABASE - Use useCallback to make it accessible by handleSaveProduct
+  const fetchInventory = useCallback(async () => {
+    if (!user || !supabase) {
       setLoading(false);
-    }, 600);
-  }, []);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // If super admin, use backend API endpoint instead of direct Supabase
+      if (isAdmin) {
+        console.warn('[AutoRealEstate] Super admin - using backend API endpoint');
+        const token = localStorage.getItem('idara_token');
+        const response = await fetch('/api/supabase/auto-real-estate', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+        
+        if (!response.ok) {
+          console.error('Error fetching inventory for super admin:', response.status);
+          setInventory([]);
+          setLoading(false);
+          return;
+        }
+        
+        const { data: inventoryData } = await response.json();
+        
+        if (inventoryData) {
+          const transformedInventory = inventoryData.map((item: any) => ({
+            id: item.id,
+            type: item.type,
+            brandOrTitle: item.brand_or_title,
+            plateOrAddress: item.plate_or_address,
+            specs: item.specs || '',
+            price: Number(item.price),
+            status: item.status,
+            expiryDate: item.expiry_date,
+            createdAt: item.created_at,
+            image: item.image,
+            color: item.color,
+            fuel: item.fuel,
+            mileage: item.mileage,
+            defects: item.defects,
+            rentStart: item.rent_start,
+            rentEnd: item.rent_end,
+            propType: item.prop_type,
+            commercialType: item.commercial_type,
+            floorNum: item.floor_num,
+            totalFloors: item.total_floors,
+            rooms: item.rooms,
+            bathrooms: item.bathrooms,
+            amenities: item.amenities,
+            zoning: item.zoning,
+            sqm: item.sqm,
+          }));
+          setInventory(transformedInventory);
+        } else {
+          setInventory([]);
+        }
+        setLoading(false);
+        return;
+      }
+      
+      // Use Supabase session from AuthContext if available, otherwise try to get it
+      let session = supabaseSession;
+      if (!session) {
+        const { data: { session: fetchedSession }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.error('Supabase session error:', sessionError);
+          setInventory([]);
+          setLoading(false);
+          return;
+        }
+        session = fetchedSession;
+      }
+      
+      // If no Supabase session exists and user is NOT super admin, skip fetch
+      if (!session || !session.user) {
+        console.warn('[AutoRealEstate] No Supabase session found - user may be authenticated via backend. Skipping RLS-protected fetch.');
+        setInventory([]);
+        setLoading(false);
+        return;
+      }
+
+      const authUserId = session.user.id;
+      
+      const { data: inventoryData, error: inventoryError } = await supabase
+        .from('auto_real_estate')
+        .select('*')
+        .eq('user_id', authUserId)
+        .order('created_at', { ascending: false });
+
+      if (inventoryError) {
+        console.error('Error fetching inventory:', inventoryError);
+        setInventory([]);
+      } else if (inventoryData) {
+        // Transform database data to match InventoryItem interface
+          const transformedInventory = inventoryData.map((item: any) => ({
+            id: item.id,
+            type: item.type,
+            brandOrTitle: item.brand_or_title,
+            plateOrAddress: item.plate_or_address,
+            specs: item.specs || '',
+            price: Number(item.price),
+            status: item.status,
+            expiryDate: item.expiry_date,
+            createdAt: item.created_at,
+            image: item.image,
+            color: item.color,
+            fuel: item.fuel,
+            mileage: item.mileage,
+            defects: item.defects,
+            rentStart: item.rent_start,
+            rentEnd: item.rent_end,
+            propType: item.prop_type,
+            commercialType: item.commercial_type,
+            floorNum: item.floor_num,
+            totalFloors: item.total_floors,
+            rooms: item.rooms,
+            bathrooms: item.bathrooms,
+            amenities: item.amenities,
+            zoning: item.zoning,
+            sqm: item.sqm,
+          }));
+          setInventory(transformedInventory);
+        } else {
+          // No data yet, but no error - this is normal for new users
+          setInventory([]);
+        }
+
+        setLogs([{ id: `${Date.now()}-init`, action: "System Initialized", timestamp: new Date().toISOString(), user: user.email || "Admin" }]);
+      } catch (error) {
+        console.error('Error in fetchInventory:', error);
+        setInventory([]);
+      } finally {
+        setLoading(false);
+      }
+  }, [user, supabase, supabaseSession, isAdmin]);
+
+  // Call fetchInventory on mount and when dependencies change
+  useEffect(() => {
+    fetchInventory();
+  }, [fetchInventory]);
+
+  // Real-time subscription for inventory changes
+  useEffect(() => {
+    if (!user || !supabase) return;
+
+    const setupSubscription = async () => {
+      // Use Supabase session from AuthContext if available, otherwise try to get it
+      let session = supabaseSession;
+      if (!session) {
+        const { data: { session: fetchedSession }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.error('Supabase session error:', sessionError);
+          return;
+        }
+        session = fetchedSession;
+      }
+      
+      // If no Supabase session, skip real-time subscription
+      if (!session || !session.user) {
+        console.warn('[AutoRealEstate] No Supabase session found - skipping real-time subscription');
+        return null;
+      }
+
+      const authUserId = session.user.id;
+
+      // Create unique channel name with random suffix to prevent conflicts
+      const randomSuffix = Math.random().toString(36).substring(2, 9);
+      const channelName = `auto_real_estate_${authUserId}_${randomSuffix}`;
+      
+      // Create channel first, then add callbacks, then subscribe
+      if (!supabase) return;
+      const channel = supabase.channel(channelName);
+      
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'auto_real_estate',
+          filter: `user_id=eq.${authUserId}`
+        },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newItem = payload.new as any;
+            const transformedItem = {
+              id: newItem.id,
+              type: newItem.type,
+              brandOrTitle: newItem.brand_or_title,
+              plateOrAddress: newItem.plate_or_address,
+              specs: newItem.specs || '',
+              price: Number(newItem.price),
+              status: newItem.status,
+              expiryDate: newItem.expiry_date,
+              createdAt: newItem.created_at,
+              image: newItem.image,
+              color: newItem.color,
+              fuel: newItem.fuel,
+              mileage: newItem.mileage,
+              defects: newItem.defects,
+              rentStart: newItem.rent_start,
+              rentEnd: newItem.rent_end,
+              propType: newItem.prop_type,
+              commercialType: newItem.commercial_type,
+              floorNum: newItem.floor_num,
+              totalFloors: newItem.total_floors,
+              rooms: newItem.rooms,
+              bathrooms: newItem.bathrooms,
+              amenities: newItem.amenities,
+              zoning: newItem.zoning,
+              sqm: newItem.sqm,
+            };
+            setInventory(prev => [transformedItem, ...prev]);
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedItem = payload.new as any;
+            setInventory(prev => prev.map(item => 
+              item.id === updatedItem.id ? {
+                ...item,
+                type: updatedItem.type,
+                brandOrTitle: updatedItem.brand_or_title,
+                plateOrAddress: updatedItem.plate_or_address,
+                specs: updatedItem.specs || '',
+                price: Number(updatedItem.price),
+                status: updatedItem.status,
+                expiryDate: updatedItem.expiry_date,
+                image: updatedItem.image,
+                color: updatedItem.color,
+                fuel: updatedItem.fuel,
+                mileage: updatedItem.mileage,
+                defects: updatedItem.defects,
+                rentStart: updatedItem.rent_start,
+                rentEnd: updatedItem.rent_end,
+                propType: updatedItem.prop_type,
+                commercialType: updatedItem.commercial_type,
+                floorNum: updatedItem.floor_num,
+                totalFloors: updatedItem.total_floors,
+                rooms: updatedItem.rooms,
+                bathrooms: updatedItem.bathrooms,
+                amenities: updatedItem.amenities,
+                zoning: updatedItem.zoning,
+                sqm: updatedItem.sqm,
+              } : item
+            ));
+          } else if (payload.eventType === 'DELETE') {
+            setInventory(prev => prev.filter(item => item.id !== payload.old.id));
+          }
+        }
+      );
+
+      const subscription = channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[AutoRealEstate] Real-time subscription established');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[AutoRealEstate] Real-time subscription error');
+        }
+      });
+      return subscription;
+    };
+
+    let subscriptionPromise = setupSubscription();
+
+    return () => {
+      subscriptionPromise.then(subscription => {
+        if (subscription && supabase) {
+          supabase.removeChannel(subscription);
+        }
+      });
+    };
+  }, [user, supabaseSession]);
 
   // Pre-fill fields when selecting an asset for the contract
   useEffect(() => {
@@ -225,20 +489,244 @@ export default function AutoRealEstateModule() {
     }
   };
 
-  const handleSaveProduct = () => {
-    if (!newItem.brandOrTitle || !newItem.plateOrAddress) {
-      showToast("Please fill required fields", "error"); return;
+  const handleSaveProduct = async () => {
+    // Trim values to handle whitespace
+    const brandOrTitleTrimmed = newItem.brandOrTitle?.trim();
+    const plateOrAddressTrimmed = newItem.plateOrAddress?.trim();
+    
+    if (!brandOrTitleTrimmed || !plateOrAddressTrimmed) {
+      showToast("Please fill required fields", "error"); 
+      return;
     }
-    if (editingId) {
-      setInventory(prev => prev.map(item => item.id === editingId ? { ...item, ...newItem } as InventoryItem : item));
-      setLogs([{ id: Math.random().toString(), action: `Edited ${newItem.brandOrTitle}`, timestamp: new Date().toISOString(), user: "Admin" }, ...logs]);
-    } else {
-      const product = { ...newItem, id: Math.random().toString(), createdAt: new Date().toISOString() } as InventoryItem;
-      setInventory([product, ...inventory]);
-      setLogs([{ id: Math.random().toString(), action: `Added ${product.brandOrTitle}`, timestamp: new Date().toISOString(), user: "Admin" }, ...logs]);
+
+    try {
+      // If super admin, use backend API endpoint instead of direct Supabase
+      if (isAdmin) {
+        console.warn('[AutoRealEstate] Super admin - using backend API endpoint for save');
+        const token = localStorage.getItem('idara_token');
+        
+        const dbItem = {
+          type: newItem.type,
+          brandOrTitle: brandOrTitleTrimmed,
+          plateOrAddress: plateOrAddressTrimmed,
+          specs: newItem.specs || '',
+          price: newItem.price || 0,
+          status: newItem.status || 'Available',
+          expiryDate: newItem.expiryDate || null,
+          image: newItem.image || null,
+          color: newItem.color || null,
+          fuel: newItem.fuel || null,
+          mileage: newItem.mileage || null,
+          defects: newItem.defects || null,
+          rentStart: newItem.rentStart || null,
+          rentEnd: newItem.rentEnd || null,
+          propType: newItem.propType || null,
+          commercialType: newItem.commercialType || null,
+          floorNum: newItem.floorNum || null,
+          totalFloors: newItem.totalFloors || null,
+          rooms: newItem.rooms || null,
+          bathrooms: newItem.bathrooms || null,
+          amenities: newItem.amenities || null,
+          zoning: newItem.zoning || null,
+          sqm: newItem.sqm || null,
+          // Don't send user_id - server will handle it
+        };
+
+        let response;
+        if (editingId) {
+          response = await fetch(`/api/supabase/auto-real-estate/${editingId}`, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(dbItem),
+          });
+        } else {
+          response = await fetch('/api/supabase/auto-real-estate', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(dbItem),
+          });
+        }
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Error saving product:', response.status, errorText);
+          showToast("Failed to save product", "error");
+          return;
+        }
+        
+        await response.json();
+        
+        // Refresh inventory after save
+        await fetchInventory();
+        
+        setIsModalOpen(false);
+        setEditingId(null);
+        setNewItem({ type: "Car", status: "Available", price: 0 });
+        showToast(editingId ? "تم التعديل بنجاح" : "تمت الإضافة بنجاح", "success");
+        return;
+      }
+      
+      // Regular users use Supabase directly
+      if (!supabase) {
+        showToast("Supabase not configured", "error");
+        return;
+      }
+      
+      // Use Supabase session from AuthContext if available, otherwise try to get it
+      let session = supabaseSession;
+      if (!session) {
+        const { data: { session: fetchedSession }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.error('Supabase session error:', sessionError);
+          showToast("Authentication error. Please log in again.", "error");
+          return;
+        }
+        session = fetchedSession;
+      }
+      
+      if (!session || !session.user) {
+        console.warn('[AutoRealEstate] No Supabase session found - user may be authenticated via backend. Cannot perform RLS-protected operation.');
+        showToast("Supabase authentication required for this operation. Please log in via Supabase.", "error");
+        return;
+      }
+
+      const authUserId = session.user.id;
+
+      const dbItem = {
+        user_id: authUserId,
+        type: newItem.type,
+        brand_or_title: brandOrTitleTrimmed,
+        plate_or_address: plateOrAddressTrimmed,
+        specs: newItem.specs || '',
+        price: newItem.price || 0,
+        status: newItem.status || 'Available',
+        expiry_date: newItem.expiryDate || null,
+        image: newItem.image || null,
+        color: newItem.color || null,
+        fuel: newItem.fuel || null,
+        mileage: newItem.mileage || null,
+        defects: newItem.defects || null,
+        rent_start: newItem.rentStart || null,
+        rent_end: newItem.rentEnd || null,
+        prop_type: newItem.propType || null,
+        commercial_type: newItem.commercialType || null,
+        floor_num: newItem.floorNum || null,
+        total_floors: newItem.totalFloors || null,
+        rooms: newItem.rooms || null,
+        bathrooms: newItem.bathrooms || null,
+        amenities: newItem.amenities || null,
+        zoning: newItem.zoning || null,
+        sqm: newItem.sqm || null,
+      };
+
+      if (editingId) {
+        const { data: updateData, error: updateError } = await supabase
+          .from('auto_real_estate')
+          .update(dbItem)
+          .eq('id', editingId)
+          .eq('user_id', authUserId)
+          .select()
+          .maybeSingle();
+
+        if (updateError) {
+          console.error('Update error details:', updateError.message, updateError.code, updateError.hint, updateError.details);
+          throw updateError;
+        }
+        
+        // Manually update the item in local state for immediate feedback
+        if (updateData) {
+          setInventory(prev => prev.map(item => 
+            item.id === editingId ? {
+              ...item,
+              type: updateData.type,
+              brandOrTitle: updateData.brand_or_title,
+              plateOrAddress: updateData.plate_or_address,
+              specs: updateData.specs || '',
+              price: Number(updateData.price),
+              status: updateData.status,
+              expiryDate: updateData.expiry_date,
+              image: updateData.image,
+              color: updateData.color,
+              fuel: updateData.fuel,
+              mileage: updateData.mileage,
+              defects: updateData.defects,
+              rentStart: updateData.rent_start,
+              rentEnd: updateData.rent_end,
+              propType: updateData.prop_type,
+              commercialType: updateData.commercial_type,
+              floorNum: updateData.floor_num,
+              totalFloors: updateData.total_floors,
+              rooms: updateData.rooms,
+              bathrooms: updateData.bathrooms,
+              amenities: updateData.amenities,
+              zoning: updateData.zoning,
+              sqm: updateData.sqm,
+            } : item
+          ));
+        }
+        
+        setLogs([{ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, action: `Edited ${newItem.brandOrTitle}`, timestamp: new Date().toISOString(), user: user.email || "Admin" }, ...logs]);
+      } else {
+        const { data: insertData, error: insertError } = await supabase
+          .from('auto_real_estate')
+          .insert(dbItem)
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error('Insert error details:', insertError.message, insertError.code, insertError.hint, insertError.details);
+          throw insertError;
+        }
+        
+        // Manually add the new item to local state for immediate feedback
+        if (insertData) {
+          const transformedItem = {
+            id: insertData.id,
+            type: insertData.type,
+            brandOrTitle: insertData.brand_or_title,
+            plateOrAddress: insertData.plate_or_address,
+            specs: insertData.specs || '',
+            price: Number(insertData.price),
+            status: insertData.status,
+            expiryDate: insertData.expiry_date,
+            createdAt: insertData.created_at,
+            image: insertData.image,
+            color: insertData.color,
+            fuel: insertData.fuel,
+            mileage: insertData.mileage,
+            defects: insertData.defects,
+            rentStart: insertData.rent_start,
+            rentEnd: insertData.rent_end,
+            propType: insertData.prop_type,
+            commercialType: insertData.commercial_type,
+            floorNum: insertData.floor_num,
+            totalFloors: insertData.total_floors,
+            rooms: insertData.rooms,
+            bathrooms: insertData.bathrooms,
+            amenities: insertData.amenities,
+            zoning: insertData.zoning,
+            sqm: insertData.sqm,
+          };
+          setInventory(prev => [transformedItem, ...prev]);
+        }
+        
+        setLogs([{ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, action: `Added ${newItem.brandOrTitle}`, timestamp: new Date().toISOString(), user: user?.email || "Admin" }, ...logs]);
+      }
+
+      setIsModalOpen(false);
+      setEditingId(null);
+      setNewItem({ type: "Car", status: "Available", price: 0 });
+      showToast(t.addSuccess, "success");
+    } catch (error) {
+      console.error('Error saving product:', error);
+      showToast("Failed to save product", "error");
     }
-    setIsModalOpen(false); setEditingId(null); setNewItem({ type: "Car", status: "Available", price: 0 });
-    showToast(t.addSuccess, "success");
   };
 
   const handleEdit = (e: React.MouseEvent, idToEdit: string) => {
@@ -247,10 +735,78 @@ export default function AutoRealEstateModule() {
     if (itemToEdit) { setNewItem(itemToEdit); setEditingId(idToEdit); setIsModalOpen(true); }
   };
 
-  const handleDelete = (e: React.MouseEvent, idToDelete: string) => {
+  const handleDelete = async (e: React.MouseEvent, idToDelete: string) => {
     e.stopPropagation();
-    setInventory((prev) => prev.filter((i) => i.id !== idToDelete));
-    showToast(t.deleteSuccess, "info");
+    
+    try {
+      // If super admin, use backend API endpoint instead of direct Supabase
+      if (isAdmin) {
+        console.warn('[AutoRealEstate] Super admin - using backend API endpoint for delete');
+        const token = localStorage.getItem('idara_token');
+        
+        const response = await fetch(`/api/supabase/auto-real-estate/${idToDelete}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Error deleting product:', response.status, errorText);
+          showToast("Failed to delete product", "error");
+          return;
+        }
+        
+        // Refresh inventory after delete
+        await fetchInventory();
+        
+        showToast(t.deleteSuccess, "info");
+        return;
+      }
+      
+      // Regular users use Supabase directly
+      if (!supabase) {
+        showToast("Supabase not configured", "error");
+        return;
+      }
+
+      // Use Supabase session from AuthContext if available, otherwise try to get it
+      let session = supabaseSession;
+      if (!session) {
+        const { data: { session: fetchedSession }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.error('Supabase session error:', sessionError);
+          showToast("Authentication error. Please log in again.", "error");
+          return;
+        }
+        session = fetchedSession;
+      }
+      
+      if (!session || !session.user) {
+        console.warn('[AutoRealEstate] No Supabase session found - user may be authenticated via backend. Cannot perform RLS-protected operation.');
+        showToast("Supabase authentication required for this operation. Please log in via Supabase.", "error");
+        return;
+      }
+
+      const authUserId = session.user.id;
+
+      const { error: deleteError } = await supabase
+        .from('auto_real_estate')
+        .delete()
+        .eq('id', idToDelete)
+        .eq('user_id', authUserId);
+
+      if (deleteError) throw deleteError;
+      
+      // Manually update local state for immediate UI refresh
+      setInventory(prev => prev.filter(item => item.id !== idToDelete));
+      
+      showToast(t.deleteSuccess, "info");
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      showToast("Failed to delete product", "error");
+    }
   };
 
   const handleExportCSV = useCallback(() => {
@@ -258,14 +814,12 @@ export default function AutoRealEstateModule() {
     const rows = inventory.map(i => `${i.id},${i.type},"${i.brandOrTitle}","${i.plateOrAddress}",${i.price},${i.status}`);
     const csvContent = [headers.join(","), ...rows].join("\n");
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", "inventory_stock.csv");
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.setAttribute('download', 'inventory_stock.csv');
     document.body.appendChild(link);
     link.click();
     link.remove();
-    URL.revokeObjectURL(url);
     showToast("Exported successfully!", "success");
   }, [inventory, showToast]);
 
@@ -284,6 +838,40 @@ export default function AutoRealEstateModule() {
       }
       showToast("Legal Document Ready & Tracked!", "success"); 
     }, 1500);
+  };
+
+  const handleDownloadPDF = () => {
+    try {
+      const element = document.querySelector('.contract-print-zone') as HTMLElement;
+      if (!element) {
+        showToast("Contract element not found", "error");
+        return;
+      }
+
+      const opt = {
+        margin: [5, 5, 5, 5] as [number, number, number, number],
+        filename: `contract-${contractType}-${Date.now()}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          letterRendering: true,
+          logging: false
+        },
+        jsPDF: {
+          unit: 'mm' as const,
+          format: 'a4' as const,
+          orientation: 'portrait' as const
+        },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] as const }
+      };
+
+      html2pdf().set(opt).from(element).save();
+      showToast("PDF downloaded successfully!", "success");
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      showToast("Failed to generate PDF", "error");
+    }
   };
 
   const navigateToFilteredStock = (status: ItemStatus | "All") => {
@@ -369,17 +957,9 @@ export default function AutoRealEstateModule() {
     
     const price = cForm.price ? formatCurrency(Number(cForm.price)) : (aiLang === 'ar' ? '[المبلغ المتفق عليه]' : aiLang === 'fr' ? '[Montant Convenu]' : aiLang === 'es' ? '[Monto Acordado]' : '[Agreed Amount]');
     const deposit = cForm.deposit ? formatCurrency(Number(cForm.deposit)) : (aiLang === 'ar' ? '0.00 درهم' : '0.00 MAD');
-    const brand = selectedItem?.brandOrTitle || (aiLang === 'ar' ? '[العلامة/الوصف]' : aiLang === 'fr' ? '[Marque/Description]' : aiLang === 'es' ? '[Marca/Descripción]' : '[Brand/Description]');
     const identifier = selectedItem?.plateOrAddress || (aiLang === 'ar' ? '[المعرف/اللوحة]' : aiLang === 'fr' ? '[Plaque/Identifiant]' : aiLang === 'es' ? '[Placa/Identificador]' : '[Identifier/Plate]');
 
     const articleBreakStyle = { pageBreakInside: 'avoid' as const, pageBreakAfter: 'auto' as const };
-
-    const getFallbackLandCommType = (l: string) => {
-      if (l==='ar') return selectedItem?.type === 'Land' ? 'أرض/بقعة' : 'محل تجاري';
-      if (l==='fr') return selectedItem?.type === 'Land' ? 'Terrain/Lot' : 'Local Commercial';
-      if (l==='es') return selectedItem?.type === 'Land' ? 'Terreno/Lote' : 'Local Comercial';
-      return selectedItem?.type === 'Land' ? 'Land/Lot' : 'Commercial Unit';
-    };
 
     const getFallbackResType = (l: string) => {
       if (l==='ar') return 'شقة/فيلا';
@@ -390,86 +970,100 @@ export default function AutoRealEstateModule() {
 
     // Centralized Deep Spec Asset Component Map for 4 languages
     const AssetDetails = selectedItem ? (
-      <div className={`p-4 compact-box ${aiLang === 'ar' ? 'bg-slate-50' : 'bg-slate-100'} border border-slate-300 rounded text-base my-4 shadow-sm text-slate-900`}>
+      <div className="p-3 compact-box rounded text-sm my-3 shadow-sm" style={{
+        backgroundColor: aiLang === 'ar' ? '#f8fafc' : '#f1f5f9',
+        border: '1px solid #cbd5e1',
+        color: '#0f172a'
+      }}>
         {selectedItem.type === 'Car' && (
           <>
             {aiLang === 'ar' && (
               <>
-                <p>الماركة والموديل: <strong>{cForm.brandModel || brand}</strong> | المعرف/اللوحة: <strong>{identifier}</strong></p>
-                <p>سنة الصنع: {cForm.year || '-'} | اللون: {cForm.color || '-'} | الوقود: {cForm.fuel || '-'} | الكيلومترات: {cForm.mileage || '-'} كم</p>
+                <p><strong>العلامة التجارية:</strong> {selectedItem.brandOrTitle}</p>
+                <p><strong>رقم اللوحة:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>المواصفات:</strong> {selectedItem.specs}</p>
+                <p><strong>السعر:</strong> {selectedItem.price}</p>
               </>
             )}
             {aiLang === 'en' && (
               <>
-                <p>Brand & Model: <strong>{cForm.brandModel || brand}</strong> | Plate/Identifier: <strong>{identifier}</strong></p>
-                <p>Manufacturing Year: {cForm.year || '-'} | Color: {cForm.color || '-'} | Fuel Type: {cForm.fuel || '-'} | Mileage: {cForm.mileage || '-'} km</p>
+                <p><strong>Brand:</strong> {selectedItem.brandOrTitle}</p>
+                <p><strong>Plate Number:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>Specifications:</strong> {selectedItem.specs}</p>
+                <p><strong>Price:</strong> {selectedItem.price}</p>
               </>
             )}
             {aiLang === 'fr' && (
               <>
-                <p>Marque et Modèle : <strong>{cForm.brandModel || brand}</strong> | Plaque/Identifiant : <strong>{identifier}</strong></p>
-                <p>Année de Fabrication : {cForm.year || '-'} | Couleur : {cForm.color || '-'} | Carburant : {cForm.fuel || '-'} | Kilométrage : {cForm.mileage || '-'} km</p>
+                <p><strong>Marque:</strong> {selectedItem.brandOrTitle}</p>
+                <p><strong>Numéro d'immatriculation:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>Spécifications:</strong> {selectedItem.specs}</p>
+                <p><strong>Prix:</strong> {selectedItem.price}</p>
               </>
             )}
             {aiLang === 'es' && (
               <>
-                <p>Marca y Modelo: <strong>{cForm.brandModel || brand}</strong> | Placa/Identificador: <strong>{identifier}</strong></p>
-                <p>Año de Fabricación: {cForm.year || '-'} | Color: {cForm.color || '-'} | Combustible: {cForm.fuel || '-'} | Kilometraje: {cForm.mileage || '-'} km</p>
+                <p><strong>Marca:</strong> {selectedItem.brandOrTitle}</p>
+                <p><strong>Número de placa:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>Especificaciones:</strong> {selectedItem.specs}</p>
+                <p><strong>Precio:</strong> {selectedItem.price}</p>
               </>
             )}
           </>
         )}
-
-        {(selectedItem.type === 'Land' || (selectedItem.type === 'Property' && selectedItem.propType === 'Commercial')) && (
+        {selectedItem.type === 'Property' && (
           <>
             {aiLang === 'ar' && (
               <>
-                <p>النوع: <strong>{cForm.propType || getFallbackLandCommType('ar')}</strong> | العنوان: <strong>{identifier}</strong></p>
-                <p>المساحة الإجمالية: {cForm.area || '-'} | التنطيق (Zoning): {selectedItem.zoning || '-'}</p>
+                <p><strong>عنوان العقار:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>المواصفات:</strong> {selectedItem.specs}</p>
+                <p><strong>السعر:</strong> {selectedItem.price}</p>
               </>
             )}
             {aiLang === 'en' && (
               <>
-                <p>Type: <strong>{cForm.propType || getFallbackLandCommType('en')}</strong> | Address: <strong>{identifier}</strong></p>
-                <p>Total Area: {cForm.area || '-'} | Zoning: {selectedItem.zoning || '-'}</p>
+                <p><strong>Property Address:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>Specifications:</strong> {selectedItem.specs}</p>
+                <p><strong>Price:</strong> {selectedItem.price}</p>
               </>
             )}
             {aiLang === 'fr' && (
               <>
-                <p>Type : <strong>{cForm.propType || getFallbackLandCommType('fr')}</strong> | Adresse : <strong>{identifier}</strong></p>
-                <p>Superficie Totale : {cForm.area || '-'} | Zonage : {selectedItem.zoning || '-'}</p>
+                <p><strong>Adresse du bien:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>Spécifications:</strong> {selectedItem.specs}</p>
+                <p><strong>Prix:</strong> {selectedItem.price}</p>
               </>
             )}
             {aiLang === 'es' && (
               <>
-                <p>Tipo: <strong>{cForm.propType || getFallbackLandCommType('es')}</strong> | Dirección: <strong>{identifier}</strong></p>
-                <p>Área Total: {cForm.area || '-'} | Zonificación: {selectedItem.zoning || '-'}</p>
+                <p><strong>Dirección de la propiedad:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>Especificaciones:</strong> {selectedItem.specs}</p>
+                <p><strong>Precio:</strong> {selectedItem.price}</p>
               </>
             )}
           </>
         )}
-
-        {selectedItem.type === 'Property' && selectedItem.propType === 'Residential' && (
+        {selectedItem.type === 'Land' && (
           <>
             {aiLang === 'ar' && (
               <>
-                <p>النوع: <strong>{cForm.propType || getFallbackResType('ar')}</strong> | العنوان: <strong>{identifier}</strong> | الطابق: {cForm.floorNum || '-'}</p>
-                <p>المساحة الإجمالية: {cForm.area || '-'} | الغرف: {cForm.rooms || '-'} | الحمامات: {cForm.bathrooms || '-'}</p>
-                <p>المطبخ: {cForm.kitchen || '-'} | الشرفات (بالكون): {cForm.balconies || '-'} | المرآب (كاراج): {cForm.garage || '-'}</p>
+                <p><strong>موقع الأرض:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>المساحة:</strong> {selectedItem.specs}</p>
+                <p><strong>السعر:</strong> {selectedItem.price}</p>
               </>
             )}
             {aiLang === 'en' && (
               <>
-                <p>Type: <strong>{cForm.propType || getFallbackResType('en')}</strong> | Address: <strong>{identifier}</strong> | Floor: {cForm.floorNum || '-'}</p>
-                <p>Total Area: {cForm.area || '-'} | Rooms: {cForm.rooms || '-'} | Bathrooms: {cForm.bathrooms || '-'}</p>
-                <p>Kitchen: {cForm.kitchen || '-'} | Balconies: {cForm.balconies || '-'} | Garage: {cForm.garage || '-'}</p>
+                <p><strong>Land Location:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>Area:</strong> {selectedItem.specs}</p>
+                <p><strong>Price:</strong> {selectedItem.price}</p>
               </>
             )}
             {aiLang === 'fr' && (
               <>
-                <p>Type : <strong>{cForm.propType || getFallbackResType('fr')}</strong> | Adresse : <strong>{identifier}</strong> | Étage : {cForm.floorNum || '-'}</p>
-                <p>Superficie Totale : {cForm.area || '-'} | Chambres : {cForm.rooms || '-'} | Salles de Bain : {cForm.bathrooms || '-'}</p>
-                <p>Cuisine : {cForm.kitchen || '-'} | Balcons : {cForm.balconies || '-'} | Garage : {cForm.garage || '-'}</p>
+                <p><strong>Emplacement du terrain:</strong> {selectedItem.plateOrAddress}</p>
+                <p><strong>Superficie:</strong> {selectedItem.specs}</p>
+                <p><strong>Prix:</strong> {selectedItem.price}</p>
               </>
             )}
             {aiLang === 'es' && (
@@ -485,33 +1079,37 @@ export default function AutoRealEstateModule() {
     ) : null;
 
     const ScheduleBlock = (
-      <div className="mt-4 compact-box p-4 bg-blue-50 border border-blue-200 rounded text-base shadow-sm text-slate-900">
+      <div className="mt-3 compact-box p-3 rounded text-sm shadow-sm" style={{
+        backgroundColor: '#eff6ff',
+        border: '1px solid #bfdbfe',
+        color: '#0f172a'
+      }}>
         {aiLang === 'ar' && (
           <>
             <p><strong>تاريخ وساعة الدخول:</strong> {cForm.startDate || '[غير محدد]'} - {cForm.startTime}</p>
-            <p><strong>تاريخ وساعة الخروج:</strong> {cForm.endDate || '[غير محدد]'} - {cForm.endTime}</p>
-            <p><strong>المدة الإجمالية المتفق عليها:</strong> {cForm.duration || '-'}</p>
+            <p><strong>تاريخ وساعة الإرجاع:</strong> {cForm.endDate || '[غير محدد]'} - {cForm.endTime}</p>
+            <p><strong>المدة الإجمالية:</strong> {cForm.duration || '[غير محدد]'}</p>
           </>
         )}
         {aiLang === 'en' && (
           <>
-            <p><strong>Entry Date & Time:</strong> {cForm.startDate || '[Unspecified]'} - {cForm.startTime}</p>
-            <p><strong>Exit Date & Time:</strong> {cForm.endDate || '[Unspecified]'} - {cForm.endTime}</p>
-            <p><strong>Total Agreed Duration:</strong> {cForm.duration || '-'}</p>
+            <p><strong>Entry Date & Time:</strong> {cForm.startDate || '[Not specified]'} - {cForm.startTime}</p>
+            <p><strong>Return Date & Time:</strong> {cForm.endDate || '[Not specified]'} - {cForm.endTime}</p>
+            <p><strong>Total Duration:</strong> {cForm.duration || '[Not specified]'}</p>
           </>
         )}
         {aiLang === 'fr' && (
           <>
-            <p><strong>Date et Heure d'Entrée :</strong> {cForm.startDate || '[Non spécifié]'} - {cForm.startTime}</p>
-            <p><strong>Date et Heure de Sortie :</strong> {cForm.endDate || '[Non spécifié]'} - {cForm.endTime}</p>
-            <p><strong>Durée Totale Convenue :</strong> {cForm.duration || '-'}</p>
+            <p><strong>Date et heure d'entrée:</strong> {cForm.startDate || '[Non spécifié]'} - {cForm.startTime}</p>
+            <p><strong>Date et heure de retour:</strong> {cForm.endDate || '[Non spécifié]'} - {cForm.endTime}</p>
+            <p><strong>Durée totale:</strong> {cForm.duration || '[Non spécifié]'}</p>
           </>
         )}
         {aiLang === 'es' && (
           <>
-            <p><strong>Fecha y Hora de Entrada:</strong> {cForm.startDate || '[No especificado]'} - {cForm.startTime}</p>
-            <p><strong>Fecha y Hora de Salida:</strong> {cForm.endDate || '[No especificado]'} - {cForm.endTime}</p>
-            <p><strong>Duración Total Acordada:</strong> {cForm.duration || '-'}</p>
+            <p><strong>Fecha y hora de entrada:</strong> {cForm.startDate || '[No especificado]'} - {cForm.startTime}</p>
+            <p><strong>Fecha y hora de retorno:</strong> {cForm.endDate || '[No especificado]'} - {cForm.endTime}</p>
+            <p><strong>Duración total:</strong> {cForm.duration || '[No especificado]'}</p>
           </>
         )}
       </div>
@@ -519,13 +1117,13 @@ export default function AutoRealEstateModule() {
 
     // CONTRACT TEMPLATES (Fully Extrapolated)
     return (
-      <div className="space-y-6 text-justify leading-9 text-lg">
+      <div className="space-y-1 text-justify leading-6 text-sm">
         
         {/* SALE CONTRACTS */}
         {contractType.includes('sale') && (
           <>
             <div style={articleBreakStyle}>
-              <h3 className="font-bold text-xl mb-4 border-b-2 border-slate-800 pb-2">
+              <h3 className="font-bold text-lg mb-3 pb-2" style={{ borderBottom: '2px solid #1e293b' }}>
                 {aiLang === 'ar' ? 'تمهيد العقد' : aiLang === 'fr' ? 'Préambule du Contrat' : aiLang === 'es' ? 'Preámbulo del Contrato' : 'Contract Preamble'}
               </h3>
               {aiLang === 'ar' && (
@@ -558,8 +1156,8 @@ export default function AutoRealEstateModule() {
               )}
             </div>
             
-            <div style={articleBreakStyle} className="mt-6">
-              <h4 className="font-bold text-lg text-slate-800">
+            <div style={articleBreakStyle} className="mt-4">
+              <h4 className="font-bold text-base" style={{ color: '#1e293b' }}>
                 {aiLang === 'ar' ? 'المادة الأولى: موضوع العقد' : aiLang === 'fr' ? 'Article 1 : Objet du Contrat' : aiLang === 'es' ? 'Artículo 1: Objeto del Contrato' : 'Article 1: Subject Matter of the Contract'}
               </h4>
               {aiLang === 'ar' && <p>بموجب هذا العقد وبكافة الضمانات الفعلية والقانونية، يقر الطرف الأول بأنه باع وأسقط ونقل ملكية الموصوف أدناه إلى الطرف الثاني:</p>}
@@ -569,8 +1167,8 @@ export default function AutoRealEstateModule() {
               {AssetDetails}
             </div>
 
-            <div style={articleBreakStyle} className="mt-6">
-              <h4 className="font-bold text-lg text-slate-800">
+            <div style={articleBreakStyle} className="mt-4">
+              <h4 className="font-bold text-base" style={{ color: '#1e293b' }}>
                 {aiLang === 'ar' ? 'المادة الثانية: الشروط المالية' : aiLang === 'fr' ? 'Article 2 : Conditions Financières' : aiLang === 'es' ? 'Artículo 2: Términos Financieros' : 'Article 2: Financial Terms'}
               </h4>
               {aiLang === 'ar' && <p>تم هذا البيع بثمن إجمالي ومكشوف قدره <strong>{price}</strong>، يعترف البائع بقبضه كاملاً عند توقيع هذا العقد، وبهذا يبرئ ذمة المشتري إبراءً تاماً لا رجعة فيه.</p>}
@@ -579,8 +1177,8 @@ export default function AutoRealEstateModule() {
               {aiLang === 'es' && <p>Esta venta se concluye por un precio total y declarado de <strong>{price}</strong>, que el Vendedor reconoce haber recibido en su totalidad al firmar este contrato, otorgando así al Comprador un descargo total e irrevocable.</p>}
             </div>
 
-            <div style={articleBreakStyle} className="mt-6">
-              <h4 className="font-bold text-lg text-slate-800">
+            <div style={articleBreakStyle} className="mt-4">
+              <h4 className="font-bold text-base" style={{ color: '#1e293b' }}>
                 {aiLang === 'ar' ? 'المادة الثالثة: المسؤوليات والالتزامات' : aiLang === 'fr' ? 'Article 3 : Responsabilités et Obligations' : aiLang === 'es' ? 'Artículo 3: Responsabilidades y Obligaciones' : 'Article 3: Responsibilities and Obligations'}
               </h4>
               {aiLang === 'ar' && <p>يقر المشتري بأنه عاين المبيع معاينة تامة نافية للجهالة وقبله بحالته الراهنة. يتحمل الطرف الثاني كافة الرسوم والضرائب المترتبة عن هذا البيع ابتداءً من تاريخ التوقيع، وتنتقل إليه الحيازة الفعلية فور المصادقة على هذا العقد.</p>}
@@ -589,8 +1187,8 @@ export default function AutoRealEstateModule() {
               {aiLang === 'es' && <p>El Comprador reconoce haber inspeccionado exhaustivamente el activo vendido, renunciando a cualquier ignorancia, y lo acepta en su estado actual. La Segunda Parte asume todos los honorarios e impuestos derivados de esta venta a partir de la fecha de firma, y la posesión real se transfiere inmediatamente tras la ratificación de este contrato.</p>}
             </div>
 
-            <div style={articleBreakStyle} className="mt-6">
-              <h4 className="font-bold text-lg text-slate-800">
+            <div style={articleBreakStyle} className="mt-4">
+              <h4 className="font-bold text-base" style={{ color: '#1e293b' }}>
                 {aiLang === 'ar' ? 'المادة الرابعة: شروط الفسخ والغرامات' : aiLang === 'fr' ? 'Article 4 : Clauses de Résiliation et Pénalités' : aiLang === 'es' ? 'Artículo 4: Cláusulas de Rescisión y Penalizaciones' : 'Article 4: Termination Clauses and Penalties'}
               </h4>
               {aiLang === 'ar' && <p>في حالة إخلال أي من الطرفين ببنود هذا العقد، يحق للطرف المتضرر المطالبة بفسخ العقد مع التعويض الشامل عن الضرر وفقاً لما ينص عليه قانون الالتزامات والعقود.</p>}
@@ -605,7 +1203,7 @@ export default function AutoRealEstateModule() {
         {!contractType.includes('sale') && (
           <>
             <div style={articleBreakStyle}>
-              <h3 className="font-bold text-xl mb-4 border-b-2 border-slate-800 pb-2">
+              <h3 className="font-bold text-xl mb-4 pb-2" style={{ borderBottom: '2px solid #1e293b' }}>
                 {aiLang === 'ar' ? 'تمهيد العقد' : aiLang === 'fr' ? 'Préambule du Contrat' : aiLang === 'es' ? 'Preámbulo del Contrato' : 'Contract Preamble'}
               </h3>
               {aiLang === 'ar' && (
@@ -634,8 +1232,8 @@ export default function AutoRealEstateModule() {
               )}
             </div>
             
-            <div style={articleBreakStyle} className="mt-6">
-              <h4 className="font-bold text-lg text-slate-800">
+            <div style={articleBreakStyle} className="mt-4">
+              <h4 className="font-bold text-sm" style={{ color: '#1e293b' }}>
                 {aiLang === 'ar' ? 'المادة الأولى: موضوع الكراء' : aiLang === 'fr' ? 'Article 1 : Objet de la Location' : aiLang === 'es' ? 'Artículo 1: Objeto del Arrendamiento' : 'Article 1: Subject of Lease'}
               </h4>
               {aiLang === 'ar' && <p>أكرى الطرف الأول للطرف الثاني الممتلكات التالية، وتخلى له عن منفعتها طيلة مدة العقد:</p>}
@@ -645,8 +1243,8 @@ export default function AutoRealEstateModule() {
               {AssetDetails}
             </div>
 
-            <div style={articleBreakStyle} className="mt-6">
-              <h4 className="font-bold text-lg text-slate-800">
+            <div style={articleBreakStyle} className="mt-4">
+              <h4 className="font-bold text-sm" style={{ color: '#1e293b' }}>
                 {aiLang === 'ar' ? 'المادة الثانية: السومة الكرائية والضمانة' : aiLang === 'fr' ? 'Article 2 : Loyer et Dépôt de Garantie' : aiLang === 'es' ? 'Artículo 2: Tarifa de Alquiler y Depósito de Garantía' : 'Article 2: Rental Rate and Security Deposit'}
               </h4>
               {aiLang === 'ar' && <p>اتفق الطرفان على سومة كرائية قدرها <strong>{price}</strong> تُدفع في وقتها المحدد، مع أداء ضمانة مالية قدرها <strong>{deposit}</strong> تسترد عند الإخلاء بعد التأكد من سلامة العين المكتراة.</p>}
@@ -655,19 +1253,19 @@ export default function AutoRealEstateModule() {
               {aiLang === 'es' && <p>Las partes han acordado una tarifa de alquiler de <strong>{price}</strong> a pagar en su fecha de vencimiento, junto con un depósito de garantía financiero de <strong>{deposit}</strong>, que es reembolsable al momento del desalojo después de verificar la integridad del activo arrendado.</p>}
             </div>
 
-            <div style={articleBreakStyle} className="mt-6">
-              <h4 className="font-bold text-lg text-slate-800">
+            <div style={articleBreakStyle} className="mt-4">
+              <h4 className="font-bold text-sm" style={{ color: '#1e293b' }}>
                 {aiLang === 'ar' ? 'المادة الثالثة: مدة العقد والجدولة' : aiLang === 'fr' ? 'Article 3 : Durée du Contrat et Calendrier' : aiLang === 'es' ? 'Artículo 3: Duración del Contrato y Calendario' : 'Article 3: Contract Duration and Scheduling'}
               </h4>
               {ScheduleBlock}
-              {aiLang === 'ar' && <p className="mt-4">في حال التأخر عن الأداء أو الإرجاع في الوقت المحدد، يُفسخ العقد بقوة القانون وتُصادر الضمانة كغرامة أولية مع الاحتفاظ بحق المتابعة القضائية.</p>}
-              {aiLang === 'en' && <p className="mt-4">In the event of delayed payment or delayed return at the specified time, the contract is automatically rescinded by force of law, and the deposit is confiscated as an initial penalty, reserving the right to legal prosecution.</p>}
-              {aiLang === 'fr' && <p className="mt-4">En cas de retard de paiement ou de retard de restitution à l'heure spécifiée, le contrat est résilié de plein droit, et le dépôt est confisqué à titre de pénalité initiale, sous réserve du droit de poursuites judiciaires.</p>}
-              {aiLang === 'es' && <p className="mt-4">En caso de retraso en el pago o retraso en la devolución a la hora especificada, el contrato se rescinde automáticamente por fuerza de ley, y el depósito se confisca como penalización inicial, reservando el derecho a un proceso judicial.</p>}
+              {aiLang === 'ar' && <p className="mt-3">في حال التأخر عن الأداء أو الإرجاع في الوقت المحدد، يُفسخ العقد بقوة القانون وتُصادر الضمانة كغرامة أولية مع الاحتفاظ بحق المتابعة القضائية.</p>}
+              {aiLang === 'en' && <p className="mt-3">In the event of delayed payment or delayed return at the specified time, the contract is automatically rescinded by force of law, and the deposit is confiscated as an initial penalty, reserving the right to legal prosecution.</p>}
+              {aiLang === 'fr' && <p className="mt-3">En cas de retard de paiement ou de retard de restitution à l'heure spécifiée, le contrat est résilié de plein droit, et le dépôt est confisqué à titre de pénalité initiale, sous réserve du droit de poursuites judiciaires.</p>}
+              {aiLang === 'es' && <p className="mt-3">En caso de retraso en el pago o retraso en la devolución a la hora especificada, el contrato se rescinde automáticamente por fuerza de ley, y el depósito se confisca como penalización inicial, reservando el derecho a un proceso judicial.</p>}
             </div>
 
-            <div style={articleBreakStyle} className="mt-6">
-              <h4 className="font-bold text-lg text-slate-800">
+            <div style={articleBreakStyle} className="mt-4">
+              <h4 className="font-bold text-sm" style={{ color: '#1e293b' }}>
                 {aiLang === 'ar' ? 'المادة الرابعة: التأمين والصيانة' : aiLang === 'fr' ? 'Article 4 : Assurance et Entretien' : aiLang === 'es' ? 'Artículo 4: Seguro y Mantenimiento' : 'Article 4: Insurance and Maintenance'}
               </h4>
               {aiLang === 'ar' && <p>يتحمل المكتري المسؤولية المدنية والجنائية الكاملة طيلة مدة استغلاله، ويلتزم بإجراء الصيانة الدورية وعدم إدخال أي تعديلات جوهرية دون إذن كتابي من المكري.</p>}
@@ -685,7 +1283,7 @@ export default function AutoRealEstateModule() {
   // RENDER
   // ----------------------------------------------------------------------
   return (
-    <div dir={isRTL ? "rtl" : "ltr"} className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30 print:bg-white print:text-black">
+    <div dir={isRTL ? "rtl" : "ltr"} className="bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30 print:bg-white print:text-black">
       
       {/* TOAST NOTIFICATIONS */}
       <div className={`fixed top-4 z-50 flex flex-col gap-2 pointer-events-none ${isRTL ? 'left-4' : 'right-4'} print:hidden`}>
@@ -750,8 +1348,8 @@ export default function AutoRealEstateModule() {
                   { label: t.capitalInvested, value: formatCurrency(stats.capital), icon: DollarSign, color: "text-emerald-400", glow: "shadow-[0_0_15px_rgba(52,211,153,0.15)]", filter: "All" as const },
                   { label: t.itemsSold, value: stats.sold, icon: CheckCircle, color: "text-purple-400", glow: "shadow-[0_0_15px_rgba(192,132,252,0.15)]", filter: "Sold" as ItemStatus },
                   { label: t.activeRentals, value: stats.rented, icon: History, color: "text-amber-400", glow: "shadow-[0_0_15px_rgba(251,191,36,0.15)]", filter: "Rented" as ItemStatus },
-                ].map((stat, idx) => (
-                  <div key={idx} onClick={() => navigateToFilteredStock(stat.filter)} className={`cursor-pointer bg-slate-900/60 backdrop-blur-md p-6 rounded-2xl border border-slate-800 flex items-center justify-between hover:border-slate-700 hover:scale-105 transition-all duration-300 ${stat.glow}`}>
+                ].map((stat) => (
+                  <div key={stat.filter} onClick={() => navigateToFilteredStock(stat.filter)} className={`cursor-pointer bg-slate-900/60 backdrop-blur-md p-6 rounded-2xl border border-slate-800 flex items-center justify-between hover:border-slate-700 hover:scale-105 transition-all duration-300 ${stat.glow}`}>
                     <div><p className="text-slate-400 text-sm font-medium mb-1">{stat.label}</p><h3 className="text-2xl font-bold text-white">{stat.value}</h3></div>
                     <div className={`p-3 rounded-xl bg-slate-950/50 border border-slate-800 ${stat.color}`}><stat.icon size={24} /></div>
                   </div>
@@ -1114,8 +1712,8 @@ export default function AutoRealEstateModule() {
 
                   <div className="mt-8 flex justify-end gap-4">
                     {showGeneratedContract && (
-                        <button onClick={() => window.print()} className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-medium transition-colors border border-slate-700">
-                          <Printer size={18} /> Print PDF
+                        <button onClick={handleDownloadPDF} className="flex items-center gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-6 py-3 rounded-xl font-medium transition-colors border border-emerald-500 shadow-lg">
+                          <Download size={18} /> Download PDF
                         </button>
                     )}
                     <button onClick={handleGenerateContract} disabled={isGenerating || !selectedItemId}
@@ -1127,81 +1725,114 @@ export default function AutoRealEstateModule() {
                 </div>
               </div>
 
-              {/* VISUAL CONTRACT DOCUMENT (For View & Print) */}
+              {/* VISUAL CONTRACT DOCUMENT ( PDF Generation) */}
               {showGeneratedContract && (
-                <div className="mt-12 animate-in slide-in-from-bottom-8 fade-in duration-700 pb-20">
-                  <style>{`
-                    @media print {
-                      @page { margin: 0.4in 0.4in; }
-                      .contract-print-zone { 
-                        font-size: 11px !important; 
-                        line-height: 1.2 !important; 
-                        padding: 0 !important; 
-                        margin: 0 !important; 
-                        border: none !important; 
-                        box-shadow: none !important;
-                      }
-                      .contract-print-zone h3, .contract-print-zone h4 { 
-                        margin-bottom: 4px !important; 
-                        padding-bottom: 4px !important; 
-                      }
-                      .contract-print-zone p { 
-                        margin-bottom: 4px !important; 
-                      }
-                      .contract-print-zone .compact-box { 
-                        padding: 4px !important; 
-                        margin-top: 4px !important; 
-                        margin-bottom: 4px !important; 
-                      }
-                      .contract-print-zone .sig-block { 
-                        margin-top: 15px !important; 
-                        padding-top: 10px !important; 
-                      }
-                      .contract-print-zone .sig-space { 
-                        margin-bottom: 30px !important; 
-                      }
-                      .contract-print-zone .print-header-spacing { 
-                        margin-bottom: 10px !important; 
-                        padding-bottom: 5px !important; 
-                      }
-                    }
-                  `}</style>
-                  
-                  <div dir={aiLang === 'ar' ? 'rtl' : 'ltr'} 
-                    className="contract-print-zone bg-white p-12 md:p-20 rounded-sm shadow-2xl border border-slate-200 mx-auto max-w-4xl text-slate-900"
-                    style={{ fontFamily: aiLang === 'ar' ? "'Cairo', 'Segoe UI', serif" : "'Inter', sans-serif" }}>
+                <div className="mt-2 animate-in slide-in-from-bottom-8 fade-in duration-700 pb-2">
+                  <div dir={aiLang === 'ar' ? 'rtl' : 'ltr'}
+                    className="contract-print-zone mx-auto max-w-4xl"
+                    style={{
+                      fontFamily: aiLang === 'ar' ? "'Cairo', 'Segoe UI', serif" : "'Inter', 'Segoe UI', sans-serif",
+                      backgroundColor: '#ffffff',
+                      padding: '0.5rem',
+                      borderRadius: '0.25rem',
+                      boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                      border: '1px solid #e2e8f0',
+                      color: '#0f172a',
+                      background: 'linear-gradient(to bottom, #ffffff 0%, #f8fafc 100%)',
+                      height: 'auto',
+                      minHeight: 'auto'
+                    }}>
                     
-                    <div className="print-header-spacing flex justify-between items-start mb-10 border-b-2 border-slate-800 pb-8">
-                      {contractLogo ? (
-                        <img src={contractLogo} alt="Company Logo" className="max-h-24 print:max-h-16 object-contain" />
-                      ) : (
-                        <ShieldCheck size={48} className="text-slate-800" />
-                      )}
-                      {selectedItem?.image && (
-                        <img src={selectedItem.image} alt="Asset Thumbnail" className="max-h-24 print:max-h-16 w-32 print:w-24 object-cover rounded shadow-sm border border-slate-300" />
-                      )}
+                    {/* Vibrant Header */}
+                    <div className="print-header-spacing contract-header mb-2" style={{
+                      background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                      borderRadius: '0.5rem',
+                      padding: '0.75rem',
+                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+                    }}>
+                      <div className="flex justify-between items-start">
+                        <div className="flex items-center gap-4">
+                          {contractLogo ? (
+                            <img src={contractLogo} alt="Company Logo" style={{ 
+                              height: '4rem', 
+                              width: 'auto', 
+                              objectFit: 'contain',
+                              backgroundColor: '#ffffff',
+                              borderRadius: '0.5rem',
+                              padding: '0.5rem',
+                              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                            }} />
+                          ) : (
+                            <div style={{ 
+                              height: '4rem', 
+                              width: '4rem', 
+                              backgroundColor: '#ffffff',
+                              borderRadius: '0.5rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                            }}>
+                              <ShieldCheck size={32} style={{ color: '#2563eb' }} />
+                            </div>
+                          )}
+                          <div>
+                            <h2 className="text-2xl font-black mb-1" style={{ color: '#ffffff' }}>
+                              {aiLang === 'ar' ? 'عقد رسمي' : aiLang === 'fr' ? 'Contrat Officiel' : aiLang === 'es' ? 'Contrato Oficial' : 'Official Contract'}
+                            </h2>
+                            <p className="contract-ref text-sm font-semibold" style={{ color: '#dbeafe' }}>
+                              Ref: {Math.random().toString(36).substring(2, 9).toUpperCase()} | {new Date().toLocaleDateString(aiLang === 'ar' ? 'ar-MA' : 'en-GB')}
+                            </p>
+                          </div>
+                        </div>
+                        {selectedItem?.image && (
+                          <img src={selectedItem.image} alt="Asset Thumbnail" className="h-20 w-28 object-cover rounded-lg shadow-md" style={{ 
+                            height: '5rem',
+                            width: '7rem',
+                            objectFit: 'cover',
+                            borderRadius: '0.5rem',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                            border: '2px solid rgba(255, 255, 255, 0.3)'
+                          }} />
+                        )}
+                      </div>
                     </div>
                     
-                    <div className="print-header-spacing text-center mb-10">
-                      <h2 className="text-3xl print:text-xl font-black mb-3 text-slate-950 uppercase">{t[contractType as keyof typeof t]}</h2>
-                      <p className="text-sm print:text-[10px] font-semibold text-slate-600">Document Ref: {Math.random().toString(36).substring(2, 9).toUpperCase()} - {new Date().toLocaleDateString(aiLang === 'ar' ? 'ar-MA' : 'en-GB')}</p>
+                    {/* Contract Title with Gradient */}
+                    <div className="print-header-spacing text-center mb-2">
+                      <h2 className="text-xl font-black mb-1 uppercase" style={{
+                        background: 'linear-gradient(to right, #2563eb, #9333ea)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text'
+                      }}>
+                        {t[contractType as keyof typeof t]}
+                      </h2>
+                      <div className="w-20 h-0.5 mx-auto rounded-full" style={{ background: 'linear-gradient(to right, #3b82f6, #a855f7)' }}></div>
                     </div>
 
-                    <div className="text-lg print:text-[11px] leading-9 print:leading-[1.2]">
+                    {/* Contract Content */}
+                    <div className="text-base leading-7">
                       {renderLegalText()}
                       
-                      <div className="sig-block mt-24 pt-10 flex justify-between px-10 print:px-4 border-t-2 border-slate-800" style={{ pageBreakInside: 'avoid' }}>
-                        <div className="text-center w-1/3">
-                          <h4 className="sig-space font-bold text-lg print:text-[12px] mb-20">
+                      {/* Signature Block */}
+                      <div className="sig-block mt-6 pt-4 flex justify-between gap-6 px-4 rounded-lg" style={{
+                        borderTop: '2px solid #cbd5e1',
+                        backgroundColor: '#f8fafc'
+                      }}>
+                        <div className="text-center flex-1">
+                          <div className="h-20 mb-4" style={{ borderBottom: '2px dashed #94a3b8' }}></div>
+                          <h4 className="sig-space font-bold text-base" style={{ color: '#334155' }}>
                             {aiLang === 'ar' ? 'توقيع الطرف الأول' : aiLang === 'fr' ? 'Signature (Première Partie)' : aiLang === 'es' ? 'Firma (Primera Parte)' : 'Signature (First Party)'}
                           </h4>
-                          <div className="border-b-2 border-slate-400 w-full mx-auto"></div>
+                          <p className="text-sm mt-1" style={{ color: '#64748b' }}>{cForm.p1Name}</p>
                         </div>
-                        <div className="text-center w-1/3">
-                          <h4 className="sig-space font-bold text-lg print:text-[12px] mb-20">
+                        <div className="text-center flex-1">
+                          <div className="h-20 mb-4" style={{ borderBottom: '2px dashed #94a3b8' }}></div>
+                          <h4 className="sig-space font-bold text-base" style={{ color: '#334155' }}>
                             {aiLang === 'ar' ? 'توقيع الطرف الثاني' : aiLang === 'fr' ? 'Signature (Deuxième Partie)' : aiLang === 'es' ? 'Firma (Segunda Parte)' : 'Signature (Second Party)'}
                           </h4>
-                          <div className="border-b-2 border-slate-400 w-full mx-auto"></div>
+                          <p className="text-sm mt-1" style={{ color: '#64748b' }}>{cForm.p2Name}</p>
                         </div>
                       </div>
                     </div>
@@ -1262,7 +1893,7 @@ export default function AutoRealEstateModule() {
                 className={`print:hidden mt-8 bg-slate-900/40 rounded-2xl p-8 lg:p-12 text-center border-2 border-dashed transition-all duration-300 relative
                   ${dragActive ? "border-blue-500 bg-blue-950/20" : "border-slate-700 hover:border-slate-600"}`}>
                 
-                <input type="file" id="dropzone-file" className="hidden" accept=".pdf,.xls,.xlsx,.jpg,.png" onChange={handleFileInput} />
+                <input type="file" id="dropzone-file" className="hidden" accept=".pdf,.xls,.xlsx,.jpg,.png" onChange={(e) => { handleFileInput(e); e.target.value = ""; }} />
                 
                 <div className="pointer-events-none mb-6">
                   <FileUp className={`mx-auto mb-4 transition-colors ${dragActive ? "text-blue-400" : "text-slate-500"}`} size={48} />
@@ -1298,6 +1929,12 @@ export default function AutoRealEstateModule() {
             </div>
           </>
         )}
+
+        <GlobalAiAssistant
+          section="real_estate"
+          context="Real Estate & Auto Management - Property listings, vehicle inventory, contracts, and sales"
+          availableFields={["property_title", "address", "price", "status", "contract_type"]}
+        />
       </main>
     </div>
   );

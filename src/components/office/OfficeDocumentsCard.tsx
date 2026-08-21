@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import { Eye, Save, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   type StashedOfficeFile,
 } from "@/services/fileService";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 
 type Props = {
   title: string;
@@ -28,9 +29,26 @@ export function OfficeDocumentsCard({ title, subtitle, uploadLabel, previewLabel
   const [file, setFile] = useState<File | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewRows, setPreviewRows] = useState<(string | number | null)[][] | null>(null);
-  const [stash, setStash] = useState<StashedOfficeFile[]>(() => listOfficeStash());
+  const [stash, setStash] = useState<StashedOfficeFile[]>([]);
+  const { token } = useAuth();
 
-  const refreshStash = useCallback(() => setStash(listOfficeStash()), []);
+  const refreshStash = useCallback(async () => {
+    const files = await listOfficeStash(token || undefined);
+    setStash(files);
+  }, [token]);
+
+  useEffect(() => {
+    // Clean up old LocalStorage data to prevent document leakage
+    try {
+      const oldStashKey = "idara-office-stash-v1";
+      localStorage.removeItem(oldStashKey);
+      console.log("Cleaned up old LocalStorage office stash");
+    } catch (error) {
+      console.error("Error cleaning up LocalStorage:", error);
+    }
+    
+    refreshStash();
+  }, [refreshStash]);
 
   const loadPreview = async (f: File) => {
     const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
@@ -66,7 +84,7 @@ export function OfficeDocumentsCard({ title, subtitle, uploadLabel, previewLabel
   const onSave = async () => {
     if (!file) return;
     await withFileToast(async () => {
-      await saveOfficeFileToStash(file);
+      await saveOfficeFileToStash(file, token || undefined);
       refreshStash();
     }, "Save failed");
   };
@@ -151,8 +169,8 @@ export function OfficeDocumentsCard({ title, subtitle, uploadLabel, previewLabel
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-red-300 hover:text-red-100"
-                  onClick={() => {
-                    removeOfficeStashEntry(s.id);
+                  onClick={async () => {
+                    await removeOfficeStashEntry(s.id, token || undefined);
                     refreshStash();
                   }}
                 >

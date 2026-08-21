@@ -62,26 +62,32 @@ function showFatalOverlay(msg: string) {
       </div>
     `;
     document.body.appendChild(o);
-    document.getElementById("idara-fatal-clear")?.addEventListener("click", async () => {
-      try {
-        if ("serviceWorker" in navigator) {
-          const regs = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(regs.map((r) => r.unregister()));
+    const fatalClearBtn = document.getElementById("idara-fatal-clear");
+    if (fatalClearBtn) {
+      fatalClearBtn.addEventListener("click", async () => {
+        try {
+          if ("serviceWorker" in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map((r) => r.unregister()));
+          }
+          if ("caches" in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map((k) => caches.delete(k)));
+          }
+          localStorage.removeItem("idara_token");
+        } catch {
+          /* ignore */
         }
-        if ("caches" in window) {
-          const keys = await caches.keys();
-          await Promise.all(keys.map((k) => caches.delete(k)));
-        }
-        localStorage.removeItem("idara_token");
-      } catch {
-        /* ignore */
-      }
-      location.reload();
-    });
-    document.getElementById("idara-fatal-doc")?.addEventListener("click", () => {
-      // Open a short help page (could be external); for now show simple alert
-      alert("تعطيل الإضافات: افتح Chrome → More tools → Extensions → عطل Ginger أو أي إضافة مشبوهة، ثم عدّ تحميل الصفحة.");
-    });
+        location.reload();
+      });
+    }
+    const fatalDocBtn = document.getElementById("idara-fatal-doc");
+    if (fatalDocBtn) {
+      fatalDocBtn.addEventListener("click", () => {
+        // Open a short help page (could be external); for now show simple alert
+        alert("تعطيل الإضافات: افتح Chrome → More tools → Extensions → عطل Ginger أو أي إضافة مشبوهة، ثم عدّ تحميل الصفحة.");
+      });
+    }
   } catch {
     /* defensive */
   }
@@ -108,12 +114,18 @@ function showNonFatalBanner(msg: string) {
     } as Partial<CSSStyleDeclaration>);
     b.innerHTML = `<div style="margin-bottom:8px;font-weight:600">مشكلة ملحق متصفّح</div><div style=\"color:#cbd5e1;margin-bottom:10px;white-space:pre-wrap;max-height:88px;overflow:auto\">${String(msg).slice(0, 800)}</div><div style=\"display:flex;gap:8px;justify-content:flex-end\"><button id=\"idara-nonfatal-doc\" style=\"background:transparent;border:1px solid #334155;padding:6px 8px;border-radius:6px;color:#cbd5e1;\">تعليمات</button><button id=\"idara-nonfatal-dismiss\" style=\"background:#0052CC;border:none;padding:6px 8px;border-radius:6px;color:white\">إغلاق</button></div>`;
     document.body.appendChild(b);
-    document.getElementById("idara-nonfatal-doc")?.addEventListener("click", () => {
-      alert("تعطيل الإضافات: افتح Chrome → More tools → Extensions → عطل Ginger أو أي إضافة مشبوهة، ثم حدّث الصفحة.");
-    });
-    document.getElementById("idara-nonfatal-dismiss")?.addEventListener("click", () => {
-      b.remove();
-    });
+    const nonFatalDocBtn = document.getElementById("idara-nonfatal-doc");
+    if (nonFatalDocBtn) {
+      nonFatalDocBtn.addEventListener("click", () => {
+        alert("تعطيل الإضافات: افتح Chrome → More tools → Extensions → عطل Ginger أو أي إضافة مشبوهة، ثم حدّث الصفحة.");
+      });
+    }
+    const nonFatalDismissBtn = document.getElementById("idara-nonfatal-dismiss");
+    if (nonFatalDismissBtn) {
+      nonFatalDismissBtn.addEventListener("click", () => {
+        b.remove();
+      });
+    }
   } catch {
     /* ignore */
   }

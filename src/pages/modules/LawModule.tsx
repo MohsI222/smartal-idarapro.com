@@ -11,6 +11,7 @@ import { downloadCsv } from "@/lib/exportMoroccanPdf";
 import { todayIsoLocal } from "@/lib/todayIso";
 import { buildPdfTableHtml, exportSmartAlIdaraPdfPreferBackend } from "@/lib/pdfExport";
 import { useI18n } from "@/i18n/I18nProvider";
+import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
 
 type CaseRow = {
   id: string;
@@ -20,10 +21,10 @@ type CaseRow = {
   status: string;
 };
 
-export function LawModule() {
+function LawModule() {
   const { t, locale, isRtl } = useI18n();
-  const { token, isApproved, approvedModules } = useAuth();
-  const allowed = isApproved && approvedModules.includes("law");
+  const { token, isApproved, approvedModules, isAdmin } = useAuth();
+  const allowed = isAdmin || (isApproved && approvedModules.includes("law"));
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, CaseRow>>({});
   const [form, setForm] = useState({ title: "", client_name: "", deadline: todayIsoLocal() });
@@ -48,17 +49,42 @@ export function LawModule() {
     if (!token) return;
     const row = drafts[id];
     if (!row) return;
-    await api(`/law/cases/${id}`, {
-      method: "PATCH",
-      token,
-      body: JSON.stringify({
-        title: row.title,
-        client_name: row.client_name,
-        deadline: row.deadline || null,
-        status: row.status,
-      }),
-    });
-    await load();
+
+    // Check if this is an existing case or a new case (temp ID)
+    const existingCase = cases.find(c => c.id === id);
+    const isNewCase = !existingCase;
+
+    try {
+      if (isNewCase) {
+        // Create new case via POST
+        await api("/law/cases", {
+          method: "POST",
+          token,
+          body: JSON.stringify({
+            title: row.title,
+            client_name: row.client_name,
+            deadline: row.deadline || undefined,
+            status: row.status,
+          }),
+        });
+      } else {
+        // Update existing case via PATCH
+        await api(`/law/cases/${id}`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify({
+            title: row.title,
+            client_name: row.client_name,
+            deadline: row.deadline || null,
+            status: row.status,
+          }),
+        });
+      }
+      await load();
+    } catch (error) {
+      console.error('Error saving case:', error);
+      throw error;
+    }
   };
 
   const exportExcel = () => {
@@ -116,6 +142,7 @@ export function LawModule() {
       lang: locale,
       mainTitle: t("brand"),
       dateLocale: locale,
+      userId: user?.id,
     });
   };
 
@@ -138,15 +165,15 @@ export function LawModule() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => exportExcel()}>
+          <Button variant="outline" size="sm" data-nav-index="0" data-nav-group="law-export" onClick={() => exportExcel()}>
             <FileSpreadsheet className="size-4" />
             {t("pdf.exportCsv")}
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => void exportPdf()}>
+          <Button variant="secondary" size="sm" data-nav-index="1" data-nav-group="law-export" onClick={() => void exportPdf()}>
             <Download className="size-4" />
             {t("pdf.export")}
           </Button>
-          <Button variant="outline" size="sm" asChild>
+          <Button variant="outline" size="sm" data-nav-index="2" data-nav-group="law-export" asChild>
             <Link to="/app/reminders">{t("nav.reminders")}</Link>
           </Button>
         </div>
@@ -164,6 +191,7 @@ export function LawModule() {
             <Input
               className="mt-1"
               value={form.title}
+              data-nav-index="3" data-nav-group="law-add-case"
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
             />
           </div>
@@ -172,6 +200,7 @@ export function LawModule() {
             <Input
               className="mt-1"
               value={form.client_name}
+              data-nav-index="4" data-nav-group="law-add-case"
               onChange={(e) => setForm((f) => ({ ...f, client_name: e.target.value }))}
             />
           </div>
@@ -183,10 +212,11 @@ export function LawModule() {
               lang="en"
               dir="ltr"
               value={form.deadline}
+              data-nav-index="5" data-nav-group="law-add-case"
               onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))}
             />
           </div>
-          <Button onClick={() => void add()}>{t("common.save")}</Button>
+          <Button data-nav-index="6" data-nav-group="law-add-case" onClick={() => void add()}>{t("common.save")}</Button>
         </CardContent>
       </Card>
 
@@ -210,6 +240,7 @@ export function LawModule() {
                     <Input
                       className="h-9 bg-slate-900/50 border-slate-700"
                       value={d.title}
+                      data-nav-index="7" data-nav-group="law-cases-table"
                       onChange={(e) =>
                         setDrafts((prev) => ({
                           ...prev,
@@ -222,6 +253,7 @@ export function LawModule() {
                     <Input
                       className="h-9 bg-slate-900/50 border-slate-700"
                       value={d.client_name}
+                      data-nav-index="8" data-nav-group="law-cases-table"
                       onChange={(e) =>
                         setDrafts((prev) => ({
                           ...prev,
@@ -237,6 +269,7 @@ export function LawModule() {
                       dir="ltr"
                       className="h-9 bg-slate-900/50 border-slate-700"
                       value={d.deadline ?? ""}
+                      data-nav-index="9" data-nav-group="law-cases-table"
                       onChange={(e) =>
                         setDrafts((prev) => ({
                           ...prev,
@@ -249,6 +282,7 @@ export function LawModule() {
                     <select
                       className="h-9 w-full rounded-md border border-slate-700 bg-slate-900/50 px-2 text-sm"
                       value={d.status}
+                      data-nav-index="10" data-nav-group="law-cases-table"
                       onChange={(e) =>
                         setDrafts((prev) => ({
                           ...prev,
@@ -266,6 +300,7 @@ export function LawModule() {
                       size="sm"
                       variant="secondary"
                       className="w-full"
+                      data-nav-index="11" data-nav-group="law-cases-table"
                       onClick={() => void saveRow(c.id)}
                     >
                       {t("common.saveRow")}
@@ -277,9 +312,17 @@ export function LawModule() {
           </tbody>
         </table>
       </div>
+
+      <GlobalAiAssistant
+        section="law"
+        context="Legal Case Management - Case tracking, client information, deadlines, and legal documentation"
+        availableFields={["case_title", "client_name", "deadline", "case_status", "notes"]}
+      />
     </div>
   );
 }
+
+export default LawModule;
 
 function Locked({ titleKey, descKey }: { titleKey: string; descKey: string }) {
   const { t } = useI18n();

@@ -36,8 +36,13 @@ function mapRequest(row: Record<string, unknown>): ProductionRequestRow {
 }
 
 export async function fetchProductionRequestsBackend(token: string): Promise<ProductionRequestRow[]> {
-  const res = await api<{ requests: Record<string, unknown>[] }>("/inventory/production-requests", { token });
-  return (res.requests ?? []).map(mapRequest);
+  try {
+    const res = await api<{ requests: Record<string, unknown>[] }>("/inventory/production-requests", { token });
+    return (Array.isArray(res.requests) ? res.requests : []).map(mapRequest);
+  } catch (error) {
+    console.warn("[productionApi] fetchProductionRequestsBackend failed", error);
+    return [];
+  }
 }
 
 export async function createProductionRequestBackend(
@@ -59,8 +64,13 @@ export async function createProductionRequestBackend(
 }
 
 export async function fetchLogisticsQueueBackend(token: string): Promise<LogisticsQueueItem[]> {
-  const res = await api<{ items: LogisticsQueueItem[] }>("/inventory/logistics-queue", { token });
-  return res.items ?? [];
+  try {
+    const res = await api<{ items: LogisticsQueueItem[] }>("/inventory/logistics-queue", { token });
+    return Array.isArray(res.items) ? res.items : [];
+  } catch (error) {
+    console.warn("[productionApi] fetchLogisticsQueueBackend failed", error);
+    return [];
+  }
 }
 
 export async function assignLogisticsItemBackend(
@@ -83,5 +93,35 @@ export async function reserveProductionMaterialBackend(
     method: "POST",
     token,
     body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteProductionRequestBackend(token: string, id: string): Promise<void> {
+  await api(`/inventory/production-requests/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function deleteLogisticsQueueItemBackend(token: string, id: string): Promise<void> {
+  await api(`/inventory/logistics-queue/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export async function deleteSelectedProductionRequestsBackend(token: string, ids: string[]): Promise<void> {
+  await api("/inventory/production-requests/batch-delete", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ ids }),
+  });
+}
+
+export async function deleteSelectedLogisticsQueueItemsBackend(token: string, ids: string[]): Promise<void> {
+  await api("/inventory/logistics-queue/batch-delete", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ ids }),
   });
 }

@@ -23,8 +23,8 @@ function pdfLangFromLocale(locale: AppLocale): string {
 
 export function CompanySetupModule() {
   const { t, isRtl, locale } = useI18n();
-  const { isApproved, approvedModules } = useAuth();
-  const allowed = isApproved && approvedModules.includes("company");
+  const { isApproved, approvedModules, isAdmin } = useAuth();
+  const allowed = isAdmin || (isApproved && approvedModules.includes("company"));
   const appLocale = locale as AppLocale;
   const [denomination, setDenomination] = useState("");
   const [capital, setCapital] = useState("100000");
@@ -68,6 +68,7 @@ export function CompanySetupModule() {
       dateLocale: locale,
       documentMode: "official",
       officialKingdomLine: kingdom,
+      userId: user?.id,
     });
   };
 

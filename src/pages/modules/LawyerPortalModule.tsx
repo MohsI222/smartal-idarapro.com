@@ -529,7 +529,7 @@ const MOROCCAN_CITIES = [
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function LawyerPortalModule() {
-  const { isApproved, approvedModules } = useAuth();
+  const { isApproved, approvedModules, isAdmin } = useAuth();
   const { t, isRtl } = useI18n();
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
   const [generating, setGenerating] = useState(false);
@@ -538,10 +538,11 @@ export function LawyerPortalModule() {
   const [activeTab, setActiveTab] = useState<"form" | "draft" | "preview">("form");
 
   const allowed =
-    isApproved &&
+    isAdmin ||
+    (isApproved &&
     (approvedModules.includes("lawyer") ||
       approvedModules.includes("law") ||
-      approvedModules.includes("legal_ai"));
+      approvedModules.includes("legal_ai")));
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((p) => ({ ...p, [key]: value }));

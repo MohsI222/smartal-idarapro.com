@@ -11,17 +11,12 @@ export function getStoredAuthToken(): string | null {
 }
 
 function downloadBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  a.style.setProperty("display", "none");
-  document.body.appendChild(a);
-  a.click();
-  window.setTimeout(() => {
-    if (document.body.contains(a)) document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 1000);
+  const link = document.createElement('a');
+  link.href = window.URL.createObjectURL(blob);
+  link.setAttribute('download', fileName);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 export async function postBackendXlsxStream(body: {

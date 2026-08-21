@@ -290,6 +290,43 @@ export function LegalEditor() {
     });
   }, []);
 
+  /** Force typography reset on initial mount to prevent Arabic letter-spacing issues */
+  useEffect(() => {
+    // Force typography reset after fonts are loaded
+    const forceTypographyReset = async () => {
+      if (typeof document !== 'undefined' && document.fonts) {
+        await document.fonts.ready;
+      }
+      // Force a re-render by toggling a state that doesn't affect logic
+      setForm((f) => ({ ...f }));
+      // Also force a DOM update to ensure typography is applied
+      setTimeout(() => {
+        const textareaElements = document.querySelectorAll('textarea');
+        textareaElements.forEach((el) => {
+          const element = el as HTMLElement;
+          element.style.direction = 'rtl';
+          element.style.textAlign = 'right';
+          element.style.letterSpacing = 'normal';
+          element.style.fontFamily = "'Noto Naskh Arabic', 'Cairo', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+          element.style.fontFeatureSettings = "'liga' 1, 'calt' 1";
+          element.style.fontVariantLigatures = 'normal';
+          element.style.fontKerning = 'auto';
+        });
+      }, 50);
+      // Second pass to ensure styles are applied
+      setTimeout(() => {
+        const textareaElements = document.querySelectorAll('textarea');
+        textareaElements.forEach((el) => {
+          const element = el as HTMLElement;
+          element.style.direction = 'rtl';
+          element.style.textAlign = 'right';
+          element.style.letterSpacing = 'normal';
+        });
+      }, 200);
+    };
+    void forceTypographyReset();
+  }, []);
+
   const appendRequestText = useCallback((text: string) => {
     const chunk = text.trim();
     if (!chunk) return;
@@ -414,6 +451,23 @@ export function LegalEditor() {
     [t]
   );
 
+  const applyOcrJson = useCallback(
+    (data: any) => {
+      setRequestBodyManual(false);
+      setForm((f) => ({
+        ...f,
+        fullName: data.firstName || data.fullName || data.name || f.fullName,
+        nationalId: data.nationalId || data.cin || data.idNumber || f.nationalId,
+        address: data.address || f.address,
+        phone: data.phone || data.phoneNumber || f.phone,
+        email: data.email || f.email,
+      }));
+      setOcrNote(t("legalAi.ocrApplied"));
+      setTab("form");
+    },
+    [t]
+  );
+
   const simulateNationalIdScan = useCallback(() => {
     applyOcr(SIMULATED_CNIE_OCR);
   }, [applyOcr]);
@@ -461,11 +515,13 @@ export function LegalEditor() {
     requestTypeLabel,
   ]);
 
+  const { isAdmin } = useAuth();
   const legalModuleAllowed =
-    isApproved &&
+    isAdmin ||
+    (isApproved &&
     (approvedModules.includes("legal_ai") ||
       approvedModules.includes("law") ||
-      approvedModules.includes("public"));
+      approvedModules.includes("public")));
 
   if (!legalModuleAllowed) {
     return (
@@ -481,7 +537,7 @@ export function LegalEditor() {
   }
 
   return (
-    <div data-legal-editor-root className="relative">
+    <div data-legal-editor-root className="relative arabic-text-reset">
       <div className="legal-editor-screen-only max-w-5xl space-y-8 pb-24 mx-auto">
       <header className="rounded-2xl border border-[#c9a227]/35 bg-gradient-to-br from-[#0a1628] via-[#0c2340] to-[#050a12] p-5 md:p-7 shadow-2xl shadow-[#003876]/20 backdrop-blur-sm transition-shadow duration-300 hover:shadow-[#003876]/30">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -544,8 +600,11 @@ export function LegalEditor() {
             title={t("legalAi.scanTitle")}
             description={t("legalAi.scanHelp")}
             onExtracted={applyOcr}
+            onExtractedJson={applyOcrJson}
             simulateLabel={t("legalAi.simulateCinScan")}
             onSimulateNationalId={simulateNationalIdScan}
+            useGemini={true}
+            documentType="id_card"
           />
           {ocrNote && (
             <p className="text-sm font-bold text-emerald-400 border border-emerald-500/30 rounded-lg px-3 py-2 bg-emerald-500/10">
@@ -761,13 +820,14 @@ export function LegalEditor() {
             <p className="text-xs text-slate-500 font-medium leading-relaxed">{t("legalAi.autoDraftHint")}</p>
             <p className="text-[10px] text-slate-600 leading-relaxed">{t("legalAi.speechPrivacy")}</p>
             <textarea
+              key={`request-body-${form.requestTypeId}-${form.documentClassId}`}
               value={form.requestDetails}
               onChange={(e) => {
                 setRequestBodyManual(true);
                 setForm((f) => ({ ...f, requestDetails: e.target.value }));
               }}
               rows={8}
-              className="w-full rounded-lg border border-slate-700 bg-[#0c1222] px-3 py-2 text-sm text-white font-medium placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#0052CC]/50 min-h-[160px]"
+              className="arabic-text-reset w-full rounded-lg border border-slate-700 bg-[#0c1222] px-3 py-2 text-sm text-white font-medium placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#0052CC]/50 min-h-[160px]"
               placeholder={t("legalAi.requestPlaceholder")}
             />
           </div>
@@ -829,13 +889,14 @@ export function LegalEditor() {
                 </div>
                 <p className="text-xs text-slate-500 font-medium leading-relaxed">{t("legalAi.previewEditHint")}</p>
                 <textarea
+                  key={`preview-request-body-${form.requestTypeId}-${form.documentClassId}`}
                   value={form.requestDetails}
                   onChange={(e) => {
                     setRequestBodyManual(true);
                     setForm((f) => ({ ...f, requestDetails: e.target.value }));
                   }}
                   rows={14}
-                  className="w-full rounded-lg border border-slate-700 bg-[#0c1222] px-3 py-2 text-sm text-slate-100 font-medium placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#003876]/50 min-h-[220px] transition-shadow"
+                  className="arabic-text-reset w-full rounded-lg border border-slate-700 bg-[#0c1222] px-3 py-2 text-sm text-slate-100 font-medium placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-[#003876]/50 min-h-[220px] transition-shadow"
                   placeholder={t("legalAi.requestPlaceholder")}
                 />
               </div>

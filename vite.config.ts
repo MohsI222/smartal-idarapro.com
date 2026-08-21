@@ -34,8 +34,12 @@ export default defineConfig(({ mode }) => {
       host: "localhost",
       port: 5173,
       strictPort: true,
+      hmr: {
+        host: 'localhost'
+      },
       proxy: {
         "/api": { target: apiProxyTarget, changeOrigin: true },
+        "/uploads": { target: apiProxyTarget, changeOrigin: true },
       },
     },
     preview: {
@@ -43,6 +47,7 @@ export default defineConfig(({ mode }) => {
       strictPort: false,
       proxy: {
         "/api": { target: apiProxyTarget, changeOrigin: true },
+        "/uploads": { target: apiProxyTarget, changeOrigin: true },
       },
     },
     build: {

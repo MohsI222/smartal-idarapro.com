@@ -36,6 +36,9 @@ import { OFFICIAL_WHATSAPP_DIGITS } from "@/constants/contact";
 import { isPrimaryAdminClient } from "@/lib/adminClient";
 import { isDeptTransportShellHiddenPath } from "@/lib/tlDeptRoutes";
 import { useGlobalDomDigitLatinize } from "@/hooks/useGlobalDomDigitLatinize";
+import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
+import { usePermissions } from "@/context/PermissionsContext";
+import { PermissionsProvider } from "@/context/PermissionsContext";
 
 /**
  * Layout للوحة `/app/*`؛ مسار يبدأ بـ `/dept/transport` يُعرض عبر `TlDepartmentPage` بدون الشريط الجانبي أو شريط المدير.
@@ -59,6 +62,7 @@ export function AppShell() {
   } = useAuth();
   const { t, isRtl, formatNumber } = useI18n();
   const { theme, toggleTheme } = useTheme();
+  const { hasPermission } = usePermissions();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch] = useState("");
@@ -110,14 +114,26 @@ export function AppShell() {
     () => {
       const core = [
         { to: "/app", icon: Home, label: t("nav.home"), end: true },
-        ...PLATFORM_NAV.filter((n) => navItemVisibleForModules(n.to, modSet)).map((n) => ({
+        ...PLATFORM_NAV.filter((n) => {
+          // Filter by module visibility
+          if (!navItemVisibleForModules(n.to, modSet)) return false;
+          // Filter by permissions
+          if (n.permission && !hasPermission(n.permission)) return false;
+          return true;
+        }).map((n) => ({
           to: n.to,
           icon: n.icon,
           label: t(n.labelKey),
           end: false as boolean,
           emphasize: n.emphasize,
         })),
-        ...PRIMARY_NAV.filter((n) => navItemVisibleForModules(n.to, modSet)).map((n) => ({
+        ...PRIMARY_NAV.filter((n) => {
+          // Filter by module visibility
+          if (!navItemVisibleForModules(n.to, modSet)) return false;
+          // Filter by permissions
+          if (n.permission && !hasPermission(n.permission)) return false;
+          return true;
+        }).map((n) => ({
           to: n.to,
           icon: n.icon,
           label: t(n.labelKey),
@@ -126,17 +142,23 @@ export function AppShell() {
       ];
       return core;
     },
-    [t, modSet]
+    [t, modSet, hasPermission]
   );
 
   const secondaryNavItems = useMemo(
     () =>
-      SECONDARY_NAV.filter((n) => navItemVisibleForModules(n.to, modSet)).map((n) => ({
+      SECONDARY_NAV.filter((n) => {
+        // Filter by module visibility
+        if (!navItemVisibleForModules(n.to, modSet)) return false;
+        // Filter by permissions
+        if (n.permission && !hasPermission(n.permission)) return false;
+        return true;
+      }).map((n) => ({
         to: n.to,
         icon: n.icon,
         label: t(n.labelKey),
       })),
-    [t, modSet]
+    [t, modSet, hasPermission]
   );
 
   const filtered = useMemo(() => {
@@ -500,6 +522,8 @@ export function AppShell() {
           </Suspense>
         </div>
       </main>
+
+      <GlobalAiAssistant position="bottom-right" />
 
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-slate-800/80 bg-[#0a1628]/98 backdrop-blur-xl py-2 safe-area-pb print:hidden">
         <div className="flex overflow-x-auto gap-1 px-2 scrollbar-none justify-start items-end">

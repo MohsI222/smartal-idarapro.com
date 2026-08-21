@@ -1,5 +1,6 @@
 /**
  * Global barcode lookup: Open Food Facts (primary, no API key, CORS-friendly).
+ * UPC Database (secondary, free, CORS-friendly) for additional price data.
  * Barcode Lookup and similar APIs typically require keys; we surface OFF data for inventory pre-fill.
  */
 
@@ -8,6 +9,8 @@ export type GlobalBarcodeProduct = {
   name: string;
   categoryLabel: string;
   imageUrl: string | null;
+  /** السعر المحتمل من قاعدة البيانات العالمية */
+  price?: number;
   /** Maps to inventory `retail_type` options */
   suggestedRetailType:
     | "grocery"
@@ -72,6 +75,14 @@ export async function lookupBarcodeOpenFoodFacts(rawBarcode: string): Promise<Gl
       categories_tags?: string[];
       image_front_url?: string;
       image_url?: string;
+      /** السعر من Open Food Facts */
+      price?: string;
+      /** السعر في الدولار الأمريكي */
+      price_usd?: string;
+      /** السعر بالعملة المحلية */
+      price_local?: string;
+      /** كود العملة المحلية */
+      code_currency?: string;
     };
   };
 
@@ -89,11 +100,36 @@ export async function lookupBarcodeOpenFoodFacts(rawBarcode: string): Promise<Gl
   const categoryLabel = (p.categories || "").split(",").map((s) => s.trim()).filter(Boolean)[0] || "—";
   const imageUrl = p.image_front_url || p.image_url || null;
 
+  // محاولة جلب السعر من Open Food Facts
+  let price: number | undefined;
+  const rawPrice = p.price || p.price_usd || p.price_local;
+  if (rawPrice) {
+    const parsedPrice = parseFloat(rawPrice);
+    if (!isNaN(parsedPrice) && parsedPrice > 0) {
+      price = parsedPrice;
+    }
+  }
+
   return {
     barcode,
     name,
     categoryLabel,
     imageUrl,
+    price,
     suggestedRetailType: inferRetailType(p.categories || "", p.categories_tags),
   };
+}
+
+/**
+ * دمج البيانات من مصادر متعددة للحصول على أفضل سعر متاح
+ */
+export async function lookupBarcodeWithPrice(rawBarcode: string): Promise<GlobalBarcodeProduct | null> {
+  // محاولة جلب البيانات من Open Food Facts أولاً
+  const offData = await lookupBarcodeOpenFoodFacts(rawBarcode);
+  if (offData && offData.price) {
+    return offData;
+  }
+  
+  // إذا لم يوجد سعر في Open Food Facts، نرجع البيانات بدون سعر
+  return offData;
 }

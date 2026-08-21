@@ -100,8 +100,14 @@ export async function tlResolveMagic(token: string | null, authToken: string | n
 }
 
 export async function tlWorkers(token: string, department?: string) {
-  const q = department ? `?department=${encodeURIComponent(department)}` : "";
-  return api<{ workers: TlWorker[] }>(`/tl/workers${q}`, { token });
+  try {
+    const q = department ? `?department=${encodeURIComponent(department)}` : "";
+    const res = await api<{ workers: TlWorker[] }>(`/tl/workers${q}`, { token });
+    return Array.isArray(res.workers) ? res.workers : [];
+  } catch (error) {
+    console.warn("[tlApi] tlWorkers failed", error);
+    return [];
+  }
 }
 
 export async function tlCreateWorker(token: string, body: Partial<TlWorker>) {

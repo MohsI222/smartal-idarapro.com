@@ -4,10 +4,8 @@ import {
   Calculator,
   Car,
   FileText,
-  FlaskConical,
   Gavel,
   GraduationCap,
-  Landmark,
   LayoutGrid,
   MessageCircle,
   HousePlus,
@@ -18,8 +16,9 @@ import {
   Train,
   Users,
   Video,
-  Palette,
   LifeBuoy,
+  Bot,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,6 +28,8 @@ export type AppNavItem = {
   labelKey: string;
   /** يبرز الرابط في الشريط الجانبي (حدود/خلفية) */
   emphasize?: boolean;
+  /** الصلاحية المطلوبة للوصول لهذا القسم */
+  permission?: keyof import('@/context/PermissionsContext').UserPermissions;
 };
 
 /** منصة SaaS — الوحدات الجديدة */
@@ -38,35 +39,35 @@ export const PLATFORM_NAV: AppNavItem[] = [
     icon: Barcode,
     labelKey: "nav.inventory",
     emphasize: true,
+    permission: "can_access_inventory",
   },
-  { to: "/app/visa", icon: Radar, labelKey: "nav.visaRadar" },
   { to: "/app/company", icon: Building2, labelKey: "nav.company" },
+  { to: "/app/tl", icon: Train, labelKey: "nav.transportLogistics", permission: "can_access_transport_logistics" },
+  { to: "/app/delivery-hub", icon: Truck, labelKey: "nav.deliveryHub", emphasize: true, permission: "can_access_delivery" },
+  { to: "/app/auto-real-estate", icon: HousePlus, labelKey: "nav.autoRealEstate", emphasize: true, permission: "can_access_auto_real_estate" },
   { to: "/app/company?sector=commercial-industrial", icon: Building2, labelKey: "nav.commercialCompany" },
-  { to: "/app/media-lab?sector=laboratory", icon: FlaskConical, labelKey: "nav.laboratory" },
-  { to: "/app/gov", icon: Landmark, labelKey: "nav.govHub" },
-  { to: "/app/edu-print", icon: FileText, labelKey: "nav.eduPrint" },
-  { to: "/app/techauto", icon: Car, labelKey: "nav.techAuto" },
-  { to: "/app/chat", icon: MessageCircle, labelKey: "nav.internalChat" },
   { to: "/app/academy", icon: Video, labelKey: "nav.corporateAcademy" },
-  { to: "/app/tools", icon: LayoutGrid, labelKey: "nav.businessTools" },
   { to: "/app/members", icon: Users, labelKey: "nav.memberMgmt" },
-  { to: "/app/media-lab", icon: Palette, labelKey: "nav.mediaLab" },
-  { to: "/app/auto-real-estate", icon: HousePlus, labelKey: "nav.autoRealEstate", emphasize: true },
-  { to: "/app/tl", icon: Train, labelKey: "nav.transportLogistics" },
+  { to: "/app/lawyer", icon: Gavel, labelKey: "nav.lawyerPortal", emphasize: true, permission: "can_access_legal" },
+  { to: "/app/law", icon: Scale, labelKey: "nav.caseTracking", permission: "can_access_legal" },
+  { to: "/app/legal-ai", icon: Sparkles, labelKey: "nav.legalAi", permission: "can_access_ai" },
+  { to: "/app/acc", icon: Calculator, labelKey: "nav.financeMgmt" },
+  { to: "/app/edu", icon: GraduationCap, labelKey: "nav.smartEducation" },
+  { to: "/app/edu-print", icon: FileText, labelKey: "nav.eduPrint" },
+  { to: "/app/ai-assistant", icon: Bot, labelKey: "nav.aiAssistant", emphasize: true, permission: "can_access_ai" },
+  { to: "/app/techauto", icon: Car, labelKey: "nav.techAuto" },
+  { to: "/app/tools", icon: LayoutGrid, labelKey: "nav.businessTools" },
+  { to: "/app/visa", icon: Radar, labelKey: "nav.visaRadar" },
+  { to: "/app/chat", icon: MessageCircle, labelKey: "nav.internalChat" },
 ];
 
 /** الوحدات الاحترافية الحالية */
 export const PRIMARY_NAV: AppNavItem[] = [
-  { to: "/app/edu", icon: GraduationCap, labelKey: "nav.smartEducation" },
-  { to: "/app/public", icon: FileText, labelKey: "nav.legalLibrary" },
-  { to: "/app/acc", icon: Calculator, labelKey: "nav.financeMgmt" },
-  { to: "/app/law", icon: Scale, labelKey: "nav.caseTracking" },
-  { to: "/app/legal-ai", icon: Sparkles, labelKey: "nav.legalAi" },
-  { to: "/app/lawyer", icon: Gavel, labelKey: "nav.lawyerPortal", emphasize: true },
+  // AI Design Studio is restricted to super admin only - removed from navigation
 ];
 
 export const SECONDARY_NAV: AppNavItem[] = [
-  { to: "/app/hr", icon: Building2, labelKey: "section.hr.short" },
+  { to: "/app/hr", icon: Building2, labelKey: "section.hr.short", permission: "can_access_hr" },
   { to: "/app/support", icon: LifeBuoy, labelKey: "nav.support" },
-  { to: "/app/legal", icon: Shield, labelKey: "nav.legalTerms" },
+  { to: "/app/legal", icon: Shield, labelKey: "nav.legalTerms", permission: "can_access_settings" },
 ];

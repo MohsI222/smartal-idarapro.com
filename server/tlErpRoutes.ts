@@ -186,25 +186,30 @@ export function registerTlErpRoutes(
       res.status(400).json({ error: "بيانات ناقصة" });
       return;
     }
-    const id = randomUUID();
-    const magic = randomBytes(18).toString("hex");
-    await db.prepare(
-      `INSERT INTO tl_workers (id, user_id, full_name, employee_id, center, role_title, department, hierarchy_role, reports_to_worker_id, magic_token)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      id,
-      userId,
-      b.full_name.trim(),
-      b.employee_id.trim(),
-      String(b.center ?? "").trim(),
-      String(b.role_title ?? "").trim(),
-      b.department.trim(),
-      String(b.hierarchy_role ?? "employee").trim() || "employee",
-      b.reports_to_worker_id?.trim() || null,
-      magic
-    );
-    const row = await db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
-    res.json({ worker: row });
+    try {
+      const id = randomUUID();
+      const magic = randomBytes(18).toString("hex");
+      await db.prepare(
+        `INSERT INTO tl_workers (id, user_id, full_name, employee_id, center, role_title, department, hierarchy_role, reports_to_worker_id, magic_token)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        id,
+        userId,
+        b.full_name.trim(),
+        b.employee_id.trim(),
+        String(b.center ?? "").trim(),
+        String(b.role_title ?? "").trim(),
+        b.department.trim(),
+        String(b.hierarchy_role ?? "employee").trim() || "employee",
+        b.reports_to_worker_id?.trim() || null,
+        magic
+      );
+      const row = await db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
+      res.json({ worker: row });
+    } catch (error: any) {
+      console.error("Error creating TL worker:", error);
+      res.status(500).json({ error: "فشل إنشاء العامل: " + (error.message || "Database error") });
+    }
   });
 
   app.patch("/api/tl/workers/:id", ...authGate, async (req, res) => {

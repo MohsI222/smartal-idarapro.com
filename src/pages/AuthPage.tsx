@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { PublicMediaGallery } from "@/components/PublicMediaGallery";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { cn } from "@/lib/utils";
@@ -503,6 +504,10 @@ export function AuthPage() {
             )}
           </CardContent>
         </Card>
+
+        <div className="w-full max-w-2xl">
+          <PublicMediaGallery />
+        </div>
 
         <AuthFooterLinks t={t} />
       </div>

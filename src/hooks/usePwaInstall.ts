@@ -28,7 +28,9 @@ export function usePwaInstall() {
 
   useEffect(() => {
     const onBip = (e: Event) => {
+      // Prevent default to stop browser's automatic install prompt
       e.preventDefault();
+      // Store the event for later use when user clicks install button
       setDeferred(e as BeforeInstallPromptEvent);
     };
     const onInstalled = () => {
@@ -43,15 +45,31 @@ export function usePwaInstall() {
     };
   }, []);
 
-  const install = useCallback(async (): Promise<"accepted" | "dismissed" | "unavailable"> => {
+  const install = useCallback((): "accepted" | "dismissed" | "unavailable" => {
     if (!deferred) return "unavailable";
-    await deferred.prompt();
-    const { outcome } = await deferred.userChoice;
-    if (outcome === "accepted") {
-      setStandalone(true);
+    
+    // Call prompt() synchronously - this must be called directly from user gesture
+    try {
+      deferred.prompt();
+      
+      // Handle userChoice synchronously with then() to avoid async/await
+      deferred.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === "accepted") {
+          setStandalone(true);
+        }
+        setDeferred(null);
+      }).catch(() => {
+        // Ignore errors from userChoice
+        setDeferred(null);
+      });
+      
+      return "accepted"; // Return immediately, actual result handled in then()
+    } catch (error) {
+      // Ignore errors from prompt() - this can happen if called without user gesture
+      console.warn("PWA install prompt failed:", error);
+      setDeferred(null);
+      return "unavailable";
     }
-    setDeferred(null);
-    return outcome === "accepted" ? "accepted" : "dismissed";
   }, [deferred]);
 
   const isIOS =

@@ -1,15 +1,19 @@
-/** إنذار صوتي قوي حتى stopAlarm() — Web Audio (صفارات متعاقبة) */
+/** إنذار صوتي قوي ومستمر حتى stopAlarm() — Web Audio (صفارات متعاقبة) */
 
 let audioCtx: AudioContext | null = null;
 const oscillators: OscillatorNode[] = [];
 let sirenInterval: number | null = null;
+let alarmPersistenceInterval: number | null = null;
+let isAlarmPersistent: boolean = false;
 
 export function isAlarmPlaying(): boolean {
   return oscillators.length > 0;
 }
 
-export function startAlarm(): void {
+export function startAlarm(persistent: boolean = true): void {
   stopAlarm();
+  isAlarmPersistent = persistent;
+  
   try {
     const ctx = new AudioContext();
     const gain = ctx.createGain();
@@ -40,6 +44,16 @@ export function startAlarm(): void {
     }, 280);
 
     audioCtx = ctx;
+
+    // Persistence mechanism: if alarm stops, restart it automatically
+    if (persistent) {
+      alarmPersistenceInterval = window.setInterval(() => {
+        if (oscillators.length === 0 && isAlarmPersistent) {
+          console.log("🔔 Auto-restarting persistent alarm...");
+          startAlarm(true);
+        }
+      }, 1000);
+    }
   } catch {
     /* ignore */
   }
@@ -73,10 +87,18 @@ export function playEmbassyOpenChime(): void {
 }
 
 export function stopAlarm(): void {
+  isAlarmPersistent = false;
+  
   if (sirenInterval != null) {
     window.clearInterval(sirenInterval);
     sirenInterval = null;
   }
+  
+  if (alarmPersistenceInterval != null) {
+    window.clearInterval(alarmPersistenceInterval);
+    alarmPersistenceInterval = null;
+  }
+  
   for (const o of oscillators) {
     try {
       o.stop();

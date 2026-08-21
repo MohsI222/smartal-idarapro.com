@@ -52,7 +52,6 @@ const SECTION_ICONS: Record<string, LucideIcon> = {
   academy: GraduationCap,
   gov: Building2,
   legal_ai: Scale,
-  media_lab: Sparkles,
 };
 
 const PLAN_LABEL_KEYS: Record<string, string> = {

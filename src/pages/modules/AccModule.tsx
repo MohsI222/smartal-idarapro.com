@@ -20,10 +20,10 @@ type Report = {
   entry_type?: string;
 };
 
-export function AccModule() {
+function AccModule() {
   const { t, locale, isRtl } = useI18n();
-  const { token, isApproved, approvedModules } = useAuth();
-  const allowed = isApproved && approvedModules.includes("acc");
+  const { token, isApproved, approvedModules, isAdmin } = useAuth();
+  const allowed = isAdmin || (isApproved && approvedModules.includes("acc"));
   const [reports, setReports] = useState<Report[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Report>>({});
   const [form, setForm] = useState({
@@ -128,6 +128,7 @@ export function AccModule() {
       lang: locale,
       mainTitle: t("brand"),
       dateLocale: locale,
+      userId: user?.id,
     });
   };
 
@@ -341,3 +342,5 @@ export function AccModule() {
     </div>
   );
 }
+
+export default AccModule;

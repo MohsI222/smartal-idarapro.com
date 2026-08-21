@@ -75,26 +75,26 @@ function drawMoroccoSeal(ctx: CanvasRenderingContext2D, x: number, y: number, si
   ctx.restore();
 }
 
-async function ensureAmiriCairoFonts(): Promise<void> {
-  const id = "idara-admin-pdf-fonts-amiri-cairo";
+async function ensureNotoCairoFonts(): Promise<void> {
+  const id = "idara-admin-pdf-fonts-noto-cairo";
   if (!document.getElementById(id)) {
     const link = document.createElement("link");
     link.id = id;
     link.rel = "stylesheet";
     link.href =
-      "https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@600;700&display=block";
+      "https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&family=Cairo:wght@600;700&display=block";
     document.head.appendChild(link);
   }
   await document.fonts.ready.catch(() => undefined);
   await Promise.all([
-    document.fonts.load("700 22px Amiri").catch(() => undefined),
+    document.fonts.load("700 22px Noto Naskh Arabic").catch(() => undefined),
     document.fonts.load("700 22px Cairo").catch(() => undefined),
   ]);
 }
 
 /** PNG (base64) — علم + شعار + نص المملكة */
 export async function createKingdomHeaderImageDataUrl(): Promise<string> {
-  await ensureAmiriCairoFonts();
+  await ensureNotoCairoFonts();
 
   const DPR = 3;
   const W = 640;
@@ -125,7 +125,7 @@ export async function createKingdomHeaderImageDataUrl(): Promise<string> {
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.fillStyle = "#003876";
-  ctx.font = '700 20px Amiri, Cairo, "Noto Naskh Arabic", serif';
+  ctx.font = '700 20px "Noto Naskh Arabic", Cairo, serif';
   ctx.fillText(KINGDOM_LINE, cx, rowY + sealS + 8);
 
   return canvas.toDataURL("image/png", 1);

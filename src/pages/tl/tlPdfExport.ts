@@ -27,8 +27,9 @@ export async function exportTlErpPdf(opts: {
   incidents: TlIncident[];
   t: (k: string, params?: Record<string, string>) => string;
   fileName: string;
+  userId?: string;
 }) {
-  const { direction, lang, title, vehicles, ops, incidents, t, fileName } = opts;
+  const { direction, lang, title, vehicles, ops, incidents, t, fileName, userId } = opts;
   const vHtml = buildPdfTableHtml(
     [
       t("tl.pdf.colVehicle"),
@@ -96,8 +97,9 @@ export async function exportTlErpPdf(opts: {
     fileName,
     direction,
     lang,
-    documentMode: "creative",
+    documentMode: "platform",
     mainTitle: "Smart Transport & Logistics Pro",
+    userId,
   });
 }
 
@@ -110,8 +112,9 @@ export async function exportTlErpPdfByDepartment(opts: {
   incidents: TlIncident[];
   t: (k: string, params?: Record<string, string>) => string;
   fileName: string;
+  userId?: string;
 }) {
-  const { direction, lang, title, byDept, incidents, t, fileName } = opts;
+  const { direction, lang, title, byDept, incidents, t, fileName, userId } = opts;
 
   const deptBlocks = byDept
     .map(({ slug, vehicles, ops }, i) => {
@@ -203,7 +206,8 @@ export async function exportTlErpPdfByDepartment(opts: {
     fileName,
     direction,
     lang,
-    documentMode: "creative",
+    documentMode: "platform",
     mainTitle: "Smart Transport & Logistics Pro",
+    userId,
   });
 }

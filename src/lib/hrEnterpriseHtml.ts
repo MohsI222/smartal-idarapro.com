@@ -116,6 +116,8 @@ export function buildWorkCertificateHtml(params: {
   role: string;
   hireDate: string;
   endDate?: string;
+  maritalStatus?: string;
+  workDays?: string;
   dir: "rtl" | "ltr";
   locale: string;
 }): string {
@@ -138,6 +140,12 @@ export function buildWorkCertificateHtml(params: {
     `<p style="margin:8px 0;"><strong>ID</strong> ${escapeHtmlPdf(fixArabicText(params.employeeId))} — ${escapeHtmlPdf(fixArabicText(params.employeeName))}</p>` +
     `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("fr") ? "Fonction" : params.locale.startsWith("ar") ? "المهمة" : "Role"))}</strong> ${escapeHtmlPdf(fixArabicText(params.role))}</p>` +
     `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("ar") ? "تاريخ التوظيف" : params.locale.startsWith("fr") ? "Date d'embauche" : "Hire date"))}</strong> ${escapeHtmlPdf(fixArabicText(params.hireDate))}</p>` +
+    (params.maritalStatus
+      ? `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("ar") ? "الحالة العائلية" : params.locale.startsWith("fr") ? "Situation familiale" : "Marital status"))}</strong> ${escapeHtmlPdf(fixArabicText(params.maritalStatus))}</p>`
+      : "") +
+    (params.workDays
+      ? `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("ar") ? "أيام العمل" : params.locale.startsWith("fr") ? "Jours de travail" : "Work days"))}</strong> ${escapeHtmlPdf(fixArabicText(params.workDays))}</p>`
+      : "") +
     (params.endDate
       ? `<p style="margin:8px 0;"><strong>${escapeHtmlPdf(fixArabicText(params.locale.startsWith("ar") ? "نهاية العقد" : "End"))}</strong> ${escapeHtmlPdf(fixArabicText(params.endDate))}</p>`
       : "") +
@@ -195,6 +203,13 @@ export function buildPayrollSlipHtml(params: {
   branding: HrBranding;
   employeeName: string;
   employeeId: string;
+  workNumber?: string;
+  nationalId?: string;
+  maritalStatus?: string;
+  workDays?: string;
+  hireDate?: string;
+  city?: string;
+  address?: string;
   period: string;
   baseSalary: number;
   paidLeave: number;
@@ -387,6 +402,16 @@ export function buildPayrollSlipHtml(params: {
         <div style="padding:10px;border-inline-end:1px solid #cbd5e1;"><strong>${escapeHtmlPdf(labels.matricule)}</strong><br/>${escapeHtmlPdf(params.employeeId)}</div>
         <div style="padding:10px;"><strong>${escapeHtmlPdf(labels.period)}</strong><br/>${escapeHtmlPdf(params.period)}</div>
       </div>
+      ${params.workNumber || params.nationalId || params.maritalStatus || params.workDays || params.hireDate || params.city || params.address ? `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;border-bottom:1px solid #cbd5e1;font-size:11px;background:#f8fafc;">
+        ${params.workNumber ? `<div style="padding:8px;border-inline-end:1px solid #cbd5e1;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "رقم العمل" : "Work number")}</strong><br/>${escapeHtmlPdf(params.workNumber)}</div>` : ''}
+        ${params.nationalId ? `<div style="padding:8px;border-inline-end:1px solid #cbd5e1;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "رقم البطاقة" : "National ID")}</strong><br/>${escapeHtmlPdf(params.nationalId)}</div>` : ''}
+        ${params.maritalStatus ? `<div style="padding:8px;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "الحالة العائلية" : "Marital status")}</strong><br/>${escapeHtmlPdf(params.maritalStatus)}</div>` : ''}
+        ${params.workDays ? `<div style="padding:8px;border-inline-end:1px solid #cbd5e1;border-top:1px solid #cbd5e1;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "أيام العمل" : "Work days")}</strong><br/>${escapeHtmlPdf(params.workDays)}</div>` : ''}
+        ${params.hireDate ? `<div style="padding:8px;border-inline-end:1px solid #cbd5e1;border-top:1px solid #cbd5e1;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "تاريخ التوظيف" : "Hire date")}</strong><br/>${escapeHtmlPdf(params.hireDate)}</div>` : ''}
+        ${params.city ? `<div style="padding:8px;border-inline-end:1px solid #cbd5e1;border-top:1px solid #cbd5e1;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "المدينة" : "City")}</strong><br/>${escapeHtmlPdf(params.city)}</div>` : ''}
+        ${params.address ? `<div style="padding:8px;border-top:1px solid #cbd5e1;"><strong>${escapeHtmlPdf(params.locale.startsWith("ar") ? "العنوان" : "Address")}</strong><br/>${escapeHtmlPdf(params.address)}</div>` : ''}
+      </div>` : ''}
       <table style="width:100%;border-collapse:collapse;font-size:11px;">
         <thead>
           <tr style="background:#e0f2fe;color:#0f172a;">

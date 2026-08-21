@@ -459,11 +459,11 @@ export function buildOfficialDocumentFullHtml(opts: OfficialPrintWindowOpts): st
 </html>`;
 }
 
-/** خطوط التصدير الإداري: Amiri/Cairo (display=block) + احتياط Noto */
+/** خطوط التصدير الإداري: Noto Naskh Arabic/Cairo (display=block) */
 const ADMIN_EDITOR_PDF_FONT_LINKS = `
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@600;700&family=Noto+Naskh+Arabic:wght@400;600;700&display=block" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&family=Cairo:wght@600;700&display=block" rel="stylesheet" />
 `;
 
 export type AdministrativeEditorPdfLayoutSpacing = "default" | "address_change";
@@ -615,7 +615,7 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
       color: #000 !important;
     }
     body {
-      font-family: Amiri, Cairo, "Noto Naskh Arabic", Arial, "Times New Roman", serif;
+      font-family: "Noto Naskh Arabic", Cairo, Arial, "Times New Roman", serif;
       font-weight: 400;
       /* Western digits 0–9; Arabic script unchanged */
       font-variant-numeric: lining-nums tabular-nums;
@@ -663,7 +663,7 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
     .doc-shell--simple .request-main--simple {
       direction: ${direction};
       text-align: ${bodyAlign};
-      font-family: Amiri, Cairo, "Noto Naskh Arabic", serif;
+      font-family: "Noto Naskh Arabic", Cairo, serif;
       font-size: 11.5pt;
       font-weight: 400;
       unicode-bidi: plaintext;
@@ -719,7 +719,7 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
       flex-shrink: 0;
       direction: ${direction};
       text-align: center;
-      font-family: Amiri, Cairo, "Noto Naskh Arabic", serif;
+      font-family: "Noto Naskh Arabic", Cairo, serif;
       font-size: 12pt;
       font-weight: 600;
       line-height: 1.5;
@@ -736,7 +736,7 @@ export function buildAdministrativeEditorPdfHtml(input: AdministrativeEditorPdfI
     .request-main {
       direction: ${direction};
       text-align: ${bodyAlign};
-      font-family: Amiri, Cairo, "Noto Naskh Arabic", serif;
+      font-family: "Noto Naskh Arabic", Cairo, serif;
       font-size: 11.5pt;
       font-weight: 400;
       line-height: 2;

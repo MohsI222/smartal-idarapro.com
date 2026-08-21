@@ -2,15 +2,14 @@ import {
   Bell,
   Building2,
   Calculator,
-  FlaskConical,
   Gavel,
   GraduationCap,
   LayoutGrid,
   MessageCircle,
-  Palette,
   Radar,
   Scale,
   Train,
+  Truck,
   Users,
   FileText,
   HousePlus,
@@ -23,18 +22,16 @@ export type SectionId =
   | "lawyer"
   | "acc"
   | "edu"
-  | "public"
   | "visa"
   | "inventory"
   | "members"
   | "company"
   | "commercial_company"
-  | "laboratory"
   | "academy"
   | "gov"
   | "legal_ai"
-  | "media_lab"
   | "transport_logistics"
+  | "delivery_hub"
   | "chat"
   | "edu_print"
   | "tools"
@@ -98,15 +95,6 @@ export const SECTIONS: SectionDef[] = [
     path: "/app/edu",
   },
   {
-    id: "public",
-    titleKey: "section.public.title",
-    shortTitleKey: "section.public.short",
-    icon: Users,
-    color: "text-amber-400",
-    price: "—",
-    path: "/app/public",
-  },
-  {
     id: "visa",
     titleKey: "section.visa.title",
     shortTitleKey: "section.visa.short",
@@ -152,15 +140,6 @@ export const SECTIONS: SectionDef[] = [
     path: "/app/company?sector=commercial-industrial",
   },
   {
-    id: "laboratory",
-    titleKey: "section.laboratory.title",
-    shortTitleKey: "section.laboratory.short",
-    icon: FlaskConical,
-    color: "text-cyan-300",
-    price: "—",
-    path: "/app/media-lab?sector=laboratory",
-  },
-  {
     id: "academy",
     titleKey: "section.academy.title",
     shortTitleKey: "section.academy.short",
@@ -188,15 +167,6 @@ export const SECTIONS: SectionDef[] = [
     path: "/app/legal-ai",
   },
   {
-    id: "media_lab",
-    titleKey: "section.media_lab.title",
-    shortTitleKey: "section.media_lab.short",
-    icon: Palette,
-    color: "text-fuchsia-400",
-    price: "—",
-    path: "/app/media-lab",
-  },
-  {
     id: "transport_logistics",
     titleKey: "section.transport_logistics.title",
     shortTitleKey: "section.transport_logistics.short",
@@ -204,6 +174,15 @@ export const SECTIONS: SectionDef[] = [
     color: "text-teal-400",
     price: "—",
     path: "/app/tl",
+  },
+  {
+    id: "delivery_hub",
+    titleKey: "section.delivery_hub.title",
+    shortTitleKey: "section.delivery_hub.short",
+    icon: Truck,
+    color: "text-orange-300",
+    price: "—",
+    path: "/app/delivery-hub",
   },
   {
     id: "chat",

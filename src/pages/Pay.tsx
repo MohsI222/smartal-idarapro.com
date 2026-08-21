@@ -300,7 +300,10 @@ export function Pay() {
               type="file"
               accept="image/*,application/pdf"
               className="text-sm text-slate-400"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => {
+                setFile(e.target.files?.[0] ?? null);
+                e.target.value = "";
+              }}
             />
             <p className="mt-2 text-xs text-slate-500">{t("pay.receiptHint")}</p>
           </CardContent>

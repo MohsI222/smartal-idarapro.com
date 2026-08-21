@@ -103,6 +103,20 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
   const startCamera = useCallback(async () => {
     setHint(null);
     try {
+      // Check if camera is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setHint(t("barcode.cameraNotSupported"));
+        return;
+      }
+
+      // Request camera permissions explicitly
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+      });
+
+      // Stop the test stream immediately after permission check
+      stream.getTracks().forEach(track => track.stop());
+
       await resumeAudioIfNeeded();
       const reader = new BrowserMultiFormatReader(buildDecodeHints(), {
         delayBetweenScanSuccess: 55,
@@ -124,8 +138,21 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
         if (err && String(err).includes("NotFound")) return;
       });
       controlsRef.current = controls;
-    } catch {
-      setHint(t("barcode.cameraError"));
+    } catch (err) {
+      console.error("Camera error:", err);
+      if (err instanceof Error) {
+        if (err.name === "NotAllowedError" || err.message.includes("Permission denied")) {
+          setHint(t("barcode.cameraPermissionDenied"));
+        } else if (err.name === "NotFoundError" || err.message.includes("not found")) {
+          setHint(t("barcode.cameraNotFound"));
+        } else if (err.name === "NotReadableError" || err.message.includes("readable")) {
+          setHint(t("barcode.cameraNotReadable"));
+        } else {
+          setHint(`${t("barcode.cameraError")}: ${err.message}`);
+        }
+      } else {
+        setHint(t("barcode.cameraError"));
+      }
       setActive(false);
     }
   }, [matchProduct, t]);
@@ -139,6 +166,7 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
         {t("barcode.title")}
       </div>
       <p className="text-xs text-slate-400">{t("barcode.hint")}</p>
+      <p className="text-[10px] text-cyan-300 leading-relaxed">✓ دعم مسدس الباركود السلكي واللاسلكي - يعمل تلقائياً عند توجيهه نحو الباركود</p>
       <p className="text-[10px] text-slate-600 leading-relaxed">{t("barcode.privacy")}</p>
       <div
         className={`relative mx-auto rounded-xl overflow-hidden bg-black border border-white/10 ${

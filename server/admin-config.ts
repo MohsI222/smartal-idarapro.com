@@ -40,6 +40,7 @@ export const PRIMARY_ADMIN_SESSION_MS =
   (Number(process.env.PRIMARY_ADMIN_JWT_YEARS) || 10) * 365 * 864e5;
 
 /** كل الأقسام — اشتراك معتمد فوراً (SaaS). رادار التأشيرة مدمج في libraries_plus و enterprises_schools. */
+/** ملاحظة: ai-design-studio (استوديو التصميم بالذكاء الاصطناعي) غير مشمول في أي خطة اشتراك - خاص بالمشرف العام فقط */
 export const FULL_MODULES_JSON = JSON.stringify([
   "hr",
   "law",
@@ -53,7 +54,6 @@ export const FULL_MODULES_JSON = JSON.stringify([
   "academy",
   "gov",
   "legal_ai",
-  "media_lab",
   "transport_logistics",
   "chat",
   "edu_print",

@@ -14,6 +14,7 @@ import {
   Lock,
   Sparkles,
   TrendingUp,
+  Settings,
 } from "lucide-react";
 import {
   Area,
@@ -31,6 +32,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SECTIONS } from "@/constants/sections";
 import { SocialLinksGrid } from "@/components/SocialLinksGrid";
+import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
+import { UserAiSettings } from "@/components/UserAiSettings";
+import { PlatformGuideAssistant } from "@/components/PlatformGuideAssistant";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { api } from "@/lib/api";
@@ -46,6 +50,13 @@ import {
   readDocumentActivity,
   type DocumentActivityEntry,
 } from "@/lib/documentActivityLog";
+import {
+  addSampleTransactions,
+  calculateLocalFinancialStats,
+  addLocalDownload,
+  clearLocalTransactions,
+  clearLocalDownloads,
+} from "@/lib/localTransactions";
 import { QuickOfficeBar } from "@/components/office/QuickOfficeBar";
 import { exportBrandedTableDocx, withFileToast } from "@/services/fileService";
 
@@ -74,6 +85,28 @@ type Branding = {
   socialTwitter: string;
 };
 
+function getDefaultSummary(): FinancialSummary {
+  const now = new Date();
+  const chart: { day: string; revenue: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    chart.push({
+      day: d.toISOString().slice(0, 10),
+      revenue: 0,
+    });
+  }
+  return {
+    docCount: 0,
+    todayRevenue: 0,
+    hourRevenue: 0,
+    todayNetProfit: 0,
+    hourNetProfit: 0,
+    salesCount: 0,
+    chart,
+  };
+}
+
 export function DashboardHome() {
   const { isApproved, subscription, user, token } = useAuth();
   const { t, isRtl, locale, formatNumber, formatDateTime } = useI18n();
@@ -92,19 +125,28 @@ export function DashboardHome() {
   const [savingBrand, setSavingBrand] = useState(false);
   const [excelSyncOn, setExcelSyncOn] = useState(getExcelOnlineSyncEnabled);
   const syncFileInputRef = useRef<HTMLInputElement>(null);
-  const [docActivity, setDocActivity] = useState<DocumentActivityEntry[]>(() => readDocumentActivity());
+  const [docActivity, setDocActivity] = useState<DocumentActivityEntry[]>([]);
 
   useEffect(() => {
     const sync = () => setExcelSyncOn(getExcelOnlineSyncEnabled());
-    window.addEventListener("focus", sync);
-    return () => window.removeEventListener("focus", sync);
+    window.addEventListener("excel-online-sync-toggle", sync);
+    return () => window.removeEventListener("excel-online-sync-toggle", sync);
   }, []);
 
   useEffect(() => {
-    const onAct = () => setDocActivity(readDocumentActivity());
+    const loadDocActivity = async () => {
+      if (token) {
+        const docs = await readDocumentActivity(token);
+        setDocActivity(docs);
+      }
+    };
+    
+    loadDocActivity();
+    
+    const onAct = () => loadDocActivity();
     window.addEventListener("idara-doc-activity", onAct);
     return () => window.removeEventListener("idara-doc-activity", onAct);
-  }, []);
+  }, [token]);
 
   const welcome = useMemo(
     () =>
@@ -129,18 +171,93 @@ export function DashboardHome() {
   }, [referralUrl]);
 
   const loadData = useCallback(async () => {
-    if (!token) return;
+    // Always get local stats first with user isolation
+    const localStats = calculateLocalFinancialStats(user?.id ?? null);
+    
+    if (!token) {
+      // Load from localStorage fallback for guest/no token
+      try {
+        const localFin = localStorage.getItem("idara_financial_summary_fallback");
+        const localBrand = localStorage.getItem("idara_branding_fallback");
+        if (localFin) {
+          const serverFin = JSON.parse(localFin) as FinancialSummary;
+          // Combine server + local data
+          setSummary({
+            ...serverFin,
+            docCount: serverFin.docCount + localStats.docCount,
+            todayRevenue: serverFin.todayRevenue + localStats.todayRevenue,
+            hourRevenue: serverFin.hourRevenue + localStats.hourRevenue,
+            todayNetProfit: serverFin.todayNetProfit + localStats.todayNetProfit,
+            hourNetProfit: serverFin.hourNetProfit + localStats.hourNetProfit,
+            salesCount: serverFin.salesCount + localStats.salesCount,
+            chart: combineChartData(serverFin.chart, localStats.chart),
+          });
+        } else {
+          setSummary(localStats);
+        }
+        if (localBrand) setBranding(JSON.parse(localBrand) as Branding);
+      } catch {
+        setSummary(localStats);
+      }
+      return;
+    }
     try {
       const [fin, brand] = await Promise.all([
         api<FinancialSummary>("/dashboard/financial-summary", { token }),
         api<{ branding: Branding }>("/user/branding", { token }),
       ]);
-      setSummary(fin);
-      if (brand.branding) setBranding(brand.branding);
+      // Combine server + local data
+      setSummary({
+        ...fin,
+        docCount: fin.docCount + localStats.docCount,
+        todayRevenue: fin.todayRevenue + localStats.todayRevenue,
+        hourRevenue: fin.hourRevenue + localStats.hourRevenue,
+        todayNetProfit: fin.todayNetProfit + localStats.todayNetProfit,
+        hourNetProfit: fin.hourNetProfit + localStats.hourNetProfit,
+        salesCount: fin.salesCount + localStats.salesCount,
+        chart: combineChartData(fin.chart, localStats.chart),
+      });
+      if (brand.branding) {
+        setBranding(brand.branding);
+        localStorage.setItem("idara_branding_fallback", JSON.stringify(brand.branding));
+      }
+      localStorage.setItem("idara_financial_summary_fallback", JSON.stringify(fin));
     } catch {
-      setSummary(null);
+      // Fallback to localStorage or local stats
+      try {
+        const localFin = localStorage.getItem("idara_financial_summary_fallback");
+        if (localFin) {
+          const serverFin = JSON.parse(localFin) as FinancialSummary;
+          setSummary({
+            ...serverFin,
+            docCount: serverFin.docCount + localStats.docCount,
+            todayRevenue: serverFin.todayRevenue + localStats.todayRevenue,
+            hourRevenue: serverFin.hourRevenue + localStats.hourRevenue,
+            todayNetProfit: serverFin.todayNetProfit + localStats.todayNetProfit,
+            hourNetProfit: serverFin.hourNetProfit + localStats.hourNetProfit,
+            salesCount: serverFin.salesCount + localStats.salesCount,
+            chart: combineChartData(serverFin.chart, localStats.chart),
+          });
+        } else {
+          setSummary(localStats);
+        }
+      } catch {
+        setSummary(localStats);
+      }
     }
   }, [token]);
+
+  function combineChartData(
+    serverChart: { day: string; revenue: number }[],
+    localChart: { day: string; revenue: number }[]
+  ): { day: string; revenue: number }[] {
+    const combined = new Map<string, number>();
+    serverChart.forEach((c) => combined.set(c.day, (combined.get(c.day) || 0) + c.revenue));
+    localChart.forEach((c) => combined.set(c.day, (combined.get(c.day) || 0) + c.revenue));
+    return Array.from(combined.entries())
+      .map(([day, revenue]) => ({ day, revenue }))
+      .sort((a, b) => a.day.localeCompare(b.day));
+  }
 
   useEffect(() => {
     void loadData();
@@ -199,7 +316,8 @@ export function DashboardHome() {
   }, []);
 
   const runExportPdf = useCallback(async () => {
-    if (!summary) return;
+    const data = summary ?? getDefaultSummary();
+    addLocalDownload({ filename: `dashboard-${Date.now()}.pdf`, type: "pdf" }, user?.id ?? null);
     await exportDashboardPdf(
       {
         companyName: branding.companyName,
@@ -213,13 +331,13 @@ export function DashboardHome() {
           title: t("dashboard.financialTitle"),
         },
         values: {
-          docCount: summary.docCount,
-          todayRevenue: summary.todayRevenue,
-          hourRevenue: summary.hourRevenue,
-          todayNetProfit: summary.todayNetProfit,
-          hourNetProfit: summary.hourNetProfit,
+          docCount: data.docCount,
+          todayRevenue: data.todayRevenue,
+          hourRevenue: data.hourRevenue,
+          todayNetProfit: data.todayNetProfit,
+          hourNetProfit: data.hourNetProfit,
         },
-        chart: summary.chart,
+        chart: data.chart,
       },
       {
         isRtl,
@@ -228,10 +346,12 @@ export function DashboardHome() {
         fileName: `dashboard-${Date.now()}.pdf`,
       }
     );
-  }, [summary, branding, t, isRtl, locale]);
+    void loadData();
+  }, [summary, branding, t, isRtl, locale, loadData]);
 
   const runExportExcelSync = async () => {
-    if (!summary) return;
+    const data = summary ?? getDefaultSummary();
+    addLocalDownload({ filename: `idara-excel-sync-${Date.now()}.xlsx`, type: "excel" }, user?.id ?? null);
     await exportDashboardExcelOnlineSync(
       {
         companyName: branding.companyName,
@@ -245,17 +365,18 @@ export function DashboardHome() {
           title: t("dashboard.financialTitle"),
         },
         values: {
-          docCount: summary.docCount,
-          todayRevenue: summary.todayRevenue,
-          hourRevenue: summary.hourRevenue,
-          todayNetProfit: summary.todayNetProfit,
-          hourNetProfit: summary.hourNetProfit,
+          docCount: data.docCount,
+          todayRevenue: data.todayRevenue,
+          hourRevenue: data.hourRevenue,
+          todayNetProfit: data.todayNetProfit,
+          hourNetProfit: data.hourNetProfit,
         },
-        chart: summary.chart,
+        chart: data.chart,
       },
       { companyName: branding.companyName, activityType: branding.activityType },
       `idara-excel-sync-${Date.now()}.xlsx`
     );
+    void loadData();
   };
 
   const onImportSyncExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -290,27 +411,30 @@ export function DashboardHome() {
   };
 
   const runProfessionalWord = useCallback(async () => {
-    if (!summary) return;
+    const data = summary ?? getDefaultSummary();
+    addLocalDownload({ filename: `dashboard-pro-${Date.now()}.docx`, type: "word" }, user?.id ?? null);
     await withFileToast(
       () =>
         exportBrandedTableDocx({
           title: t("dashboard.financialTitle"),
           rows: [
-            [t("dashboard.docCount"), String(summary.docCount)],
-            [t("dashboard.revenueToday"), String(summary.todayRevenue)],
-            [t("dashboard.revenueHour"), String(summary.hourRevenue)],
-            [t("dashboard.profitToday"), String(summary.todayNetProfit)],
-            [t("dashboard.profitHour"), String(summary.hourNetProfit)],
-            [t("dashboard.statDownloadsCount"), String(summary.salesCount)],
+            [t("dashboard.docCount"), String(data.docCount)],
+            [t("dashboard.revenueToday"), String(data.todayRevenue)],
+            [t("dashboard.revenueHour"), String(data.hourRevenue)],
+            [t("dashboard.profitToday"), String(data.todayNetProfit)],
+            [t("dashboard.profitHour"), String(data.hourNetProfit)],
+            [t("dashboard.statDownloadsCount"), String(data.salesCount)],
           ],
           fileName: `dashboard-pro-${Date.now()}.docx`,
         }),
       t("auth.errGeneric")
     );
-  }, [summary, t]);
+    void loadData();
+  }, [summary, t, loadData]);
 
   const runExportExcel = () => {
-    if (!summary) return;
+    const data = summary ?? getDefaultSummary();
+    addLocalDownload({ filename: `dashboard-${Date.now()}.xlsx`, type: "excel" }, user?.id ?? null);
     void exportDashboardExcel(
       {
         companyName: branding.companyName,
@@ -324,24 +448,25 @@ export function DashboardHome() {
           title: t("dashboard.financialTitle"),
         },
         values: {
-          docCount: summary.docCount,
-          todayRevenue: summary.todayRevenue,
-          hourRevenue: summary.hourRevenue,
-          todayNetProfit: summary.todayNetProfit,
-          hourNetProfit: summary.hourNetProfit,
+          docCount: data.docCount,
+          todayRevenue: data.todayRevenue,
+          hourRevenue: data.hourRevenue,
+          todayNetProfit: data.todayNetProfit,
+          hourNetProfit: data.hourNetProfit,
         },
-        chart: summary.chart,
+        chart: data.chart,
       },
       `dashboard-${Date.now()}.xlsx`
     ).catch(() => undefined);
+    void loadData();
   };
 
   const chartData = useMemo(
     () =>
-      summary?.chart.map((c) => ({
+      (summary ?? getDefaultSummary()).chart.map((c) => ({
         ...c,
         label: c.day.slice(5),
-      })) ?? [],
+      })),
     [summary]
   );
 
@@ -378,13 +503,42 @@ export function DashboardHome() {
                 <Barcode className="size-3.5 shrink-0" />
                 {t("dashboard.inventoryRadarLink")}
               </Link>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-2 text-xs text-slate-500 hover:text-slate-300"
+                data-nav-index="0" data-nav-group="dashboard-actions"
+                onClick={() => {
+                  addSampleTransactions(user?.id ?? null);
+                  void loadData();
+                }}
+              >
+                تحميل بيانات تجريبية
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-1 text-xs text-red-500/70 hover:text-red-400"
+                data-nav-index="1" data-nav-group="dashboard-actions"
+                onClick={() => {
+                  if (window.confirm("مسح جميع البيانات المحلية؟")) {
+                    clearLocalTransactions(user?.id ?? null);
+                    clearLocalDownloads(user?.id ?? null);
+                    void loadData();
+                  }
+                }}
+              >
+                مسح البيانات المحلية
+              </Button>
             </div>
             <div className="flex flex-col gap-3 w-full sm:w-auto">
               <QuickOfficeBar
                 onProfessionalExcel={runExportExcel}
                 onProfessionalWord={runProfessionalWord}
-                disabledExcel={!summary}
-                disabledWord={!summary}
+                disabledExcel={false}
+                disabledWord={false}
                 labels={{
                   quickGrid: t("fileUi.quickGrid"),
                   exportExcel: t("fileUi.proExcel"),
@@ -397,7 +551,7 @@ export function DashboardHome() {
                 variant="secondary"
                 size="sm"
                 className="gap-2 bg-white/10 border border-white/15"
-                disabled={!summary}
+                data-nav-index="2" data-nav-group="dashboard-export"
                 onClick={() => void runExportPdf()}
               >
                 <FileText className="size-4" />
@@ -408,7 +562,7 @@ export function DashboardHome() {
                 variant="secondary"
                 size="sm"
                 className="gap-2 bg-white/10 border border-white/15"
-                disabled={!summary}
+                data-nav-index="3" data-nav-group="dashboard-export"
                 onClick={runExportExcel}
               >
                 <FileSpreadsheet className="size-4" />
@@ -421,7 +575,7 @@ export function DashboardHome() {
                     variant="secondary"
                     size="sm"
                     className="gap-2 bg-emerald-950/40 border border-emerald-500/30 text-emerald-100"
-                    disabled={!summary}
+                    data-nav-index="4" data-nav-group="dashboard-export"
                     onClick={() => void runExportExcelSync()}
                   >
                     <FileSpreadsheet className="size-4" />
@@ -432,7 +586,10 @@ export function DashboardHome() {
                     type="file"
                     accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     className="hidden"
-                    onChange={(ev) => void onImportSyncExcel(ev)}
+                    onChange={(ev) => {
+                      void onImportSyncExcel(ev);
+                      ev.target.value = "";
+                    }}
                   />
                   <Button
                     type="button"
@@ -440,6 +597,7 @@ export function DashboardHome() {
                     size="sm"
                     className="gap-2 bg-[#003876]/40 border border-[#0052CC]/40"
                     disabled={!token}
+                    data-nav-index="5" data-nav-group="dashboard-export"
                     onClick={() => syncFileInputRef.current?.click()}
                   >
                     <Upload className="size-4" />
@@ -451,89 +609,85 @@ export function DashboardHome() {
             </div>
           </div>
 
-          {summary ? (
-            <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-                <StatCard
-                  icon={FileText}
-                  label={t("dashboard.docCount")}
-                  value={formatNumber(summary.docCount, { maximumFractionDigits: 0 })}
-                  accent="text-[#0052CC]"
-                />
-                <StatCard
-                  icon={Layers}
-                  label={t("dashboard.revenueToday")}
-                  value={formatNumber(summary.todayRevenue, { maximumFractionDigits: 2 })}
-                  accent="text-[#FF8C00]"
-                />
-                <StatCard
-                  icon={Download}
-                  label={t("dashboard.revenueHour")}
-                  value={formatNumber(summary.hourRevenue, { maximumFractionDigits: 2 })}
-                  accent="text-emerald-400"
-                />
-                <StatCard
-                  icon={Sparkles}
-                  label={t("dashboard.profitToday")}
-                  value={formatNumber(summary.todayNetProfit, { maximumFractionDigits: 2 })}
-                  accent="text-cyan-400"
-                />
-                <StatCard
-                  icon={TrendingUp}
-                  label={t("dashboard.profitHour")}
-                  value={formatNumber(summary.hourNetProfit, { maximumFractionDigits: 2 })}
-                  accent="text-fuchsia-400"
-                />
-                <StatCard
-                  icon={Layers}
-                  label={t("dashboard.statDownloadsCount")}
-                  value={formatNumber(summary.salesCount, { maximumFractionDigits: 0 })}
-                  accent="text-amber-300"
-                />
-              </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+              <StatCard
+                icon={FileText}
+                label={t("dashboard.docCount")}
+                value={formatNumber((summary ?? getDefaultSummary()).docCount, { maximumFractionDigits: 0 })}
+                accent="text-[#0052CC]"
+              />
+              <StatCard
+                icon={Layers}
+                label={t("dashboard.revenueToday")}
+                value={formatNumber((summary ?? getDefaultSummary()).todayRevenue, { maximumFractionDigits: 2 })}
+                accent="text-[#FF8C00]"
+              />
+              <StatCard
+                icon={Download}
+                label={t("dashboard.revenueHour")}
+                value={formatNumber((summary ?? getDefaultSummary()).hourRevenue, { maximumFractionDigits: 2 })}
+                accent="text-emerald-400"
+              />
+              <StatCard
+                icon={Sparkles}
+                label={t("dashboard.profitToday")}
+                value={formatNumber((summary ?? getDefaultSummary()).todayNetProfit, { maximumFractionDigits: 2 })}
+                accent="text-cyan-400"
+              />
+              <StatCard
+                icon={TrendingUp}
+                label={t("dashboard.profitHour")}
+                value={formatNumber((summary ?? getDefaultSummary()).hourNetProfit, { maximumFractionDigits: 2 })}
+                accent="text-fuchsia-400"
+              />
+              <StatCard
+                icon={Layers}
+                label={t("dashboard.statDownloadsCount")}
+                value={formatNumber((summary ?? getDefaultSummary()).salesCount, { maximumFractionDigits: 0 })}
+                accent="text-amber-300"
+              />
+            </div>
 
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4 h-[280px]">
-                <p className="text-sm font-bold text-slate-300 mb-3">{t("dashboard.chart7d")}</p>
-                <ResponsiveContainer width="100%" height="85%">
-                  <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0052CC" stopOpacity={0.9} />
-                        <stop offset="95%" stopColor="#FF8C00" stopOpacity={0.2} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
-                    <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                    <YAxis
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                      tickFormatter={(v) => formatNumber(Number(v), { maximumFractionDigits: 0 })}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: "#0a1628",
-                        border: "1px solid rgba(255,140,0,0.4)",
-                        borderRadius: 12,
-                      }}
-                      formatter={(value: number | string) => [
-                        formatNumber(Number(value), { maximumFractionDigits: 2 }),
-                        t("dashboard.revenueToday"),
-                      ]}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="revenue"
-                      stroke="#FF8C00"
-                      strokeWidth={2}
-                      fillOpacity={1}
-                      fill="url(#colorRev)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          ) : (
-            <p className="text-slate-500 text-sm">{t("common.loading")}</p>
-          )}
+            <div className="rounded-2xl border border-white/10 bg-black/20 p-4 h-[280px]">
+              <p className="text-sm font-bold text-slate-300 mb-3">{t("dashboard.chart7d")}</p>
+              <ResponsiveContainer width="100%" height="85%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0052CC" stopOpacity={0.9} />
+                      <stop offset="95%" stopColor="#FF8C00" stopOpacity={0.2} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                  <XAxis dataKey="label" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <YAxis
+                    tick={{ fill: "#94a3b8", fontSize: 11 }}
+                    tickFormatter={(v) => formatNumber(Number(v), { maximumFractionDigits: 0 })}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#0a1628",
+                      border: "1px solid rgba(255,140,0,0.4)",
+                      borderRadius: 12,
+                    }}
+                    formatter={(value: number | string) => [
+                      formatNumber(Number(value), { maximumFractionDigits: 2 }),
+                      t("dashboard.revenueToday"),
+                    ]}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#FF8C00"
+                    strokeWidth={2}
+                    fillOpacity={1}
+                    fill="url(#colorRev)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </>
         </CardContent>
       </Card>
 
@@ -554,7 +708,7 @@ export function DashboardHome() {
                 size="sm"
                 className="shrink-0 border-white/10"
                 onClick={() => {
-                  clearDocumentActivity();
+                  clearDocumentActivity(user?.id);
                   setDocActivity([]);
                 }}
               >
@@ -600,6 +754,10 @@ export function DashboardHome() {
         />
       </Suspense>
 
+      <UserAiSettings />
+
+      <PlatformGuideAssistant isPreSubscription={false} />
+
       <Card className="border-white/10 bg-white/5 backdrop-blur-xl">
         <CardContent className="p-4 md:p-6 space-y-4">
           <h3 className="font-black text-white">{t("dashboard.brandingTitle")}</h3>
@@ -610,12 +768,16 @@ export function DashboardHome() {
               <Input
                 className="mt-1 bg-[#050a12]/60 border-slate-600"
                 value={branding.companyName}
+                data-nav-index="6" data-nav-group="dashboard-branding"
                 onChange={(e) => setBranding((b) => ({ ...b, companyName: e.target.value }))}
               />
             </div>
             <div>
               <Label className="text-slate-300">{t("dashboard.pickLogo")}</Label>
-              <Input type="file" accept="image/*" className="mt-1 text-sm" onChange={onLogoFile} />
+              <Input type="file" accept="image/*" className="mt-1 text-sm" data-nav-index="7" data-nav-group="dashboard-branding" onChange={(e) => {
+                onLogoFile(e);
+                e.target.value = "";
+              }} />
             </div>
           </div>
           {branding.logoDataUrl && (
@@ -634,6 +796,7 @@ export function DashboardHome() {
                 dir="ltr"
                 placeholder="https://"
                 value={branding.socialWebsite}
+                data-nav-index="8" data-nav-group="dashboard-branding"
                 onChange={(e) => setBranding((b) => ({ ...b, socialWebsite: e.target.value }))}
               />
             </div>
@@ -643,6 +806,7 @@ export function DashboardHome() {
                 className="mt-1 bg-[#050a12]/60 border-slate-600"
                 dir="ltr"
                 value={branding.socialFacebook}
+                data-nav-index="9" data-nav-group="dashboard-branding"
                 onChange={(e) => setBranding((b) => ({ ...b, socialFacebook: e.target.value }))}
               />
             </div>
@@ -652,6 +816,7 @@ export function DashboardHome() {
                 className="mt-1 bg-[#050a12]/60 border-slate-600"
                 dir="ltr"
                 value={branding.socialInstagram}
+                data-nav-index="10" data-nav-group="dashboard-branding"
                 onChange={(e) => setBranding((b) => ({ ...b, socialInstagram: e.target.value }))}
               />
             </div>
@@ -661,6 +826,7 @@ export function DashboardHome() {
                 className="mt-1 bg-[#050a12]/60 border-slate-600"
                 dir="ltr"
                 value={branding.socialLinkedin}
+                data-nav-index="11" data-nav-group="dashboard-branding"
                 onChange={(e) => setBranding((b) => ({ ...b, socialLinkedin: e.target.value }))}
               />
             </div>
@@ -670,11 +836,12 @@ export function DashboardHome() {
                 className="mt-1 bg-[#050a12]/60 border-slate-600"
                 dir="ltr"
                 value={branding.socialTwitter}
+                data-nav-index="12" data-nav-group="dashboard-branding"
                 onChange={(e) => setBranding((b) => ({ ...b, socialTwitter: e.target.value }))}
               />
             </div>
           </div>
-          <Button type="button" onClick={() => void saveBranding()} disabled={savingBrand || !token}>
+          <Button type="button" onClick={() => void saveBranding()} disabled={savingBrand || !token} data-nav-index="13" data-nav-group="dashboard-branding">
             {t("dashboard.saveBranding")}
           </Button>
         </CardContent>
@@ -694,6 +861,7 @@ export function DashboardHome() {
           <Button
             type="button"
             onClick={() => void copyReferral()}
+            data-nav-index="14" data-nav-group="dashboard-referral"
             className="shrink-0 bg-[#FF8C00] text-[#050a12] hover:bg-[#e67e00] gap-2"
           >
             {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
@@ -729,6 +897,12 @@ export function DashboardHome() {
       )}
 
       <SectionGrid />
+
+      <GlobalAiAssistant
+        section="dashboard"
+        context="Executive Dashboard - Financial Reports, Business Analytics, and Management"
+        availableFields={["company_name", "revenue", "profit", "expenses"]}
+      />
     </div>
   );
 }
@@ -763,13 +937,13 @@ function StatCard({
 }
 
 function SectionGrid() {
-  const { isApproved, approvedModules } = useAuth();
+  const { isApproved, approvedModules, isAdmin } = useAuth();
   const { t } = useI18n();
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
       {SECTIONS.map((sec) => {
-        const unlocked = isApproved && approvedModules.includes(sec.id);
+        const unlocked = isAdmin || (isApproved && approvedModules.includes(sec.id));
         const Icon = sec.icon;
         return (
           <Card

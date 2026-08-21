@@ -153,6 +153,8 @@ type AuthContextValue = {
   subscriptionCountdown: { days: number; hours: number; minutes: number } | null;
   accountLocked: boolean;
   trialActive: boolean;
+  /** Supabase auth session for direct database access */
+  supabaseSession: any;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -170,6 +172,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const bootstrapTriedRef = useRef(false);
+  const [supabaseSession, setSupabaseSession] = useState<any>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 30_000);
@@ -231,6 +234,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   }, [token, tryAdminBootstrap]);
+
+  // Track Supabase auth state changes
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('[AuthContext] Supabase auth state changed:', event, session?.user?.email);
+        setSupabaseSession(session);
+        
+        // If Supabase session exists but we don't have an Idara token, exchange it
+        if (session?.access_token && !token) {
+          try {
+            const res = await exchangeSupabaseSessionForIdara(session.access_token);
+            localStorage.setItem(TOKEN_KEY, res.token);
+            setToken(res.token);
+            setUser(res.user);
+            await refresh();
+          } catch (e) {
+            console.error('[AuthContext] Failed to exchange Supabase session:', e);
+          }
+        }
+      }
+    );
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSupabaseSession(session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [token, refresh]);
 
   const adoptToken = useCallback((jwt: string) => {
     localStorage.setItem(TOKEN_KEY, jwt);
@@ -494,7 +531,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [subscription, subscriptionExpired, user, trialActive]);
 
   const approvedModules: string[] = useMemo(() => {
+    // Super Admin Override: lahcenm534@gmail.com gets all modules regardless of subscription
     if (isAdmin) {
+      console.log('[AuthContext] Super Admin override - granting all modules to:', user?.email);
       return [...ALL_SAAS_MODULE_IDS];
     }
     const visaAdminOk = Boolean(user?.visa_unlock_approved);
@@ -512,7 +551,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       return visaAdminOk ? ["visa"] : [];
     }
-  }, [isApproved, subscription, subscriptionExpired, user, trialActive]);
+  }, [isApproved, subscription, subscriptionExpired, user, trialActive, isAdmin]);
 
   const value: AuthContextValue = {
     token,
@@ -536,6 +575,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     subscriptionCountdown,
     accountLocked,
     trialActive,
+    supabaseSession,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

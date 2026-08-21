@@ -105,6 +105,7 @@ export async function exportCurrentGridPdf(opts: {
   incidents: TlIncident[];
   t: (k: string) => string;
   fileBase: string;
+  userId?: string;
 }) {
   await exportTlErpPdf({
     direction: opts.direction,
@@ -115,5 +116,6 @@ export async function exportCurrentGridPdf(opts: {
     incidents: opts.incidents,
     t: opts.t,
     fileName: `${opts.fileBase}-${Date.now()}.pdf`,
+    userId: opts.userId,
   });
 }

@@ -102,7 +102,7 @@ async function fileToLogoDataUrl(file: File): Promise<string> {
 }
 
 export function MemberManagementModule() {
-  const { user, isApproved, approvedModules } = useAuth();
+  const { user, isApproved, approvedModules, isAdmin } = useAuth();
   const { t, isRtl, formatNumber, formatDateTime } = useI18n();
   const uid = user?.id ?? "guest";
   const [setup, setSetup] = useState<MemberMgmtSetup | null>(null);
@@ -316,7 +316,7 @@ export function MemberManagementModule() {
     );
   }
 
-  const membersAllowed = isApproved && approvedModules.includes("members");
+  const membersAllowed = isAdmin || (isApproved && approvedModules.includes("members"));
   if (!membersAllowed) {
     return (
       <div className="rounded-2xl border border-violet-500/30 p-8 text-center space-y-4 max-w-lg mx-auto">
@@ -926,6 +926,8 @@ export function MemberManagementModule() {
             <DialogDescription>{t("memberMgmt.ocrDialogDesc")}</DialogDescription>
           </DialogHeader>
           <OcrScanner
+            useGemini={true}
+            documentType="id_card"
             title={t("memberMgmt.ocrCardTitle")}
             description={t("memberMgmt.ocrCardDesc")}
             onExtracted={(text) => onOcrText(text)}

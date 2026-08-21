@@ -14,7 +14,7 @@ import { toast } from "sonner";
 
 const STORAGE = "idara_exam_grid";
 
-type ExamRow = { section: string; question: string; marks: string };
+type ExamRow = { id: string; section: string; question: string; marks: string };
 
 type ExamGenProps = { embedded?: boolean };
 
@@ -35,7 +35,7 @@ function applyGeneratedExamQuestions(text: string, prev: ExamRow[]): ExamRow[] {
     }
   }
   while (li < lines.length && next.length < 48) {
-    next.push({ section: defaultSection, question: lines[li].slice(0, 2000), marks: defaultMarks });
+    next.push({ id: crypto.randomUUID(), section: defaultSection, question: lines[li].slice(0, 2000), marks: defaultMarks });
     li++;
   }
   return next;
@@ -43,15 +43,15 @@ function applyGeneratedExamQuestions(text: string, prev: ExamRow[]): ExamRow[] {
 
 export function ExamGeneratorModule({ embedded = false }: ExamGenProps) {
   const { t, locale, isRtl } = useI18n();
-  const { isApproved, approvedModules, user } = useAuth();
-  const allowed = isApproved && approvedModules.includes("edu");
+  const { isApproved, approvedModules, user, isAdmin } = useAuth();
+  const allowed = isAdmin || (isApproved && approvedModules.includes("edu"));
   const uid = user?.id ?? "guest";
 
   const defaultRows = useMemo<ExamRow[]>(
     () => [
-      { section: "A", question: "", marks: "5" },
-      { section: "A", question: "", marks: "5" },
-      { section: "B", question: "", marks: "10" },
+      { id: crypto.randomUUID(), section: "A", question: "", marks: "5" },
+      { id: crypto.randomUUID(), section: "A", question: "", marks: "5" },
+      { id: crypto.randomUUID(), section: "B", question: "", marks: "10" },
     ],
     []
   );
@@ -108,7 +108,7 @@ export function ExamGeneratorModule({ embedded = false }: ExamGenProps) {
     });
   };
 
-  const addRow = () => setRows((prev) => [...prev, { section: "", question: "", marks: "" }]);
+  const addRow = () => setRows((prev) => [...prev, { id: crypto.randomUUID(), section: "", question: "", marks: "" }]);
 
   const exportPdf = async () => {
     const dir = isRtl ? "rtl" : "ltr";
@@ -129,6 +129,7 @@ export function ExamGeneratorModule({ embedded = false }: ExamGenProps) {
       lang: locale,
       mainTitle: t("brand"),
       dateLocale: locale,
+      userId: user?.id,
     });
   };
 
@@ -240,8 +241,8 @@ export function ExamGeneratorModule({ embedded = false }: ExamGenProps) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i} className="border-t border-slate-800">
+                {rows.map((r) => (
+                  <tr key={r.id} className="border-t border-slate-800">
                     <td className="p-2">
                       <Input
                         className="h-9 bg-slate-900/50 border-slate-700"

@@ -51,17 +51,16 @@ export function buildPdfTableHtml(
 
 export type ExportPdfOptions = {
   innerHtml: string;
-  sectionTitle: string;
-  fileName: string;
-  direction: "rtl" | "ltr";
+  sectionTitle?: string;
+  fileName?: string;
+  direction?: "rtl" | "ltr";
   lang?: string;
   mainTitle?: string;
   dateLocale?: string;
-  /** official = Kingdom header for legal/government only; platform/creative = vibrant report, no platform watermark */
-  documentMode?: "platform" | "official" | "creative";
+  documentMode?: "platform" | "official";
   officialKingdomLine?: string;
-  /** تجربة — علامة مائية على PDF */
   trialWatermark?: boolean;
+  userId?: string;
 };
 
 /** خيارات VIP: طباعة HTML من الخادم (خط عربي + شعار Base64) ثم PDF عبر Canvas */
@@ -115,7 +114,7 @@ export async function exportSmartAlIdaraPdfPreferBackend(opts: ExportPdfProOptio
   });
   if (backendHtml) {
     await downloadPdfFromFullHtmlDocument(backendHtml, { fileName });
-    pushDocumentActivity("pdf", `${sectionTitle || fileName}`.replace(/\.pdf$/i, ""));
+    pushDocumentActivity("pdf", `${sectionTitle || fileName}`.replace(/\.pdf$/i, ""), opts.userId);
     return;
   }
   await exportSmartAlIdaraPdf(opts);
@@ -148,10 +147,11 @@ export async function exportSmartAlIdaraPdf(opts: ExportPdfOptions): Promise<voi
       ? buildOfficialDocumentFullHtml({
           innerHtml,
           sectionTitle,
+          mainTitle,
           direction,
           lang,
-          officialKingdomLine: officialKingdomLine.trim() || "المملكة المغربية",
-          dateLocale: dateLocale ?? lang,
+          dateLocale,
+          officialKingdomLine,
         })
       : buildPlatformReportFullHtml({
           innerHtml,
@@ -159,12 +159,12 @@ export async function exportSmartAlIdaraPdf(opts: ExportPdfOptions): Promise<voi
           mainTitle,
           direction,
           lang,
-          dateLocale: dateLocale ?? lang,
+          dateLocale,
           trialWatermark,
         });
 
   await downloadPdfFromFullHtmlDocument(full, { fileName });
-  pushDocumentActivity("pdf", `${sectionTitle || fileName}`.replace(/\.pdf$/i, ""));
+  pushDocumentActivity("pdf", `${sectionTitle || fileName}`.replace(/\.pdf$/i, ""), opts.userId);
 }
 
 export async function exportElementToPdf(

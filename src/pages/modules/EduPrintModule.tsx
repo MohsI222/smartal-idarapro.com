@@ -12,8 +12,8 @@ import { Lock } from "lucide-react";
 
 export function EduPrintModule() {
   const { t, isRtl, locale } = useI18n();
-  const { isApproved, approvedModules } = useAuth();
-  const allowed = isApproved && approvedModules.includes("edu_print");
+  const { isApproved, approvedModules, isAdmin } = useAuth();
+  const allowed = isAdmin || (isApproved && approvedModules.includes("edu_print"));
   const [logoUrl, setLogoUrl] = useState("");
   const [institution, setInstitution] = useState("");
   const [examTitle, setExamTitle] = useState("");

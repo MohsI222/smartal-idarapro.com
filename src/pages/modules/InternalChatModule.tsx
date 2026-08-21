@@ -19,8 +19,8 @@ type Msg = {
 
 export function InternalChatModule() {
   const { t } = useI18n();
-  const { user, token, isApproved, approvedModules } = useAuth();
-  const allowed = isApproved && approvedModules.includes("chat");
+  const { user, token, isApproved, approvedModules, isAdmin } = useAuth();
+  const allowed = isAdmin || (isApproved && approvedModules.includes("chat"));
   const [messages, setMessages] = useState<Msg[]>([]);
   const [draft, setDraft] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
@@ -169,7 +169,10 @@ export function InternalChatModule() {
                 type="file"
                 accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.zip,image/*"
                 className="hidden"
-                onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  setAttachment(e.target.files?.[0] ?? null);
+                  e.target.value = "";
+                }}
               />
               <Button type="button" variant="secondary" className="gap-2 text-xs px-3 py-2">
                 <Paperclip className="size-4" />

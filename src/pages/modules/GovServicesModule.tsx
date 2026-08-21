@@ -185,8 +185,8 @@ const GATEWAY_TRAVEL: GatewayTile[] = [
 
 export function GovServicesModule() {
   const { t } = useI18n();
-  const { isApproved, approvedModules } = useAuth();
-  const allowed = isApproved && approvedModules.includes("gov");
+  const { isApproved, approvedModules, isAdmin } = useAuth();
+  const allowed = isAdmin || (isApproved && approvedModules.includes("gov"));
 
   if (!allowed) {
     return (
