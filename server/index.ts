@@ -893,7 +893,7 @@ app.get("/api/me", authMiddleware, async (req, res) => {
 
 // Super Admin API endpoints to bypass RLS
 // These endpoints allow Super Admin to manage all data across all users
-app.get("/api/super-admin/inventory-products", authMiddleware, platformSettingsEditor, async (req, res) => {
+app.get("/api/super-admin/inventory-products", authMiddleware, platformSettingsEditor, async (_req, res) => {
   try {
     // Get all inventory products (bypass RLS)
     const products = await db
@@ -997,7 +997,7 @@ app.delete("/api/super-admin/inventory-products/:id", authMiddleware, platformSe
   }
 });
 
-app.get("/api/super-admin/hr-employees", authMiddleware, platformSettingsEditor, async (req, res) => {
+app.get("/api/super-admin/hr-employees", authMiddleware, platformSettingsEditor, async (_req, res) => {
   try {
     // Get all HR employees (bypass RLS)
     const employees = await db
@@ -1070,7 +1070,7 @@ app.delete("/api/super-admin/hr-employees/:id", authMiddleware, platformSettings
   }
 });
 
-app.get("/api/super-admin/hr-absence-records", authMiddleware, platformSettingsEditor, async (req, res) => {
+app.get("/api/super-admin/hr-absence-records", authMiddleware, platformSettingsEditor, async (_req, res) => {
   try {
     // Get all HR absence records (bypass RLS)
     const records = await db
@@ -1119,7 +1119,7 @@ app.delete("/api/super-admin/hr-absence-records/:id", authMiddleware, platformSe
   }
 });
 
-app.get("/api/super-admin/shift-reports", authMiddleware, platformSettingsEditor, async (req, res) => {
+app.get("/api/super-admin/shift-reports", authMiddleware, platformSettingsEditor, async (_req, res) => {
   try {
     // Get all shift reports (bypass RLS)
     const reports = await db
@@ -4811,7 +4811,7 @@ app.post("/api/inventory/products/batch", authMiddleware, async (req, res) => {
             existingId,
             userId
           );
-          updatedIds.push(existingId);
+          if (existingId) updatedIds.push(existingId);
         } else {
           // Insert new product
           const id = randomUUID();

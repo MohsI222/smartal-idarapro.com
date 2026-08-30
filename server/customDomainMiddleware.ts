@@ -51,7 +51,7 @@ function normalizeHostname(hostname: string): string {
  */
 export async function customDomainMiddleware(
   req: CustomDomainRequest,
-  res: Response,
+  _res: Response,
   next: NextFunction
 ): Promise<void> {
   const host = req.headers.host;
