@@ -30,7 +30,7 @@ import { getPublicOrigin } from "@/lib/publicOrigin";
 import { cn } from "@/lib/utils";
 
 export function TransportLogisticsAdmin() {
-  const { token, approvedModules } = useAuth();
+  const { token, approvedModules, user } = useAuth();
   const { t, isRtl, locale } = useI18n();
   const [workers, setWorkers] = useState<TlWorker[]>([]);
   const [incidents, setIncidents] = useState<TlIncident[]>([]);
@@ -267,12 +267,15 @@ export function TransportLogisticsAdmin() {
     if (!token) return;
     setPdfBusy(true);
     try {
+      console.log("[PDF Export] Starting export...");
       const inc = await tlIncidents(token);
+      console.log("[PDF Export] Incidents loaded:", inc.incidents.length);
       const byDept = TL_DEPT_SLUGS.map((slug) => ({
         slug,
         vehicles: deptVehicles[slug] ?? [],
         ops: deptOps[slug] ?? [],
       }));
+      console.log("[PDF Export] Department data:", byDept);
       await exportTlErpPdfByDepartment({
         direction: isRtl ? "rtl" : "ltr",
         lang: locale,
@@ -284,7 +287,8 @@ export function TransportLogisticsAdmin() {
         userId: user?.id,
       });
       toast.success(t("tl.pdfDone"));
-    } catch {
+    } catch (error) {
+      console.error("[PDF Export] Error:", error);
       toast.error(t("tl.pdfErr"));
     } finally {
       setPdfBusy(false);

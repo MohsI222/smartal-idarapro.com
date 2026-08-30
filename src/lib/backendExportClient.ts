@@ -121,10 +121,10 @@ export async function postBackendLegalDocx(payload: unknown, fileName: string): 
 }
 
 export type BackendPrintHtmlBody = {
-  direction: "rtl" | "ltr";
-  lang: string;
-  kingdomLine: string;
-  sectionTitle: string;
+  direction?: "rtl" | "ltr";
+  lang?: string;
+  kingdomLine?: string;
+  sectionTitle?: string;
   mainTitle?: string;
   innerHtml: string;
   mode?: "official" | "platform" | "creative";
@@ -132,9 +132,10 @@ export type BackendPrintHtmlBody = {
 };
 
 /** يجلب HTML كاملاً من الخادم (خطوط/شعار مضمّنة) — للتحويل إلى PDF عبر Canvas محلياً */
-export async function fetchBackendPrintHtml(body: BackendPrintHtmlBody): Promise<string | null> {
-  const token = getStoredAuthToken();
+export async function fetchBackendPrintHtml(opts: BackendPrintHtmlBody): Promise<string | null> {
+  const token = localStorage.getItem(TOKEN_KEY);
   if (!token) return null;
+
   try {
     const res = await fetch("/api/backend/print-html", {
       method: "POST",
@@ -142,12 +143,18 @@ export async function fetchBackendPrintHtml(body: BackendPrintHtmlBody): Promise
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(opts),
     });
-    if (!res.ok) return null;
+
+    if (!res.ok) {
+      console.error("[fetchBackendPrintHtml] Server error:", res.status, res.statusText);
+      return null;
+    }
+
     const data = (await res.json()) as { html?: string };
-    return data.html?.trim() ? data.html : null;
-  } catch {
+    return data.html ?? null;
+  } catch (error) {
+    console.error("[fetchBackendPrintHtml] Network error:", error);
     return null;
   }
 }

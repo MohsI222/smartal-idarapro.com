@@ -102,21 +102,30 @@ export async function exportSmartAlIdaraPdfPreferBackend(opts: ExportPdfProOptio
             : "SMART AL IDARA PRO — TRIAL VERSION — Legally invalid for official filing or use until you upgrade to a paid plan"
       )}</p>`
       : "";
-  const backendHtml = await fetchBackendPrintHtml({
-    direction,
-    lang: lang || "ar",
-    kingdomLine: officialKingdomLine.trim() || "المملكة المغربية",
-    sectionTitle,
-    mainTitle: mode === "official" ? undefined : mainTitle,
-    innerHtml: wmNote + (innerHtmlForBackend ?? innerHtml),
-    mode,
-    logoDataUrl: logoDataUrl?.startsWith("data:image") ? logoDataUrl : undefined,
-  });
-  if (backendHtml) {
-    await downloadPdfFromFullHtmlDocument(backendHtml, { fileName });
-    pushDocumentActivity("pdf", `${sectionTitle || fileName}`.replace(/\.pdf$/i, ""), opts.userId);
-    return;
+  
+  try {
+    const backendHtml = await fetchBackendPrintHtml({
+      direction,
+      lang: lang || "ar",
+      kingdomLine: officialKingdomLine.trim() || "المملكة المغربية",
+      sectionTitle,
+      mainTitle: mode === "official" ? undefined : mainTitle,
+      innerHtml: wmNote + (innerHtmlForBackend ?? innerHtml),
+      mode,
+      logoDataUrl: logoDataUrl?.startsWith("data:image") ? logoDataUrl : undefined,
+    });
+    if (backendHtml) {
+      await downloadPdfFromFullHtmlDocument(backendHtml, { fileName });
+      const token = typeof window !== "undefined" ? localStorage.getItem("idara_token") : null;
+      if (token) {
+        pushDocumentActivity("pdf", `${sectionTitle || fileName}`.replace(/\.pdf$/i, ""), token);
+      }
+      return;
+    }
+  } catch (error) {
+    console.error("[PDF Export] Backend print HTML failed, using fallback:", error);
   }
+  
   await exportSmartAlIdaraPdf(opts);
 }
 

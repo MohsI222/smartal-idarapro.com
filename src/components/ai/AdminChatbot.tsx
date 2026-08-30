@@ -19,8 +19,24 @@ interface Message {
 }
 
 export function AdminChatbot() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { t, locale } = useI18n();
+
+  // Restrict to super-admin only
+  if (user?.role !== "superadmin") {
+    return (
+      <Card className="border-slate-800 bg-[#0a1628]/90 w-full max-w-4xl mx-auto">
+        <CardContent className="p-8 text-center">
+          <Sparkles className="size-12 text-slate-600 mx-auto mb-4" />
+          <p className="text-slate-400">
+            {locale.startsWith("ar")
+              ? "هذه الميزة متاحة للمشرف العام فقط"
+              : "This feature is available for super-admin only"}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",

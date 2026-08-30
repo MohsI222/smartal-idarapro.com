@@ -96,7 +96,7 @@ export function TlDepartmentPage() {
   const [search] = useSearchParams();
   const magicParam = search.get("magic");
   const pwaInvite = search.get("pwa") === "1";
-  const { token, approvedModules } = useAuth();
+  const { token, approvedModules, user } = useAuth();
   const { t, isRtl, locale } = useI18n();
   const { install, canNativeInstall, installed } = usePwaInstall();
   const [workers, setWorkers] = useState<TlWorker[]>([]);

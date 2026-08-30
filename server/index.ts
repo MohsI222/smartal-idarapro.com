@@ -1083,6 +1083,42 @@ app.get("/api/super-admin/hr-absence-records", authMiddleware, platformSettingsE
   }
 });
 
+app.post("/api/super-admin/hr-absence-records", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { employee_id, from_date, to_date, reason, return_date, user_id } = req.body;
+    
+    if (!employee_id || !from_date || !to_date || !reason) {
+      res.status(400).json({ error: "Missing required fields: employee_id, from_date, to_date, reason" });
+      return;
+    }
+    
+    const id = randomUUID();
+    
+    await db.prepare(`
+      INSERT INTO hr_absence_records (id, employee_id, from_date, to_date, reason, return_date, user_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, employee_id, from_date, to_date, reason, return_date || null, user_id || null, new Date().toISOString());
+    
+    res.json({ id, employee_id, from_date, to_date, reason, return_date, user_id });
+  } catch (error) {
+    console.error("[Super Admin] Error creating HR absence record:", error);
+    res.status(500).json({ error: "Failed to create HR absence record" });
+  }
+});
+
+app.delete("/api/super-admin/hr-absence-records/:id", authMiddleware, platformSettingsEditor, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await db.prepare(`DELETE FROM hr_absence_records WHERE id = ?`).run(id);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error("[Super Admin] Error deleting HR absence record:", error);
+    res.status(500).json({ error: "Failed to delete HR absence record" });
+  }
+});
+
 app.get("/api/super-admin/shift-reports", authMiddleware, platformSettingsEditor, async (req, res) => {
   try {
     // Get all shift reports (bypass RLS)

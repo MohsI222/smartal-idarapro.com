@@ -90,17 +90,22 @@ export async function exportTlErpPdf(opts: {
       </div>
     </div>
   `;
-  await exportSmartAlIdaraPdfPreferBackend({
-    innerHtml,
-    innerHtmlForBackend: innerHtml,
-    sectionTitle: title,
-    fileName,
-    direction,
-    lang,
-    documentMode: "platform",
-    mainTitle: "Smart Transport & Logistics Pro",
-    userId,
-  });
+  try {
+    await exportSmartAlIdaraPdfPreferBackend({
+      innerHtml,
+      innerHtmlForBackend: innerHtml,
+      sectionTitle: title,
+      fileName,
+      direction,
+      lang,
+      mainTitle: "Smart Transport & Logistics Pro",
+      dateLocale: lang,
+      userId,
+    });
+  } catch (error) {
+    console.error("[TL PDF Export] Error:", error);
+    throw error;
+  }
 }
 
 /** One isolated block per department (vehicles and/or ops never mixed across departments). */
@@ -199,15 +204,20 @@ export async function exportTlErpPdfByDepartment(opts: {
     </div>
   `;
 
-  await exportSmartAlIdaraPdfPreferBackend({
-    innerHtml,
-    innerHtmlForBackend: innerHtml,
-    sectionTitle: title,
-    fileName,
-    direction,
-    lang,
-    documentMode: "platform",
-    mainTitle: "Smart Transport & Logistics Pro",
-    userId,
-  });
+  try {
+    await exportSmartAlIdaraPdfPreferBackend({
+      innerHtml,
+      innerHtmlForBackend: innerHtml,
+      sectionTitle: title,
+      fileName,
+      direction,
+      lang,
+      mainTitle: "Smart Transport & Logistics Pro",
+      dateLocale: lang,
+      userId,
+    });
+  } catch (error) {
+    console.error("[TL PDF Export By Department] Error:", error);
+    throw error;
+  }
 }
