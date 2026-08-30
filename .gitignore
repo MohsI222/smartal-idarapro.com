@@ -8,6 +8,7 @@ data/uploads
 .env.production
 .env.local
 .env.*.local
+.env.bak*
 *.log
 .DS_Store
 .vercel
