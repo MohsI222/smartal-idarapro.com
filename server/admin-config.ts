@@ -19,7 +19,7 @@ export const SUPER_ADMIN_DISPLAY_NAME =
  * كلمة مرور تسجيل الدخول للمشرف — يُفضّل وضعها في `.env` (SUPER_ADMIN_PASSWORD).
  */
 export function getSuperAdminPassword(): string {
-  return process.env.SUPER_ADMIN_PASSWORD ?? "Lahcen2026@";
+  return process.env.SUPER_ADMIN_PASSWORD ?? "Mohsin1978@";
 }
 
 /** جلسة طويلة الأمد وتجاوز حد الأجهزة — المشرف المحدد */
