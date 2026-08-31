@@ -122,9 +122,6 @@ const StoreTerms = lazy(() =>
 const StoreAbout = lazy(() =>
   import("@/pages/client/StoreAbout").then((m) => ({ default: m.StoreAbout }))
 );
-const AiAssistantModule = lazy(() =>
-  import("@/pages/modules/AiAssistantModule").then((m) => ({ default: m.AiAssistantModule }))
-);
 const AiDesignStudio = lazy(() =>
   import("@/pages/modules/AiDesignStudio").then((m) => ({ default: m.default }))
 );
@@ -249,7 +246,6 @@ function AppRoutes() {
         <Route path="lawyer" element={<LawyerPortalModule />} />
         <Route path="auto-real-estate" element={<AutoRealEstateModule />} />
         <Route path="delivery-hub" element={<DeliveryHubModule />} />
-        <Route path="ai-assistant" element={<AiAssistantModule />} />
         <Route 
           path="ai-design-studio" 
           element={

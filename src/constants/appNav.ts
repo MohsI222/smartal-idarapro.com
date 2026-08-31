@@ -17,7 +17,6 @@ import {
   Users,
   Video,
   LifeBuoy,
-  Bot,
   Truck,
   type LucideIcon,
 } from "lucide-react";
@@ -54,7 +53,6 @@ export const PLATFORM_NAV: AppNavItem[] = [
   { to: "/app/acc", icon: Calculator, labelKey: "nav.financeMgmt" },
   { to: "/app/edu", icon: GraduationCap, labelKey: "nav.smartEducation" },
   { to: "/app/edu-print", icon: FileText, labelKey: "nav.eduPrint" },
-  { to: "/app/ai-assistant", icon: Bot, labelKey: "nav.aiAssistant", emphasize: true, permission: "can_access_ai" },
   { to: "/app/techauto", icon: Car, labelKey: "nav.techAuto" },
   { to: "/app/tools", icon: LayoutGrid, labelKey: "nav.businessTools" },
   { to: "/app/visa", icon: Radar, labelKey: "nav.visaRadar" },

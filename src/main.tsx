@@ -95,6 +95,12 @@ function showFatalOverlay(msg: string) {
 
 function showNonFatalBanner(msg: string) {
   try {
+    // لا تظهر الرسالة للمستخدمين العاديين - فقط للمشرفين
+    const userStr = localStorage.getItem("idara_user");
+    if (!userStr) return;
+    const user = JSON.parse(userStr);
+    if (user?.role !== "superadmin") return;
+
     if (document.getElementById("idara-nonfatal-banner")) return;
     const b = document.createElement("div");
     b.id = "idara-nonfatal-banner";

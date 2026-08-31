@@ -1,11 +1,7 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AdminChatbot } from "@/components/ai/AdminChatbot";
 import { DocumentSummarizer } from "@/components/ai/DocumentSummarizer";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/context/AuthContext";
 import { Lock } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
 
 export function AiAssistantModule() {
   const { t, locale } = useI18n();
@@ -26,35 +22,18 @@ export function AiAssistantModule() {
       <div className="max-w-6xl mx-auto">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold text-cyan-400 mb-2">
-            {t("ai.chatbot.title")}
+            {locale === "ar-MA" || locale === "ar"
+              ? "التلخيص الآلي للوثائق"
+              : "Document Summarization"}
           </h1>
           <p className="text-slate-400">
-            {t("ai.chatbot.subtitle")}
+            {locale === "ar-MA" || locale === "ar"
+              ? "أداة ذكية لتلخيص الوثائق والملفات PDF"
+              : "Smart tool for summarizing documents and PDF files"}
           </p>
         </div>
 
-        <Tabs defaultValue="chatbot" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 bg-slate-900/50 border border-slate-800">
-            <TabsTrigger value="chatbot" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
-              {locale === "ar-MA" || locale === "ar"
-                ? "المساعد الإداري"
-                : "Administrative Assistant"}
-            </TabsTrigger>
-            <TabsTrigger value="summarizer" className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-400">
-              {locale === "ar-MA" || locale === "ar"
-                ? "تلخيص الوثائق"
-                : "Document Summarization"}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="chatbot" className="mt-6">
-            <AdminChatbot />
-          </TabsContent>
-
-          <TabsContent value="summarizer" className="mt-6">
-            <DocumentSummarizer />
-          </TabsContent>
-        </Tabs>
+        <DocumentSummarizer />
       </div>
     </div>
   );

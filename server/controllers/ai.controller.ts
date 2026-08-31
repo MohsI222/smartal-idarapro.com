@@ -1,44 +1,42 @@
 import { Request, Response, Router } from 'express';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
 import sharp from 'sharp';
 
 const aiRouter = Router();
 
-const SYSTEM_INSTRUCTION = `أنْتَ المُسَاعِد الذَّكِي المُعْتَمَد لِمَنَصَّة "سْمَارْت الإِدَارَة بْرُو". أَجِب بِاحْتِرَافِيَّة عَالِيَّة وَتَنْظِيم إِدَارِي.`;
+const SYSTEM_INSTRUCTION = `أنْتَ المُسَاعِد الذَّكِي المُعْتَمَد لِمَنَصَّة "سْمَارْت الإِدَارَة بْرُو". أَجِب بِاحْتِرَافِيَّة عَالِيَّة وَتَنْظِيم إِدَارِي.
+
+IMPORTANT: Respond in the same language as the user's message:
+- If user writes in Arabic (العربية), respond in Arabic
+- If user writes in French (Français), respond in French  
+- If user writes in Spanish (Español), respond in Spanish
+- If user writes in English, respond in English
+
+You are a multilingual assistant that can communicate fluently in Arabic, French, Spanish, and English.`;
 
 interface ChatBody { prompt?: string; message?: string; locale?: string; }
 interface ImageBody { prompt: string; }
 
 aiRouter.post('/chat', async (req: Request<{}, {}, ChatBody>, res: Response): Promise<void> => {
   try {
-    const { prompt, message } = req.body;
-    
-    // قبول كلا الصيغتين: prompt أو message
+    const { prompt, message, locale = 'ar-MA' } = req.body;
     const actualPrompt = prompt || message;
     
-    console.log('Chat Request Body:', req.body);
-    console.log('Received prompt:', actualPrompt);
-    
     if (!actualPrompt || actualPrompt.trim() === '') {
-      console.log('Prompt validation failed - prompt is empty or undefined');
       res.status(400).json({ success: false, error: 'الرجاء كتابة السؤال' });
       return;
     }
 
-    // جلب كاع السوارت الممكنة من الـ Headers وتنظيفها
+    // جلب المفاتيح من الـ Headers
     const rawGroq = (req.headers['x-groq-api-key'] as string || '').trim();
     const rawGemini = (req.headers['x-gemini-api-key'] as string || '').trim();
     const rawOpenai = (req.headers['x-openai-api-key'] as string || '').trim();
 
-    // التحقق من صحة كل مفتاح (تجنب النصوص الفارغة أو النقط)
     const isGroqValid = rawGroq !== '' && rawGroq !== 'undefined' && !rawGroq.includes('...') && rawGroq.length > 15;
     const isGeminiValid = rawGemini !== '' && rawGemini !== 'undefined' && !rawGemini.includes('...') && rawGemini.length > 15;
     const isOpenaiValid = rawOpenai !== '' && rawOpenai !== 'undefined' && !rawOpenai.includes('...') && rawOpenai.length > 15;
 
-    // إذا كان هناك مفتاح صحيح في headers، استخدمه مباشرة
     if (isGroqValid) {
-      console.log("-> Running Direct GROQ Route (from header)");
       const response = await axios.post('https://api.groq.com/v1/chat/completions', {
         model: 'llama3-8b-8192',
         messages: [
@@ -46,27 +44,23 @@ aiRouter.post('/chat', async (req: Request<{}, {}, ChatBody>, res: Response): Pr
           { role: 'user', content: actualPrompt }
         ]
       }, {
-        headers: { 
-          'Authorization': `Bearer ${rawGroq}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Authorization': `Bearer ${rawGroq}`, 'Content-Type': 'application/json' },
         timeout: 20000
       });
-      res.json({ success: true, text: response.data.choices[0].message.content, provider: 'Groq (User Key)' });
+      res.json({ reply: response.data.choices[0].message.content, provider: 'Groq' });
       return;
     }
 
     if (isGeminiValid) {
-      console.log("-> Running Direct Gemini Route (from header)");
+      const { GoogleGenerativeAI } = await import('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(rawGemini);
       const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction: SYSTEM_INSTRUCTION });
       const response = await model.generateContent(actualPrompt);
-      res.json({ success: true, text: response.response.text(), provider: 'Gemini (User Key)' });
+      res.json({ reply: response.response.text(), provider: 'Gemini' });
       return;
     }
 
     if (isOpenaiValid) {
-      console.log("-> Running Direct OpenAI Route (from header)");
       const response = await axios.post('https://api.openai.com/v1/chat/completions', {
         model: 'gpt-4o-mini',
         messages: [
@@ -77,59 +71,61 @@ aiRouter.post('/chat', async (req: Request<{}, {}, ChatBody>, res: Response): Pr
         headers: { 'Authorization': `Bearer ${rawOpenai}`, 'Content-Type': 'application/json' },
         timeout: 15000
       });
-      res.json({ success: true, text: response.data.choices[0].message.content, provider: 'OpenAI (User Key)' });
+      res.json({ reply: response.data.choices[0].message.content, provider: 'OpenAI' });
       return;
     }
 
-    // إذا لم يكن هناك مفتاح في headers، استخدم المفتاح العام من البيئة
-    const envGeminiKey = process.env.GEMINI_API_KEY?.trim();
-    if (envGeminiKey && envGeminiKey.length > 15) {
-      console.log("-> Using Public Gemini API Key from environment");
-      try {
-        const genAI = new GoogleGenerativeAI(envGeminiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', systemInstruction: SYSTEM_INSTRUCTION });
-        const response = await model.generateContent(actualPrompt);
-        res.json({ success: true, text: response.response.text(), provider: 'Gemini (Public)' });
-        return;
-      } catch (envError: any) {
-        console.error('Environment Gemini Key Error:', envError.response?.data || envError.message);
-        // إذا فشل المفتاح العام، تابع للـ fallback
-      }
-    }
-
-    // إذا لم يكن هناك مفتاح في headers ولا مفتاح عام صالح، حاول من قاعدة البيانات (إذا كان هناك userId)
-    const userId = (req as any).userId;
-    if (userId) {
-      // هذا يتطلب db instance، لكن controller لا يملكه حالياً
-      // لذا سنرجع خطأ يطلب من المستخدم إدخال مفتاح
-      console.log("No API key in headers, userId exists but DB not accessible in controller");
-      res.status(503).json({ 
-        success: false, 
-        error: 'يرجى إدخال مفتاح API في الإعدادات. يمكن استخدام مفاتيح Gemini (AIza...), Groq (gsk_), أو OpenAI (sk-).' 
+    // Fallback مجاني - استخدام خدمة بسيطة
+    try {
+      // كشف اللغة من الرسالة
+      const isArabic = /[\u0600-\u06FF]/.test(actualPrompt);
+      const isFrench = /[àâäéèêëïîôùûüÿç]/i.test(actualPrompt);
+      const isSpanish = /[áéíóúüñ¿¡]/i.test(actualPrompt);
+      
+      let languageInstruction = "Respond in English.";
+      if (isArabic) languageInstruction = "أجب باللغة العربية فقط. Respond in Arabic only.";
+      else if (isFrench) languageInstruction = "Répondez en français uniquement. Respond in French only.";
+      else if (isSpanish) languageInstruction = "Responde en español solamente. Respond in Spanish only.";
+      
+      const fallbackResponse = await axios.post('https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2', {
+        inputs: `<s>[INST] ${SYSTEM_INSTRUCTION}\n\n${languageInstruction}\n\nUser message: ${actualPrompt} [/INST]`,
+        parameters: {
+          max_new_tokens: 500,
+          temperature: 0.7
+        }
+      }, {
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
       });
+      const reply = fallbackResponse.data?.[0]?.generated_text || fallbackResponse.data;
+      const cleanReply = reply?.replace(/<s>\[INST\].*?\[\/INST\]/gs, '').trim() || reply;
+      res.json({ reply: cleanReply, provider: 'HuggingFace' });
       return;
+    } catch (hfError) {
+      console.log('HuggingFace failed, trying alternative...');
     }
 
-    // إذا لم يكن هناك userId ولا مفتاح، استخدم fallback مجاني
-    console.log("-> Running Anonymous Free Fallback");
-    const fallbackResponse = await axios.post('https://text.pollinations.ai/', {
-      messages: [
-        { role: 'system', content: SYSTEM_INSTRUCTION },
-        { role: 'user', content: actualPrompt }
-      ]
-    }, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 20000
-    });
-
-    res.json({ success: true, text: fallbackResponse.data, provider: 'SmartPro Free AI' });
+    // إذا فشل كل شيء، استخدم رد بسيط بناء على لغة الرسالة
+    const isArabic = /[\u0600-\u06FF]/.test(actualPrompt);
+    const isFrench = /[àâäéèêëïîôùûüÿç]|bonjour|comment|merci|s'il|vous|je suis|c'est/i.test(actualPrompt);
+    const isSpanish = /[áéíóúüñ¿¡]|hola|gracias|por favor|buenos|días|noches|cómo|estás/i.test(actualPrompt);
+    
+    let offlineReply = 'Hello! I am your AI assistant. How can I help you today?';
+    if (isArabic) {
+      offlineReply = 'أهلاً بك! أنا مساعدك الذكي. كيف يمكنني مساعدتك اليوم؟';
+    } else if (isFrench) {
+      offlineReply = 'Bonjour! Je suis votre assistant IA. Comment puis-je vous aider aujourd\'hui?';
+    } else if (isSpanish) {
+      offlineReply = '¡Hola! Soy tu asistente de IA. ¿Cómo puedo ayudarte hoy?';
+    }
+    
+    res.json({ reply: offlineReply, provider: 'Offline' });
 
   } catch (error: any) {
-    console.error('AI Global Route Error:', error.response?.data || error.message);
-    res.status(200).json({ 
-      success: false, 
-      error: 'فشل في الاتصال بمزود الذكاء الاصطناعي. يرجى إدخال مفتاح API صحيح في الإعدادات.' 
-    });
+    console.error('AI Chat Error:', error.response?.data || error.message);
+    res.status(500).json({ error: 'فشل في الاتصال بمزود الذكاء الاصطناعي' });
   }
 });
 

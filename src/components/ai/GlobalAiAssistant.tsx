@@ -105,6 +105,7 @@ export function GlobalAiAssistant({
       if (context) {
         enhancedPrompt += `Context: ${context}\n\n`;
       }
+      enhancedPrompt += `IMPORTANT: Respond in the same language as the user's message. If the user writes in Arabic, respond in Arabic. If in French, respond in French. If in Spanish, respond in Spanish. If in English, respond in English.\n\n`;
       enhancedPrompt += `User: ${userMessage}`;
       
       if (availableFields.length > 0) {
