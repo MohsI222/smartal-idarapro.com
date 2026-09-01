@@ -37,7 +37,7 @@ export function getSupabaseClient(): SupabaseClient | null {
     auth: {
       flowType: "pkce",
       autoRefreshToken: true,
-      persistSession: true,
+      persistSession: false, // Disable session persistence to prevent session leaks between browser tabs
       detectSessionInUrl: true,
       // Increase lock timeout to prevent "Lock was not released within 5000ms" warnings
       lockTimeout: 10000,
