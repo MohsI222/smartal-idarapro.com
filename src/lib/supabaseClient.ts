@@ -27,19 +27,13 @@ if (import.meta.env.DEV) {
   }
 }
 
-// Singleton Supabase client instance to prevent auth lock timeouts
-let supabaseInstance: SupabaseClient | null = null;
-
+// Create a fresh Supabase client instance each time to ensure session isolation
+// This prevents auth state leaks between different users/sessions
 export function getSupabaseClient(): SupabaseClient | null {
   if (!isSupabaseConfigured) return null;
   
-  // Return existing singleton instance if available
-  if (supabaseInstance) {
-    return supabaseInstance;
-  }
-  
   // Create new instance with auth configuration to prevent lock timeouts
-  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
+  return createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       flowType: "pkce",
       autoRefreshToken: true,
@@ -54,8 +48,6 @@ export function getSupabaseClient(): SupabaseClient | null {
       },
     },
   });
-  
-  return supabaseInstance;
 }
 
 // Export as named export for backward compatibility

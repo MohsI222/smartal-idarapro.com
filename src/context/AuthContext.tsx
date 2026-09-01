@@ -224,7 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [token, tryAdminBootstrap]);
+  }, [token]);
 
   // Track Supabase auth state changes
   useEffect(() => {

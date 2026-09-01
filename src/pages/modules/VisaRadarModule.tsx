@@ -223,7 +223,7 @@ export function VisaRadarModule() {
   const prevStatusSnapRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 1000);
+    const id = window.setInterval(() => setNow(new Date()), 5000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -371,7 +371,7 @@ export function VisaRadarModule() {
     if (!autoWatch || !token || !visaUnlocked) return;
     const id = window.setInterval(() => {
       void loadStatus({ compareForAlerts: true });
-    }, 1000);
+    }, 5000);
     return () => window.clearInterval(id);
   }, [autoWatch, loadStatus, token, visaUnlocked]);
 
