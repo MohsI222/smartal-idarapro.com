@@ -162,24 +162,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const TOKEN_KEY = "idara_token";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => {
-    // Clear any potentially stale token on app initialization to prevent session leaks
-    const stored = localStorage.getItem(TOKEN_KEY);
-    if (stored) {
-      try {
-        // Validate token format before using it
-        const parts = stored.split('.');
-        if (parts.length !== 3) {
-          localStorage.removeItem(TOKEN_KEY);
-          return null;
-        }
-      } catch {
-        localStorage.removeItem(TOKEN_KEY);
-        return null;
-      }
-    }
-    return stored;
-  });
+  const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionRow | null>(null);
   const [devices, setDevices] = useState<MeResponse["devices"]>([]);
@@ -187,6 +170,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [supabaseSession, setSupabaseSession] = useState<any>(null);
+
+  // Check localStorage on mount only once for session isolation
+  useEffect(() => {
+    const stored = localStorage.getItem(TOKEN_KEY);
+    if (stored) {
+      try {
+        // Validate token format before using it
+        const parts = stored.split('.');
+        if (parts.length === 3) {
+          setToken(stored);
+        } else {
+          localStorage.removeItem(TOKEN_KEY);
+        }
+      } catch {
+        localStorage.removeItem(TOKEN_KEY);
+      }
+    }
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 30_000);
