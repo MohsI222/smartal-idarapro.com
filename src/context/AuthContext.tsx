@@ -162,14 +162,30 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const TOKEN_KEY = "idara_token";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
+  const [token, setToken] = useState<string | null>(() => {
+    // Clear any potentially stale token on app initialization to prevent session leaks
+    const stored = localStorage.getItem(TOKEN_KEY);
+    if (stored) {
+      try {
+        // Validate token format before using it
+        const parts = stored.split('.');
+        if (parts.length !== 3) {
+          localStorage.removeItem(TOKEN_KEY);
+          return null;
+        }
+      } catch {
+        localStorage.removeItem(TOKEN_KEY);
+        return null;
+      }
+    }
+    return stored;
+  });
   const [user, setUser] = useState<User | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionRow | null>(null);
   const [devices, setDevices] = useState<MeResponse["devices"]>([]);
   const [maxDevices, setMaxDevices] = useState(3);
   const [loading, setLoading] = useState(true);
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const bootstrapTriedRef = useRef(false);
   const [supabaseSession, setSupabaseSession] = useState<any>(null);
 
   useEffect(() => {
