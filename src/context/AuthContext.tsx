@@ -160,8 +160,6 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const TOKEN_KEY = "idara_token";
-/** يفعّل محاولة تسجيل الدخول التلقائي للمشرف عند عدم وجود رمز */
-const AUTO_ADMIN_KEY = "idara_auto_admin";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
@@ -180,24 +178,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const tryAdminBootstrap = useCallback(async () => {
-    const k = import.meta.env.VITE_ADMIN_BOOTSTRAP_KEY as string | undefined;
-    if (!k || k.length < 16) return;
-    const allowAuto =
-      localStorage.getItem(AUTO_ADMIN_KEY) === "1" ||
-      import.meta.env.VITE_ADMIN_AUTO_LOGIN === "true";
-    if (!allowAuto) return;
-    try {
-      const r = await api<{ token: string; user: User }>("/auth/admin-bootstrap", {
-        method: "POST",
-        headers: { "X-Admin-Bootstrap": k },
-      });
-      localStorage.setItem(TOKEN_KEY, r.token);
-      localStorage.setItem(AUTO_ADMIN_KEY, "1");
-      setToken(r.token);
-      setUser(r.user);
-    } catch {
-      /* تجاهل — المفتاح غير مضبوط أو مرفوض */
-    }
+    // Disabled for security - no auto-login in production
+    return;
   }, []);
 
   const refresh = useCallback(async () => {
@@ -206,10 +188,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setSubscription(null);
       setDevices([]);
-      if (!bootstrapTriedRef.current) {
-        bootstrapTriedRef.current = true;
-        await tryAdminBootstrap();
-      }
       setLoading(false);
       return;
     }
@@ -219,9 +197,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSubscription(me.subscription);
       setDevices(me.devices);
       setMaxDevices(me.maxDevices);
-      if (me.user.role === "superadmin") {
-        localStorage.setItem(AUTO_ADMIN_KEY, "1");
-      }
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
         bootstrapTriedRef.current = false;
@@ -286,13 +261,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(TOKEN_KEY, res.token);
       setToken(res.token);
       setUser(res.user);
-      const primaryAdminSession =
-        res.user.role === "superadmin" ||
-        res.user.email?.toLowerCase() === PUBLIC_SUPER_ADMIN_EMAIL ||
-        res.user.name?.toUpperCase().includes("MOUTAOUAKIL");
-      if (primaryAdminSession) {
-        localStorage.setItem(AUTO_ADMIN_KEY, "1");
-      }
       await refresh();
     };
 
@@ -433,7 +401,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (supabase) {
       void supabase.auth.signOut();
     }
-    bootstrapTriedRef.current = false;
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setUser(null);
