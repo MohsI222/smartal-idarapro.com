@@ -1,0 +1,19 @@
+{
+  "name": "Quality Pro — Smart Al-Idara",
+  "short_name": "Quality",
+  "description": "Department PWA — Quality",
+  "id": "/dept/quality",
+  "start_url": "/dept/quality?pwa=1",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050a12",
+  "theme_color": "#8b5cf6",
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr",
+  "icons": [
+    { "src": "/pwa-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/pwa-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

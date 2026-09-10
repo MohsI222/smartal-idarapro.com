@@ -1,0 +1,317 @@
+import type { ReactNode } from "react";
+import { lazy, Suspense, useEffect } from "react";
+import { brandingCssVars } from "@/config/branding";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Toaster } from "sonner";
+import { I18nProvider, useI18n } from "@/i18n/I18nProvider";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { ThemeProvider } from "@/context/ThemeContext";
+import { PermissionsProvider } from "@/context/PermissionsContext";
+import { AppShell } from "@/components/layout/AppShell";
+import { OnlineStatusIndicator } from "@/components/OnlineStatusIndicator";
+import { SuperAdminAICopilot } from "@/components/superAdminAI/SuperAdminAICopilot";
+import { GlobalErrorBoundary } from "@/components/superAdminAI/GlobalErrorBoundary";
+import { Landing } from "@/pages/Landing";
+import { Login } from "@/pages/Login";
+import { Register } from "@/pages/Register";
+import { AuthCallback } from "@/pages/AuthCallback";
+import { DashboardHome } from "@/pages/DashboardHome";
+import { useGlobalKeyboardNavigation } from "./hooks/NavigationItem";
+
+const Pay = lazy(() => import("@/pages/Pay").then((m) => ({ default: m.Pay })));
+const SuperAdminDashboard = lazy(() =>
+  import("@/pages/SuperAdminDashboard").then((m) => ({ default: m.SuperAdminDashboard }))
+);
+const HrModule = lazy(() => import("@/pages/modules/HrModule").then((m) => ({ default: m.default })));
+const LawModule = lazy(() => import("@/pages/modules/LawModule").then((m) => ({ default: m.default })));
+const AccModule = lazy(() => import("@/pages/modules/AccModule").then((m) => ({ default: m.default })));
+const EduModule = lazy(() => import("@/pages/modules/EduModule").then((m) => ({ default: m.default })));
+const Reminders = lazy(() => import("@/pages/Reminders").then((m) => ({ default: m.Reminders })));
+const DevicesSettings = lazy(() =>
+  import("@/pages/DevicesSettings").then((m) => ({ default: m.DevicesSettings }))
+);
+const VisaRadarModule = lazy(() =>
+  import("@/pages/modules/VisaRadarModule").then((m) => ({ default: m.VisaRadarModule }))
+);
+const GovServicesModule = lazy(() =>
+  import("@/pages/modules/GovServicesModule").then((m) => ({ default: m.GovServicesModule }))
+);
+const EduPrintModule = lazy(() =>
+  import("@/pages/modules/EduPrintModule").then((m) => ({ default: m.EduPrintModule }))
+);
+const TechAutoModule = lazy(() =>
+  import("@/pages/modules/TechAutoModule").then((m) => ({ default: m.TechAutoModule }))
+);
+const InternalChatModule = lazy(() =>
+  import("@/pages/modules/InternalChatModule").then((m) => ({ default: m.InternalChatModule }))
+);
+const CorporateAcademyModule = lazy(() =>
+  import("@/pages/modules/CorporateAcademyModule").then((m) => ({ default: m.CorporateAcademyModule }))
+);
+const BusinessToolsModule = lazy(() =>
+  import("@/pages/modules/BusinessToolsModule").then((m) => ({ default: m.BusinessToolsModule }))
+);
+const InventoryPosModule = lazy(() =>
+  import("@/pages/modules/InventoryPosModule").then((m) => ({ default: m.InventoryPosModule }))
+);
+const CompanySetupModule = lazy(() =>
+  import("@/pages/modules/CompanySetupModule").then((m) => ({ default: m.CompanySetupModule }))
+);
+const MemberManagementModule = lazy(() =>
+  import("@/pages/modules/MemberManagementModule").then((m) => ({ default: m.MemberManagementModule }))
+);
+const AdminPlatformSettings = lazy(() =>
+  import("@/pages/AdminPlatformSettings").then((m) => ({ default: m.AdminPlatformSettings }))
+);
+const LegalTermsPage = lazy(() =>
+  import("@/pages/LegalTermsPage").then((m) => ({ default: m.LegalTermsPage }))
+);
+const SecurityPrivacyPage = lazy(() =>
+  import("@/pages/SecurityPrivacyPage").then((m) => ({ default: m.SecurityPrivacyPage }))
+);
+const CguPage = lazy(() => import("@/pages/CguPage").then((m) => ({ default: m.CguPage })));
+const TrustCharterPage = lazy(() =>
+  import("@/pages/TrustCharterPage").then((m) => ({ default: m.TrustCharterPage }))
+);
+const SubscriptionContractPage = lazy(() =>
+  import("@/pages/SubscriptionContractPage").then((m) => ({ default: m.SubscriptionContractPage }))
+);
+const TransportLogisticsHub = lazy(() =>
+  import("@/pages/modules/TransportLogisticsHub").then((m) => ({ default: m.TransportLogisticsHub }))
+);
+const TransportLogisticsAdmin = lazy(() =>
+  import("@/pages/modules/TransportLogisticsAdmin").then((m) => ({ default: m.TransportLogisticsAdmin }))
+);
+const TlDepartmentPage = lazy(() =>
+  import("@/pages/tl/TlDepartmentPage").then((m) => ({ default: m.TlDepartmentPage }))
+);
+const TlDeptLandingRedirect = lazy(() =>
+  import("@/pages/tl/TlDeptLandingRedirect").then((m) => ({ default: m.TlDeptLandingRedirect }))
+);
+const SupportPage = lazy(() => import("@/pages/SupportPage").then((m) => ({ default: m.SupportPage })));
+const LegalEditor = lazy(() =>
+  import("@/pages/modules/LegalEditor").then((m) => ({ default: m.LegalEditor }))
+);
+const LawyerPortalModule = lazy(() =>
+  import("@/pages/modules/LawyerPortalModule").then((m) => ({ default: m.LawyerPortalModule }))
+);
+const AutoRealEstateModule = lazy(() =>
+  import("@/pages/modules/AutoRealEstateModule").then((m) => ({ default: m.default }))
+);
+const DeliveryHubModule = lazy(() =>
+  import("@/pages/modules/DeliveryHubModule").then((m) => ({ default: m.DeliveryHubModule }))
+);
+const StoreDirectory = lazy(() =>
+  import("@/pages/client/StoreDirectory").then((m) => ({ default: m.StoreDirectory }))
+);
+const StoreFront = lazy(() =>
+  import("@/pages/client/StoreFront").then((m) => ({ default: m.StoreFront }))
+);
+const OrderStatus = lazy(() =>
+  import("@/pages/client/OrderStatus").then((m) => ({ default: m.OrderStatus }))
+);
+const StoreShippingPolicy = lazy(() =>
+  import("@/pages/client/StoreShippingPolicy").then((m) => ({ default: m.StoreShippingPolicy }))
+);
+const StoreReturnPolicy = lazy(() =>
+  import("@/pages/client/StoreReturnPolicy").then((m) => ({ default: m.StoreReturnPolicy }))
+);
+const StoreTerms = lazy(() =>
+  import("@/pages/client/StoreTerms").then((m) => ({ default: m.StoreTerms }))
+);
+const StoreAbout = lazy(() =>
+  import("@/pages/client/StoreAbout").then((m) => ({ default: m.StoreAbout }))
+);
+const AiDesignStudio = lazy(() =>
+  import("@/pages/modules/AiDesignStudio").then((m) => ({ default: m.default }))
+);
+const PosAgentApp = lazy(() =>
+  import("@/pages/PosAgentApp").then((m) => ({ default: m.PosAgentApp }))
+);
+
+function Protected({ children }: { children: ReactNode }) {
+  const { token, loading, user } = useAuth();
+  const { t } = useI18n();
+  const location = useLocation();
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#060d18] text-slate-400">
+        {t("common.loading")}
+      </div>
+    );
+  }
+  
+  if (!token) {
+    const next = `${location.pathname}${location.search}`;
+    const qs = next && next !== "/" ? `?next=${encodeURIComponent(next)}` : "";
+    return <Navigate to={`/login${qs}`} replace />;
+  }
+  return (
+    <PermissionsProvider userId={user?.id}>
+      {children}
+    </PermissionsProvider>
+  );
+}
+
+function SuperAdminOnly({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  const SUPER_ADMIN_EMAIL = "lahcenm534@gmail.com";
+  
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#060d18] text-slate-400">
+        Loading...
+      </div>
+    );
+  }
+  
+  if (!user || user.email !== SUPER_ADMIN_EMAIL) {
+    return <Navigate to="/app" replace />;
+  }
+  
+  return <>{children}</>;
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
+      <Route path="/explore" element={<StoreDirectory />} />
+      <Route path="/m/:storeSlug" element={<StoreFront />} />
+      <Route path="/order-status/:orderId" element={<OrderStatus />} />
+      <Route path="/m/:storeSlug/shipping-policy" element={<StoreShippingPolicy />} />
+      <Route path="/m/:storeSlug/return-policy" element={<StoreReturnPolicy />} />
+      <Route path="/m/:storeSlug/terms" element={<StoreTerms />} />
+      <Route path="/m/:storeSlug/about" element={<StoreAbout />} />
+      <Route path="/security-privacy" element={<SecurityPrivacyPage />} />
+      <Route path="/cgu" element={<CguPage />} />
+      <Route path="/pos-agent" element={<PosAgentApp />} />
+      <Route path="/agent-pos" element={<PosAgentApp />} />
+      <Route path="/trust" element={<TrustCharterPage />} />
+      <Route path="/subscription-contract" element={<SubscriptionContractPage />} />
+      <Route path="/production" element={<TlDeptLandingRedirect slug="production" />} />
+      <Route path="/quality" element={<TlDeptLandingRedirect slug="quality" />} />
+      <Route path="/maintenance" element={<TlDeptLandingRedirect slug="maintenance" />} />
+      <Route path="/logistics" element={<TlDeptLandingRedirect slug="logistics" />} />
+      <Route path="/transport" element={<TlDeptLandingRedirect slug="transport" />} />
+      <Route path="/utilities" element={<TlDeptLandingRedirect slug="utilities" />} />
+      <Route path="/dept/:dept" element={<TlDepartmentPage />} />
+      <Route path="/education/exams" element={<Navigate to="/app/edu?tab=exams" replace />} />
+      <Route
+        path="/admin-secret-portal"
+        element={
+          <Protected>
+            <SuperAdminDashboard />
+          </Protected>
+        }
+      />
+      <Route
+        path="/app"
+        element={
+          <Protected>
+            <AppShell />
+          </Protected>
+        }
+      >
+        <Route index element={<DashboardHome />} />
+        <Route path="pay" element={<Pay />} />
+        <Route path="support" element={<SupportPage />} />
+        <Route path="admin" element={<SuperAdminDashboard />} />
+        <Route path="admin/platform" element={<AdminPlatformSettings />} />
+        <Route path="hr" element={<HrModule />} />
+        <Route path="law" element={<LawModule />} />
+        <Route path="acc" element={<AccModule />} />
+        <Route path="edu" element={<EduModule />} />
+        <Route path="education/exams" element={<Navigate to="/app/edu?tab=exams" replace />} />
+        <Route path="reminders" element={<Reminders />} />
+        <Route path="devices" element={<DevicesSettings />} />
+        <Route path="visa" element={<VisaRadarModule />} />
+        <Route path="inventory" element={<InventoryPosModule />} />
+        <Route path="app/inventory" element={<InventoryPosModule />} />
+        <Route path="company" element={<CompanySetupModule />} />
+        <Route path="members" element={<MemberManagementModule />} />
+        <Route path="gov" element={<GovServicesModule />} />
+        <Route path="edu-print" element={<EduPrintModule />} />
+        <Route path="techauto" element={<TechAutoModule />} />
+        <Route path="chat" element={<InternalChatModule />} />
+        <Route path="academy" element={<CorporateAcademyModule />} />
+        <Route path="tools" element={<BusinessToolsModule />} />
+        <Route path="legal-ai" element={<LegalEditor />} />
+        <Route path="lawyer" element={<LawyerPortalModule />} />
+        <Route path="auto-real-estate" element={<AutoRealEstateModule />} />
+        <Route path="delivery-hub" element={<DeliveryHubModule />} />
+        <Route 
+          path="ai-design-studio" 
+          element={
+            <SuperAdminOnly>
+              <AiDesignStudio />
+            </SuperAdminOnly>
+          } 
+        />
+        <Route path="tl" element={<TransportLogisticsHub />} />
+        <Route path="tl/admin" element={<TransportLogisticsAdmin />} />
+        <Route path="legal" element={<LegalTermsPage />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function SuspensedAppRoutes() {
+  const { t } = useI18n();
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[#060d18] text-slate-400">
+          {t("common.loading")}
+        </div>
+      }
+    >
+      <AppRoutes />
+    </Suspense>
+  );
+}
+
+const routerBasename =
+  import.meta.env.BASE_URL.replace(/\/$/, "") === "" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
+
+function BrandingCssVars() {
+  useEffect(() => {
+    const el = document.documentElement;
+    const vars = brandingCssVars();
+    for (const [k, v] of Object.entries(vars)) {
+      el.style.setProperty(k, v);
+    }
+  }, []);
+  return null;
+}
+
+function GlobalKeyboardNavigation() {
+  useGlobalKeyboardNavigation();
+  return null;
+}
+
+export default function App() {
+  return (
+    <GlobalErrorBoundary>
+      <BrowserRouter basename={routerBasename}>
+        <I18nProvider>
+          <ThemeProvider>
+            <AuthProvider>
+              <BrandingCssVars />
+              <GlobalKeyboardNavigation />
+              <OnlineStatusIndicator />
+              <SuspensedAppRoutes />
+              <Toaster richColors position="top-center" theme="dark" />
+              <SuperAdminAICopilot />
+            </AuthProvider>
+          </ThemeProvider>
+        </I18nProvider>
+      </BrowserRouter>
+    </GlobalErrorBoundary>
+  );
+}

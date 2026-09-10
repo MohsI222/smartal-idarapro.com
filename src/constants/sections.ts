@@ -1,0 +1,232 @@
+import {
+  Bell,
+  Building2,
+  Calculator,
+  Gavel,
+  GraduationCap,
+  LayoutGrid,
+  MessageCircle,
+  Radar,
+  Scale,
+  Train,
+  Truck,
+  Users,
+  FileText,
+  HousePlus,
+  type LucideIcon,
+} from "lucide-react";
+
+export type SectionId =
+  | "hr"
+  | "law"
+  | "lawyer"
+  | "acc"
+  | "edu"
+  | "visa"
+  | "inventory"
+  | "members"
+  | "company"
+  | "commercial_company"
+  | "academy"
+  | "gov"
+  | "legal_ai"
+  | "transport_logistics"
+  | "delivery_hub"
+  | "chat"
+  | "edu_print"
+  | "tools"
+  | "reminders"
+  | "auto_real_estate";
+
+export type SectionDef = {
+  id: SectionId;
+  titleKey: string;
+  shortTitleKey: string;
+  icon: LucideIcon;
+  color: string;
+  price: string;
+  path: string;
+};
+
+export const SECTIONS: SectionDef[] = [
+  {
+    id: "hr",
+    titleKey: "section.hr.title",
+    shortTitleKey: "section.hr.short",
+    icon: Building2,
+    color: "text-blue-400",
+    price: "—",
+    path: "/app/hr",
+  },
+  {
+    id: "law",
+    titleKey: "section.law.title",
+    shortTitleKey: "section.law.short",
+    icon: Scale,
+    color: "text-orange-400",
+    price: "—",
+    path: "/app/law",
+  },
+  {
+    id: "lawyer",
+    titleKey: "section.lawyer.title",
+    shortTitleKey: "section.lawyer.short",
+    icon: Gavel,
+    color: "text-amber-400",
+    price: "—",
+    path: "/app/lawyer",
+  },
+  {
+    id: "acc",
+    titleKey: "section.acc.title",
+    shortTitleKey: "section.acc.short",
+    icon: Calculator,
+    color: "text-emerald-400",
+    price: "—",
+    path: "/app/acc",
+  },
+  {
+    id: "edu",
+    titleKey: "section.edu.title",
+    shortTitleKey: "section.edu.short",
+    icon: GraduationCap,
+    color: "text-purple-400",
+    price: "—",
+    path: "/app/edu",
+  },
+  {
+    id: "visa",
+    titleKey: "section.visa.title",
+    shortTitleKey: "section.visa.short",
+    icon: Radar,
+    color: "text-cyan-400",
+    price: "599 DH",
+    path: "/app/visa",
+  },
+  {
+    id: "inventory",
+    titleKey: "section.inventory.title",
+    shortTitleKey: "section.inventory.short",
+    icon: Building2,
+    color: "text-teal-400",
+    price: "—",
+    path: "/app/inventory",
+  },
+  {
+    id: "members",
+    titleKey: "section.members.title",
+    shortTitleKey: "section.members.short",
+    icon: Users,
+    color: "text-violet-400",
+    price: "—",
+    path: "/app/members",
+  },
+  {
+    id: "company",
+    titleKey: "section.company.title",
+    shortTitleKey: "section.company.short",
+    icon: Building2,
+    color: "text-sky-400",
+    price: "—",
+    path: "/app/company",
+  },
+  {
+    id: "commercial_company",
+    titleKey: "section.commercial_company.title",
+    shortTitleKey: "section.commercial_company.short",
+    icon: Building2,
+    color: "text-lime-300",
+    price: "—",
+    path: "/app/company?sector=commercial-industrial",
+  },
+  {
+    id: "academy",
+    titleKey: "section.academy.title",
+    shortTitleKey: "section.academy.short",
+    icon: GraduationCap,
+    color: "text-pink-400",
+    price: "—",
+    path: "/app/academy",
+  },
+  {
+    id: "gov",
+    titleKey: "section.gov.title",
+    shortTitleKey: "section.gov.short",
+    icon: Building2,
+    color: "text-sky-400",
+    price: "—",
+    path: "/app/gov",
+  },
+  {
+    id: "legal_ai",
+    titleKey: "section.legal_ai.title",
+    shortTitleKey: "section.legal_ai.short",
+    icon: Scale,
+    color: "text-rose-400",
+    price: "—",
+    path: "/app/legal-ai",
+  },
+  {
+    id: "transport_logistics",
+    titleKey: "section.transport_logistics.title",
+    shortTitleKey: "section.transport_logistics.short",
+    icon: Train,
+    color: "text-teal-400",
+    price: "—",
+    path: "/app/tl",
+  },
+  {
+    id: "delivery_hub",
+    titleKey: "section.delivery_hub.title",
+    shortTitleKey: "section.delivery_hub.short",
+    icon: Truck,
+    color: "text-orange-300",
+    price: "—",
+    path: "/app/delivery-hub",
+  },
+  {
+    id: "chat",
+    titleKey: "section.chat.title",
+    shortTitleKey: "section.chat.short",
+    icon: MessageCircle,
+    color: "text-green-400",
+    price: "—",
+    path: "/app/chat",
+  },
+  {
+    id: "edu_print",
+    titleKey: "section.edu_print.title",
+    shortTitleKey: "section.edu_print.short",
+    icon: FileText,
+    color: "text-indigo-400",
+    price: "—",
+    path: "/app/edu-print",
+  },
+  {
+    id: "tools",
+    titleKey: "section.tools.title",
+    shortTitleKey: "section.tools.short",
+    icon: LayoutGrid,
+    color: "text-orange-300",
+    price: "—",
+    path: "/app/tools",
+  },
+  {
+    id: "auto_real_estate",
+    titleKey: "section.auto_real_estate.title",
+    shortTitleKey: "section.auto_real_estate.short",
+    icon: HousePlus,
+    color: "text-lime-300",
+    price: "399 DH",
+    path: "/app/auto-real-estate",
+  },
+  {
+    id: "reminders",
+    titleKey: "section.reminders.title",
+    shortTitleKey: "section.reminders.short",
+    icon: Bell,
+    color: "text-yellow-400",
+    price: "—",
+    path: "/app/reminders",
+  },
+];

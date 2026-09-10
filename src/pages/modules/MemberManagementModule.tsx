@@ -1,0 +1,940 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  AlertTriangle,
+  Building2,
+  Camera,
+  Download,
+  FileSpreadsheet,
+  FileUp,
+  Pencil,
+  Plus,
+  Settings2,
+  Sparkles,
+  Trash2,
+  UserPlus,
+  Lock,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { OcrScanner } from "@/components/OcrScanner";
+import { QuickOfficeBar } from "@/components/office/QuickOfficeBar";
+import { parseMoroccanIdHints } from "@/lib/moroccanIdOcrParse";
+import { parseMemberExcelFileSync, writeMemberExcelFile } from "@/lib/memberMgmtExcel";
+import { loadMemberMgmt, saveMemberMgmt } from "@/lib/memberMgmtStorage";
+import { exportMemberMgmtPdfPreferBackend } from "@/lib/memberMgmtPdf";
+import { toWesternDigits } from "@/lib/utils";
+import {
+  addYearsFromDate,
+  emptyMember,
+  isMemberPaid,
+  parseYmd,
+  startOfToday,
+  type MemberMgmtSetup,
+  type MemberRow,
+  memberStatusLabel,
+  type OrgKind,
+} from "@/lib/memberMgmtTypes";
+import { exportBrandedTableDocx, withFileToast } from "@/services/fileService";
+import { toast } from "sonner";
+
+const ORG_ORDER: OrgKind[] = ["organization", "institute", "center"];
+
+function orgKindLabel(t: (key: string) => string, k: OrgKind): string {
+  if (k === "organization") return t("memberMgmt.orgKind.organization");
+  if (k === "institute") return t("memberMgmt.orgKind.institute");
+  return t("memberMgmt.orgKind.center");
+}
+import { useAuth } from "@/context/AuthContext";
+import { useI18n } from "@/i18n/I18nProvider";
+import { cn } from "@/lib/utils";
+
+const GLASS =
+  "rounded-3xl border border-white/15 bg-white/5 shadow-[0_8px_32px_rgba(0,0,0,0.25)] backdrop-blur-xl";
+const GRAD_PAGE =
+  "min-h-[calc(100vh-6rem)] rounded-[2rem] border border-white/10 bg-gradient-to-br from-violet-600/25 via-fuchsia-500/15 to-cyan-400/20 p-4 md:p-8";
+
+async function fileToLogoDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const u = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        const maxW = 420;
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+        if (w > maxW) {
+          h = (h * maxW) / w;
+          w = maxW;
+        }
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        const cx = c.getContext("2d");
+        if (!cx) {
+          const r = new FileReader();
+          r.onload = () => resolve(typeof r.result === "string" ? r.result : "");
+          r.onerror = () => reject(new Error("read"));
+          r.readAsDataURL(file);
+          return;
+        }
+        cx.drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/jpeg", 0.85));
+      } finally {
+        URL.revokeObjectURL(u);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(u);
+      reject(new Error("image"));
+    };
+    img.src = u;
+  });
+}
+
+export function MemberManagementModule() {
+  const { user, isApproved, approvedModules, isAdmin } = useAuth();
+  const { t, isRtl, formatNumber, formatDateTime } = useI18n();
+  const uid = user?.id ?? "guest";
+  const [setup, setSetup] = useState<MemberMgmtSetup | null>(null);
+  const [members, setMembers] = useState<MemberRow[]>([]);
+  const [hydrated, setHydrated] = useState(false);
+
+  const [setupDraft, setSetupDraft] = useState<{
+    orgKind: OrgKind;
+    name: string;
+    logoDataUrl: string | null;
+  }>({ orgKind: "institute", name: "", logoDataUrl: null });
+
+  const [setupDialogOpen, setSetupDialogOpen] = useState(false);
+  const [memberDialogOpen, setMemberDialogOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
+  const [ocrOpen, setOcrOpen] = useState(false);
+  const [exportPreparing, setExportPreparing] = useState(false);
+
+  const excelInputRef = useRef<HTMLInputElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const s = loadMemberMgmt(uid);
+    setSetup(s.setup);
+    setMembers(s.members);
+    if (s.setup) {
+      setSetupDraft({
+        orgKind: s.setup.orgKind,
+        name: s.setup.name,
+        logoDataUrl: s.setup.logoDataUrl,
+      });
+    }
+    setHydrated(true);
+  }, [uid]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveMemberMgmt(uid, { setup, members });
+  }, [uid, setup, members, hydrated]);
+
+  const overdue = useMemo(
+    () => members.filter((m) => !isMemberPaid(m)),
+    [members]
+  );
+
+  const saveSetup = useCallback(() => {
+    const name = setupDraft.name.trim();
+    if (!name) return;
+    const next: MemberMgmtSetup = {
+      orgKind: setupDraft.orgKind,
+      name,
+      logoDataUrl: setupDraft.logoDataUrl,
+      savedAt: new Date().toISOString(),
+    };
+    setSetup(next);
+    setSetupDialogOpen(false);
+  }, [setupDraft]);
+
+  const markPaid = useCallback((id: string) => {
+    setMembers((prev) =>
+      prev.map((m) => {
+        if (m.id !== id) return m;
+        const today = startOfToday();
+        return { ...m, endDate: addYearsFromDate(today, 1) };
+      })
+    );
+  }, []);
+
+  const removeMember = useCallback(
+    (id: string) => {
+      if (!window.confirm(t("memberMgmt.confirmDelete"))) return;
+      setMembers((prev) => prev.filter((m) => m.id !== id));
+    },
+    [t]
+  );
+
+  const openNewMember = () => {
+    setEditingMember(emptyMember());
+    setMemberDialogOpen(true);
+  };
+
+  const openEditMember = (m: MemberRow) => {
+    setEditingMember({ ...m });
+    setMemberDialogOpen(true);
+  };
+
+  const saveMember = () => {
+    if (!editingMember) return;
+    const fullName = editingMember.fullName.trim();
+    if (!fullName) return;
+    setMembers((prev) => {
+      const exists = prev.some((x) => x.id === editingMember.id);
+      if (exists) return prev.map((x) => (x.id === editingMember.id ? editingMember : x));
+      return [...prev, editingMember];
+    });
+    setMemberDialogOpen(false);
+    setEditingMember(null);
+  };
+
+  const onOcrText = (text: string) => {
+    const hints = parseMoroccanIdHints(text);
+    setEditingMember((prev) => {
+      const base = prev ?? emptyMember();
+      return {
+        ...base,
+        fullName: hints.fullName ?? base.fullName,
+        nationalId: hints.cin ?? base.nationalId,
+      };
+    });
+    setOcrOpen(false);
+    setMemberDialogOpen(true);
+  };
+
+  const importExcel = async (file: File) => {
+    await withFileToast(async () => {
+      const buf = await file.arrayBuffer();
+      const rows = parseMemberExcelFileSync(buf);
+      if (!rows.length) {
+        toast.message(t("memberMgmt.importNoRows"));
+        return;
+      }
+      setMembers((prev) => [...prev, ...rows]);
+      toast.success(t("memberMgmt.importedCount", { count: formatNumber(rows.length) }));
+    }, t("auth.errGeneric"));
+  };
+
+  const handleProWord = useCallback(async () => {
+    if (!members.length) {
+      toast.message(t("memberMgmt.emptyTable"));
+      return;
+    }
+    await withFileToast(
+      () =>
+        exportBrandedTableDocx({
+          title: setup?.name ?? t("memberMgmt.subtitle"),
+          rows: [
+            [
+              t("memberMgmt.colFullName"),
+              t("memberMgmt.colNationalId"),
+              t("memberMgmt.colMembership"),
+              t("memberMgmt.colRegDate"),
+              t("memberMgmt.colEndDate"),
+              t("memberMgmt.colAmount"),
+              t("memberMgmt.colStatus"),
+            ],
+            ...members.map((m) => [
+              m.fullName,
+              m.nationalId,
+              m.membershipNo,
+              m.regDate,
+              m.endDate,
+              String(m.amountDh),
+              memberStatusLabel(m) === "Paid" ? t("memberMgmt.paidStatus") : t("memberMgmt.unpaidStatus"),
+            ]),
+          ],
+          fileName: `members-pro-${Date.now()}.docx`,
+        }),
+      t("auth.errGeneric")
+    );
+  }, [members, setup?.name, t]);
+
+  const handleExportExcel = useCallback(() => {
+    setExportPreparing(true);
+    window.setTimeout(() => {
+      try {
+        const safe = (setup?.name ?? "members").replace(/[^\w\u0600-\u06FF-]+/g, "_");
+        writeMemberExcelFile(
+          members,
+          `${safe}_${t("memberMgmt.excelNameSuffix")}.xlsx`
+        );
+      } finally {
+        setExportPreparing(false);
+      }
+    }, 80);
+  }, [members, setup?.name, t]);
+
+  const handleExportPDF = useCallback(async () => {
+    if (!setup) return;
+    setExportPreparing(true);
+    try {
+      const safe = (setup.name ?? "members").replace(/[^\w\u0600-\u06FF-]+/g, "_");
+      await exportMemberMgmtPdfPreferBackend({
+        setup,
+        members,
+        fileNameBase: safe,
+      });
+    } catch (e) {
+      console.error(e);
+      window.alert(t("memberMgmt.pdfErr"));
+    } finally {
+      setExportPreparing(false);
+    }
+  }, [setup, members, t]);
+
+  const openSetupEdit = () => {
+    if (setup) {
+      setSetupDraft({
+        orgKind: setup.orgKind,
+        name: setup.name,
+        logoDataUrl: setup.logoDataUrl,
+      });
+    }
+    setSetupDialogOpen(true);
+  };
+
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-slate-400">
+        {t("common.loading")}
+      </div>
+    );
+  }
+
+  const membersAllowed = isAdmin || (isApproved && approvedModules.includes("members"));
+  if (!membersAllowed) {
+    return (
+      <div className="rounded-2xl border border-violet-500/30 p-8 text-center space-y-4 max-w-lg mx-auto">
+        <Lock className="size-12 mx-auto text-violet-400" />
+        <h2 className="text-xl font-bold text-white">{t("members.lockedTitle")}</h2>
+        <p className="text-slate-400">{t("members.lockedDesc")}</p>
+        <Button asChild>
+          <Link to="/app/pay">{t("dashboard.subscribe")}</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  /** Initial setup: org type + name */
+  if (!setup) {
+    return (
+      <div className={GRAD_PAGE} dir={isRtl ? "rtl" : "ltr"}>
+        <div
+          className={cn(
+            "mx-auto max-w-lg p-8 md:p-10",
+            GLASS,
+            "border-cyan-400/30 bg-gradient-to-br from-white/10 to-violet-500/10"
+          )}
+        >
+          <div className="mb-6 flex items-center gap-3">
+            <span className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg">
+              <Building2 className="size-6 text-white" />
+            </span>
+            <div>
+              <h1 className="text-xl font-black text-white">{t("memberMgmt.setupTitle")}</h1>
+              <p className="text-sm text-slate-300">{t("memberMgmt.setupDesc")}</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <Label className="text-slate-200">{t("memberMgmt.orgType")}</Label>
+              <select
+                value={setupDraft.orgKind}
+                onChange={(e) =>
+                  setSetupDraft((d) => ({ ...d, orgKind: e.target.value as OrgKind }))
+                }
+                className="mt-1.5 w-full rounded-xl border border-white/20 bg-black/30 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-fuchsia-400/50"
+              >
+                {ORG_ORDER.map((k) => (
+                  <option key={k} value={k}>
+                    {orgKindLabel(t, k)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-slate-200">{t("memberMgmt.orgName")}</Label>
+              <Input
+                value={setupDraft.name}
+                onChange={(e) => setSetupDraft((d) => ({ ...d, name: e.target.value }))}
+                placeholder={t("memberMgmt.orgNamePh")}
+                className="mt-1.5 border-white/20 bg-black/30"
+              />
+            </div>
+            <div>
+              <Label className="text-slate-200">{t("memberMgmt.orgLogo")}</Label>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    try {
+                      const data = await fileToLogoDataUrl(f);
+                      setSetupDraft((d) => ({ ...d, logoDataUrl: data }));
+                    } catch {
+                      window.alert(t("memberMgmt.orgLogoReadErr"));
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => logoInputRef.current?.click()}
+                  className="bg-white/10 text-white hover:bg-white/20"
+                >
+                  <Camera className="size-4" />
+                  {t("memberMgmt.uploadLogo")}
+                </Button>
+                {setupDraft.logoDataUrl && (
+                  <img
+                    src={setupDraft.logoDataUrl}
+                    alt=""
+                    className="h-14 w-auto max-w-[120px] rounded-lg border border-white/20 object-contain"
+                  />
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">{t("memberMgmt.orgLogoHint")}</p>
+            </div>
+            <Button
+              type="button"
+              onClick={saveSetup}
+              disabled={!setupDraft.name.trim()}
+              className="w-full bg-gradient-to-l from-emerald-500 to-cyan-500 py-6 text-lg font-bold text-[#042f2e] shadow-lg hover:opacity-95"
+            >
+              {t("memberMgmt.saveContinue")}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={GRAD_PAGE} dir={isRtl ? "rtl" : "ltr"}>
+      <div className="mx-auto max-w-7xl space-y-6">
+        {/* Header */}
+        <div
+          className={cn(
+            "flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between",
+            GLASS,
+            "bg-gradient-to-r from-indigo-500/20 via-purple-500/15 to-pink-500/20"
+          )}
+        >
+          <div className="flex items-center gap-4">
+            {setup.logoDataUrl ? (
+              <img
+                src={setup.logoDataUrl}
+                alt=""
+                className="h-16 w-auto max-w-[140px] rounded-xl border border-white/20 object-contain shadow-lg"
+              />
+            ) : (
+              <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 shadow-lg">
+                <Sparkles className="size-8 text-white" />
+              </div>
+            )}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-fuchsia-200/80">
+                {orgKindLabel(t, setup.orgKind)}
+              </p>
+              <h1 className="text-2xl font-black text-white md:text-3xl">{setup.name}</h1>
+              <p className="text-sm text-slate-300">{t("memberMgmt.subtitle")}</p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={openSetupEdit}
+            className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+          >
+            <Settings2 className="size-4" />
+            {t("memberMgmt.orgSettings")}
+          </Button>
+        </div>
+
+        {/* Overdue alert */}
+        <Card
+          className={cn(
+            "overflow-hidden border-2 border-red-500 shadow-[0_0_40px_rgba(239,68,68,0.35)]",
+            "bg-gradient-to-br from-red-600 via-red-700 to-rose-900 text-white"
+          )}
+        >
+          <CardContent className="p-4 md:p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <AlertTriangle className="size-6 shrink-0 text-amber-200" />
+              <h2 className="text-lg font-black md:text-xl">{t("memberMgmt.overdueTitle")}</h2>
+              <span
+                dir="ltr"
+                className="rounded-full bg-black/25 px-2 py-0.5 text-xs font-bold font-digits-latin"
+              >
+                {formatNumber(overdue.length)}
+              </span>
+            </div>
+            {overdue.length === 0 ? (
+              <p className="text-sm text-red-100/90">{t("memberMgmt.overdueEmpty")}</p>
+            ) : (
+              <ul className="space-y-3">
+                {overdue.map((m) => (
+                  <li
+                    key={m.id}
+                    className="flex flex-col gap-3 rounded-2xl border border-white/20 bg-black/20 p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="font-bold">{m.fullName}</p>
+                      <p className="text-sm text-red-100/90">
+                        {t("memberMgmt.lineMembership")}{" "}
+                        <strong dir="ltr" className="tabular-nums font-digits-latin">
+                          {toWesternDigits(String(m.membershipNo))}
+                        </strong>{" "}
+                        — {t("memberMgmt.lineAmount")}{" "}
+                        <strong dir="ltr" className="tabular-nums font-digits-latin">
+                          {formatNumber(m.amountDh, { maximumFractionDigits: 0 })}
+                        </strong>{" "}
+                        {t("memberMgmt.currency")}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => markPaid(m.id)}
+                        className="bg-emerald-500 font-bold text-emerald-950 hover:bg-emerald-400"
+                      >
+                        {t("memberMgmt.markPaid")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => removeMember(m.id)}
+                        className="border-red-300/40 bg-red-950/40 text-red-100 hover:bg-red-950/60"
+                      >
+                        <Trash2 className="size-4" />
+                        {t("memberMgmt.removeMember")}
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Toolbar */}
+        <div className={cn("flex flex-col gap-3 p-4 md:flex-row md:flex-wrap md:items-center", GLASS)}>
+          <QuickOfficeBar
+            onProfessionalExcel={handleExportExcel}
+            onProfessionalWord={handleProWord}
+            disabledExcel={exportPreparing}
+            disabledWord={exportPreparing}
+            labels={{
+              quickGrid: t("fileUi.quickGrid"),
+              exportExcel: t("fileUi.proExcel"),
+              exportWord: t("fileUi.proWord"),
+            }}
+          />
+          <Button
+            type="button"
+            onClick={openNewMember}
+            className="bg-gradient-to-l from-violet-600 to-fuchsia-600 font-semibold shadow-lg"
+          >
+            <UserPlus className="size-4" />
+            {t("memberMgmt.addManual")}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              setEditingMember(emptyMember());
+              setOcrOpen(true);
+            }}
+            className="border-cyan-400/30 bg-cyan-500/20 text-cyan-50 hover:bg-cyan-500/30"
+          >
+            <Camera className="size-4" />
+            {t("memberMgmt.scanId")}
+          </Button>
+          <input
+            ref={excelInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void importExcel(f);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => excelInputRef.current?.click()}
+            className="border-emerald-400/30 bg-emerald-500/15 text-emerald-50"
+          >
+            <FileUp className="size-4" />
+            {t("memberMgmt.importExcel")}
+          </Button>
+          <div className="ms-auto flex flex-col items-stretch gap-2 sm:items-end">
+            {exportPreparing && (
+              <p className="text-center text-sm font-semibold text-amber-200 sm:text-right animate-pulse">
+                {t("memberMgmt.preparing")}
+              </p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={exportPreparing}
+                onClick={handleExportExcel}
+                className="border-amber-400/40 bg-amber-500/15 text-amber-100 disabled:opacity-50"
+              >
+                <FileSpreadsheet className="size-4" />
+                {t("memberMgmt.downloadExcel")}
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={exportPreparing}
+                onClick={() => void handleExportPDF()}
+                className="border-rose-400/40 bg-rose-500/20 text-rose-50 disabled:opacity-50"
+              >
+                <Download className="size-4" />
+                {t("memberMgmt.downloadPdf")}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div className={cn("overflow-x-auto p-2 md:p-4", GLASS)}>
+          <table className="w-full min-w-[920px] border-collapse text-sm">
+            <thead>
+              <tr className="bg-gradient-to-l from-indigo-600/80 to-purple-600/80 text-start text-white">
+                <th className="rounded-s-xl p-3 font-bold">{t("memberMgmt.colFullName")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colNationalId")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colMembership")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colRegDate")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colEndDate")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colAmount")}</th>
+                <th className="p-3 font-bold">{t("memberMgmt.colStatus")}</th>
+                <th className="rounded-e-xl p-3 font-bold">{t("memberMgmt.colActions")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-10 text-center text-slate-400">
+                    {t("memberMgmt.emptyTable")}
+                  </td>
+                </tr>
+              ) : (
+                members.map((m) => {
+                  const paid = isMemberPaid(m);
+                  const overdueRow =
+                    parseYmd(m.endDate) < startOfToday() ? "bg-red-500/10" : "bg-emerald-500/5";
+                  return (
+                    <tr
+                      key={m.id}
+                      className={cn(
+                        "border-b border-white/10 text-slate-100 transition-colors hover:bg-white/5",
+                        overdueRow
+                      )}
+                    >
+                      <td className="p-3 font-medium">{m.fullName}</td>
+                      <td className="p-3 tabular-nums text-slate-300">
+                        {toWesternDigits(m.nationalId)}
+                      </td>
+                      <td className="p-3 tabular-nums">{toWesternDigits(String(m.membershipNo))}</td>
+                      <td className="p-3 tabular-nums text-slate-300">{toWesternDigits(m.regDate)}</td>
+                      <td className="p-3 tabular-nums">{toWesternDigits(m.endDate)}</td>
+                      <td className="p-3 tabular-nums">
+                        <span dir="ltr" className="font-digits-latin">
+                          {formatNumber(m.amountDh, { maximumFractionDigits: 0 })} {t("memberMgmt.currency")}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <span
+                          className={cn(
+                            "inline-flex rounded-full px-3 py-1 text-xs font-bold",
+                            paid
+                              ? "bg-emerald-500/25 text-emerald-200 ring-1 ring-emerald-400/40"
+                              : "bg-red-500/30 text-red-100 ring-1 ring-red-400/50"
+                          )}
+                        >
+                          {paid ? t("memberMgmt.paidStatus") : t("memberMgmt.unpaidStatus")}
+                        </span>
+                      </td>
+                      <td className="p-3">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {!paid && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 bg-emerald-600/90 px-2 text-[11px] font-bold text-white hover:bg-emerald-500"
+                              onClick={() => markPaid(m.id)}
+                            >
+                              {t("memberMgmt.markPaid")}
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-slate-200 hover:bg-white/10"
+                            onClick={() => openEditMember(m)}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-red-300 hover:bg-red-500/20"
+                            onClick={() => removeMember(m.id)}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+          <p className="mt-3 text-center text-[11px] text-slate-500">
+            {t("memberMgmt.tableFooter", {
+              date: formatDateTime(startOfToday().toISOString().slice(0, 10) + "T12:00:00"),
+            })}
+          </p>
+        </div>
+      </div>
+
+      {/* حوار إعدادات المؤسسة */}
+      <Dialog open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
+        <DialogContent
+          className="max-w-md border-white/20 bg-[#0f172a]/95 text-white"
+          dir={isRtl ? "rtl" : "ltr"}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("memberMgmt.orgSettings")}</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {t("memberMgmt.orgSettingsDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label>{t("memberMgmt.orgType")}</Label>
+              <select
+                value={setupDraft.orgKind}
+                onChange={(e) =>
+                  setSetupDraft((d) => ({ ...d, orgKind: e.target.value as OrgKind }))
+                }
+                className="mt-1.5 w-full rounded-xl border border-slate-600 bg-slate-900/80 px-3 py-2.5 text-sm"
+              >
+                {ORG_ORDER.map((k) => (
+                  <option key={k} value={k}>
+                    {orgKindLabel(t, k)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>{t("memberMgmt.orgName")}</Label>
+              <Input
+                value={setupDraft.name}
+                onChange={(e) => setSetupDraft((d) => ({ ...d, name: e.target.value }))}
+                className="mt-1.5"
+              />
+            </div>
+            <div>
+              <Label>{t("memberMgmt.orgLogo")}</Label>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  id="mm-logo-edit"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    try {
+                      const data = await fileToLogoDataUrl(f);
+                      setSetupDraft((d) => ({ ...d, logoDataUrl: data }));
+                    } catch {
+                      window.alert(t("memberMgmt.orgLogoReadErr"));
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                <Button type="button" variant="secondary" asChild>
+                  <label htmlFor="mm-logo-edit" className="cursor-pointer">
+                    <Plus className="size-4" />
+                    {t("memberMgmt.changeLogo")}
+                  </label>
+                </Button>
+                {setupDraft.logoDataUrl && (
+                  <img
+                    src={setupDraft.logoDataUrl}
+                    alt=""
+                    className="h-12 rounded-lg border border-slate-600"
+                  />
+                )}
+              </div>
+            </div>
+            <Button
+              type="button"
+              className="w-full bg-gradient-to-l from-violet-600 to-fuchsia-600"
+              onClick={saveSetup}
+              disabled={!setupDraft.name.trim()}
+            >
+              {t("common.save")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Member dialog */}
+      <Dialog open={memberDialogOpen} onOpenChange={setMemberDialogOpen}>
+        <DialogContent
+          className="max-w-lg border-white/20 bg-[#0f172a]/95 text-white"
+          dir={isRtl ? "rtl" : "ltr"}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {editingMember && members.some((x) => x.id === editingMember.id)
+                ? t("memberMgmt.editMember")
+                : t("memberMgmt.newMember")}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {t("memberMgmt.memberFormHint")}
+            </DialogDescription>
+          </DialogHeader>
+          {editingMember && (
+            <div className="grid gap-3 pt-2">
+              <div>
+                <Label>{t("memberMgmt.colFullName")}</Label>
+                <Input
+                  value={editingMember.fullName}
+                  onChange={(e) => setEditingMember({ ...editingMember, fullName: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>{t("memberMgmt.colNationalId")}</Label>
+                <Input
+                  value={editingMember.nationalId}
+                  onChange={(e) =>
+                    setEditingMember({ ...editingMember, nationalId: e.target.value })
+                  }
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>{t("memberMgmt.colMembership")}</Label>
+                <Input
+                  value={editingMember.membershipNo}
+                  onChange={(e) =>
+                    setEditingMember({ ...editingMember, membershipNo: e.target.value })
+                  }
+                  className="mt-1"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label>{t("memberMgmt.colRegDate")}</Label>
+                  <Input
+                    type="date"
+                    lang="en"
+                    dir="ltr"
+                    value={editingMember.regDate}
+                    onChange={(e) =>
+                      setEditingMember({ ...editingMember, regDate: e.target.value })
+                    }
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label>{t("memberMgmt.colEndDate")}</Label>
+                  <Input
+                    type="date"
+                    lang="en"
+                    dir="ltr"
+                    value={editingMember.endDate}
+                    onChange={(e) =>
+                      setEditingMember({ ...editingMember, endDate: e.target.value })
+                    }
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>{t("memberMgmt.amountLabel")}</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={editingMember.amountDh || ""}
+                  onChange={(e) =>
+                    setEditingMember({
+                      ...editingMember,
+                      amountDh: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  className="mt-1"
+                />
+              </div>
+              <Button
+                type="button"
+                className="w-full bg-gradient-to-l from-emerald-600 to-teal-600"
+                onClick={saveMember}
+              >
+                {t("common.save")}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ID scan OCR */}
+      <Dialog open={ocrOpen} onOpenChange={setOcrOpen}>
+        <DialogContent
+          className="max-w-lg border-white/20 bg-[#0f172a]/95"
+          dir={isRtl ? "rtl" : "ltr"}
+        >
+          <DialogHeader>
+            <DialogTitle className="text-white">{t("memberMgmt.ocrDialogTitle")}</DialogTitle>
+            <DialogDescription>{t("memberMgmt.ocrDialogDesc")}</DialogDescription>
+          </DialogHeader>
+          <OcrScanner
+            useGemini={true}
+            documentType="id_card"
+            title={t("memberMgmt.ocrCardTitle")}
+            description={t("memberMgmt.ocrCardDesc")}
+            onExtracted={(text) => onOcrText(text)}
+            variant="royal"
+          />
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
