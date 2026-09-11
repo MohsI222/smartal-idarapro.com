@@ -3,7 +3,7 @@
  * تشغيل: npm run db:schema
  */
 import "./loadEnv.js";
-import { db, initDatabase } from "./db";
+import { db, initDatabase } from "./db.js";
 
 await initDatabase();
 console.log("[idara] تم تطبيق المخطط على قاعدة البيانات.");

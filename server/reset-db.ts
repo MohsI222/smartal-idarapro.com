@@ -3,7 +3,7 @@
  * تشغيل: npm run db:reset
  */
 import "./loadEnv.js";
-import { initDatabase } from "./db";
+import { initDatabase } from "./db.js";
 import { ensureSuperAdmin, purgeAllUserData } from "./seed.js";
 
 await initDatabase();

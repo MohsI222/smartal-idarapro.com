@@ -13,7 +13,7 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
-import { db } from "./db";
+import { db } from "./db.js";
 
 export interface CustomDomainRequest extends Request {
   customDomainStore?: {

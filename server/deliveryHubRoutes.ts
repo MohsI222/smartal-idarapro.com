@@ -1,6 +1,6 @@
 import type express from "express";
 import { randomUUID } from "node:crypto";
-import { db } from "./db";
+import { db } from "./db.js";
 
 /**
  * مسارات قسم رادار الطلبات والتوصيل (Delivery Hub) على الخادم الموثوق.

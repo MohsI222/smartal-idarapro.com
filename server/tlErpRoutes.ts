@@ -2,7 +2,7 @@ import type express from "express";
 import path from "node:path";
 import fs from "node:fs";
 import { randomUUID, randomBytes } from "node:crypto";
-import { db } from "./db";
+import { db } from "./db.js";
 import { paramString } from "./reqParams.js";
 import { buildTlGridExcelBuffer, parseTlGridDeptFromFilename } from "./tlGridExport.js";
 

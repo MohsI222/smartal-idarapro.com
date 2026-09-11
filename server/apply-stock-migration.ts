@@ -1,4 +1,4 @@
-import { exec } from "./db";
+import { exec } from "./db.js";
 
 const sql = `
 -- Add stock_quantity column (default 0)

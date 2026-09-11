@@ -6,7 +6,7 @@ import {
   getPreferredGeminiImageModels,
   resolveGeminiImageApiKey,
   shouldFallbackToOpenAiImageGeneration,
-} from "./aiImageGeneration";
+} from "./aiImageGeneration.js";
 
 test("resolveGeminiImageApiKey prefers user key before system key", () => {
   assert.equal(

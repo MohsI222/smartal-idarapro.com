@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { db } from "./db";
+import { db } from "./db.js";
 
 const TL_VEHICLE_DEPTS = ["transport", "logistics"] as const;
 const TL_OPS_DEPTS = ["production", "quality", "maintenance", "utilities"] as const;
