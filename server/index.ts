@@ -17,7 +17,7 @@ import { registerPosAgentRoutes } from "./posAgentRoutes.js";
 import { getTlUploadRoot, getUploadDir } from "./paths.js";
 import { getVisaRadarProService } from "./visaRadarPro.js";
 import { randomUUID } from "node:crypto";
-import { db, initDatabase } from "./db";
+import { db, initDatabase } from "./db.js";
 import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto.js";
 import { ensureSuperAdmin, genReferralCode } from "./seed.js";
 import {
