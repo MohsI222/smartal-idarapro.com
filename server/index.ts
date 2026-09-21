@@ -1015,12 +1015,12 @@ app.get("/api/super-admin/hr-employees", authMiddleware, platformSettingsEditor,
 app.post("/api/super-admin/hr-employees", authMiddleware, platformSettingsEditor, async (req, res) => {
   try {
     const { user_id, name, national_id, employee_id, work_number, role, salary, contract_type, contract_end, start_date, birth_date, marital_status, uniform_color, city, address, rib, bank_name } = req.body;
-    
+
     if (!name || !user_id) {
       res.status(400).json({ error: "Missing required fields: name, user_id" });
       return;
     }
-    
+
     const id = randomUUID();
     await db.prepare(
       `INSERT INTO hr_employees (id, user_id, name, national_id, employee_id, work_number, role, salary, contract_type, contract_end, start_date, birth_date, marital_status, uniform_color, city, address, rib, bank_name, created_at, updated_at, work_days)

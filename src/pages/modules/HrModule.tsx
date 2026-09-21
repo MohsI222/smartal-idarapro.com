@@ -153,18 +153,13 @@ function HrModule() {
         } catch (e) {
           console.error("[hr] Super Admin fetch error:", e);
         }
-      } else if (isSupabaseConfigured && user?.id && supabase) {
-        // Regular user: use Supabase with user_id filter
-        const { data: supabaseEmployees, error: supabaseError } = await supabase
-          .from('hr_employees')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-        
-        if (supabaseError) {
-          console.error("[hr] Supabase fetch error:", supabaseError);
-        } else if (supabaseEmployees) {
-          employeesData = supabaseEmployees as HrEmployee[];
+      } else if (token && allowed) {
+        // Regular user: use Neon API
+        try {
+          const m = await api<{ employees: HrEmployee[] }>("/hr/employees", { token });
+          employeesData = Array.isArray(m.employees) ? m.employees : [];
+        } catch (e) {
+          console.error("[hr] API fetch error:", e);
         }
       }
       
@@ -247,16 +242,11 @@ function HrModule() {
           returnDate: record.return_date,
         }));
         setAbsenceRecords(formattedRecords);
-      } else if (isSupabaseConfigured && user?.id && supabase) {
-        // Regular user: use Supabase
-        const { data: absenceData, error: supabaseError } = await supabase
-          .from('hr_absence_records')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
-        
-        if (!supabaseError && absenceData) {
-          const formattedRecords = absenceData.map((record: any) => ({
+      } else if (token && allowed) {
+        // Regular user: use Neon API
+        try {
+          const m = await api<{ records: any[] }>("/hr/absence-records", { token });
+          const formattedRecords = (m.records || []).map((record: any) => ({
             id: record.id,
             employeeId: record.employee_id,
             fromDate: record.from_date,
@@ -265,7 +255,8 @@ function HrModule() {
             returnDate: record.return_date,
           }));
           setAbsenceRecords(formattedRecords);
-        } else {
+        } catch (e) {
+          console.error("[hr] Absence records fetch error:", e);
           setAbsenceRecords([]);
         }
       } else {
@@ -303,8 +294,15 @@ function HrModule() {
           console.error("Failed to update employee in Supabase:", supabaseError);
           throw supabaseError;
         }
+      } else if (token && allowed) {
+        // Regular user: use Neon API
+        await api(`/hr/employees/${id}`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify(employeePayload(row)),
+        });
       } else {
-        throw new Error("Supabase not configured");
+        throw new Error("Not authorized");
       }
       
       await load();
@@ -322,19 +320,14 @@ function HrModule() {
           method: "DELETE",
           token,
         });
-      } else if (supabase) {
-        // Regular user: use Supabase
-        const { error: supabaseError } = await supabase
-          .from('hr_employees')
-          .delete()
-          .eq('id', id);
-        
-        if (supabaseError) {
-          console.error("Failed to delete employee from Supabase:", supabaseError);
-          throw supabaseError;
-        }
+      } else if (token && allowed) {
+        // Regular user: use Neon API
+        await api(`/hr/employees/${id}`, {
+          method: "DELETE",
+          token,
+        });
       } else {
-        throw new Error("Supabase not configured");
+        throw new Error("Not authorized");
       }
       
       await load();
@@ -460,27 +453,28 @@ function HrModule() {
       }
       
       console.log("Inserting employee payload:", cleanedPayload);
-      
+
       if (isAdmin && token) {
         // Super Admin: use Express API endpoint to bypass RLS
+        // Must include user_id for super admin endpoint
+        const superAdminPayload = {
+          ...cleanedPayload,
+          user_id: user?.id,
+        };
         await api("/super-admin/hr-employees", {
+          method: "POST",
+          token,
+          body: JSON.stringify(superAdminPayload),
+        });
+      } else if (token) {
+        // Regular user: use Neon API
+        await api("/hr/employees", {
           method: "POST",
           token,
           body: JSON.stringify(cleanedPayload),
         });
-      } else if (supabase) {
-        // Regular user: use Supabase
-        const { error: supabaseError } = await supabase
-          .from('hr_employees')
-          .insert([cleanedPayload]);
-        
-        if (supabaseError) {
-          console.error("Failed to add employee to Supabase:", supabaseError);
-          alert(locale.startsWith("ar") ? "فشل حفظ الموظف: " + supabaseError.message : "Failed to save employee: " + supabaseError.message);
-          return;
-        }
       } else {
-        alert(locale.startsWith("ar") ? "Supabase not configured" : "Supabase not configured");
+        alert(locale.startsWith("ar") ? "Authentication error" : "Authentication error");
         return;
       }
       
@@ -639,8 +633,11 @@ function HrModule() {
       
       console.log("Bulk insert payload:", payload);
       
-      const { error } = await supabase.from('hr_employees').insert(payload);
-      if (error) throw error;
+      await api("/hr/employees/bulk", {
+        method: "POST",
+        token,
+        body: JSON.stringify(payload),
+      });
       
       setImportDrafts([]);
       setImportMessage(null);
@@ -739,25 +736,22 @@ function HrModule() {
             user_id: user?.id,
           }),
         });
-      } else if (supabase) {
-        // Regular user: use Supabase
-        const { error: supabaseError } = await supabase
-          .from('hr_absence_records')
-          .insert([{
+      } else if (token) {
+        // Regular user: use Neon API
+        await api("/hr/absence-records", {
+          method: "POST",
+          token,
+          body: JSON.stringify({
             employee_id: absenceForm.employeeId,
             from_date: absenceForm.fromDate,
             to_date: absenceForm.toDate,
             reason: absenceForm.reason,
             return_date: absenceForm.returnDate || null,
             user_id: user?.id,
-          }]);
-        
-        if (supabaseError) {
-          alert(locale.startsWith("ar") ? "فشل حفظ سجل الغياب: " + supabaseError.message : "Failed to save absence record: " + supabaseError.message);
-          return;
-        }
+          }),
+        });
       } else {
-        alert(locale.startsWith("ar") ? "Supabase غير متصل" : "Supabase not connected");
+        alert(locale.startsWith("ar") ? "Authentication error" : "Authentication error");
         return;
       }
       
