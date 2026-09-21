@@ -2277,6 +2277,35 @@ app.delete("/api/hr/employees/:id", authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
+// HR Absence Records endpoints for regular users
+app.get("/api/hr/absence-records", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const rows = await db.prepare("SELECT * FROM hr_absence_records WHERE user_id = ? ORDER BY created_at DESC").all(userId);
+  res.json({ records: rows });
+});
+
+app.post("/api/hr/absence-records", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { employee_id, from_date, to_date, reason, return_date } = req.body;
+  const id = randomUUID();
+  await db.prepare(`
+    INSERT INTO hr_absence_records (id, employee_id, from_date, to_date, reason, return_date, user_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, employee_id, from_date, to_date, reason, return_date || null, userId, new Date().toISOString());
+  res.json({ id, employee_id, from_date, to_date, reason, return_date, user_id: userId });
+});
+
+app.delete("/api/hr/absence-records/:id", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const id = paramString(req.params.id);
+  const r = await db.prepare("DELETE FROM hr_absence_records WHERE id = ? AND user_id = ?").run(id, userId);
+  if (r.changes === 0) {
+    res.status(404).json({ error: "غير موجود" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
 app.post("/api/hr/employees/:id/parse-document", authMiddleware, uploadMemory.single("file"), async (req, res) => {
     const file = req.file;
     if (!file?.buffer?.length) {
@@ -2331,10 +2360,6 @@ app.patch("/api/hr/metrics/:id", authMiddleware, async (req, res) => {
 
 app.get("/api/hr/metrics", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!(await moduleAllowed(userId, "hr"))) {
-    res.status(403).json({ error: "القسم غير مفعّل" });
-    return;
-  }
   let rows = await db
     .prepare("SELECT * FROM production_metrics WHERE user_id = ? ORDER BY week_label")
     .all(userId) as Record<string, unknown>[];
@@ -4570,10 +4595,6 @@ app.post("/api/inventory/products/batch", authMiddleware, async (req, res) => {
 
 app.patch("/api/inventory/products/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!(await moduleAllowed(userId, "inventory"))) {
-    res.status(403).json({ error: "القسم غير مفعّل" });
-    return;
-  }
   const id = paramString(req.params.id);
   const b = req.body as {
     name?: string;
@@ -4628,13 +4649,32 @@ app.patch("/api/inventory/products/:id", authMiddleware, async (req, res) => {
   }
 });
 
+app.patch("/api/inventory/products/:id/stock", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const id = paramString(req.params.id);
+  const b = req.body as { stock_change?: number };
+  if (!Number.isFinite(b.stock_change)) {
+    res.status(400).json({ error: "قيمة غير صالحة" });
+    return;
+  }
+  try {
+    const r = await db.prepare(
+      "UPDATE inventory_products SET stock_pieces = stock_pieces + ? WHERE id = ? AND user_id = ?"
+    ).run(b.stock_change, id, userId);
+    if (r.changes === 0) {
+      res.status(404).json({ error: "المنتج غير موجود" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[api/inventory/products/:id/stock] Error:", error);
+    res.status(500).json({ error: "فشل تحديث المخزون" });
+  }
+});
+
 app.delete("/api/inventory/products/:id", authMiddleware, async (req, res) => {
   try {
     const userId = (req as express.Request & { userId: string }).userId;
-    if (!(await moduleAllowed(userId, "inventory"))) {
-      res.status(403).json({ error: "القسم غير مفعّل" });
-      return;
-    }
     const { id } = req.params;
     await db.prepare(`DELETE FROM inventory_products WHERE id = ? AND user_id = ?`).run(id, userId);
     res.json({ ok: true });
@@ -4865,10 +4905,6 @@ app.post("/api/inventory/sale", authMiddleware, async (req, res) => {
 /** بيع متعدد الأسطر في فاتورة واحدة (مسودة البيع السريع) */
 app.post("/api/inventory/sale-batch", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!(await moduleAllowed(userId, "inventory"))) {
-    res.status(403).json({ error: "القسم غير مفعّل" });
-    return;
-  }
   const b = req.body as {
     lines?: { product_id?: string; qty_pieces?: number; line_total?: number }[];
     customer_name?: string;
