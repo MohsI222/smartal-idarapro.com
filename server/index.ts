@@ -2145,20 +2145,12 @@ app.get("/api/admin/sales-analytics", authMiddleware, superAdminOnly, async (_re
 
 app.get("/api/hr/employees", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!(await moduleAllowed(userId, "hr"))) {
-    res.status(403).json({ error: "القسم غير مفعّل" });
-    return;
-  }
   const rows = await db.prepare("SELECT * FROM hr_employees WHERE user_id = ?").all(userId);
   res.json({ employees: rows });
 });
 
 app.post("/api/hr/employees", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  if (!(await moduleAllowed(userId, "hr"))) {
-    res.status(403).json({ error: "القسم غير مفعّل" });
-    return;
-  }
   const b = req.body as {
     name: string;
     employee_id: string;
@@ -2211,10 +2203,6 @@ app.post("/api/hr/employees", authMiddleware, async (req, res) => {
 app.patch("/api/hr/employees/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const id = paramString(req.params.id);
-  if (!(await moduleAllowed(userId, "hr"))) {
-    res.status(403).json({ error: "القسم غير مفعّل" });
-    return;
-  }
   const b = req.body as {
     name: string;
     employee_id: string;
@@ -2272,10 +2260,6 @@ app.patch("/api/hr/employees/:id", authMiddleware, async (req, res) => {
 app.delete("/api/hr/employees/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const id = paramString(req.params.id);
-  if (!(await moduleAllowed(userId, "hr"))) {
-    res.status(403).json({ error: "القسم غير مفعّل" });
-    return;
-  }
   
   // Delete employee's permissions first
   try {
@@ -2294,11 +2278,6 @@ app.delete("/api/hr/employees/:id", authMiddleware, async (req, res) => {
 });
 
 app.post("/api/hr/employees/:id/parse-document", authMiddleware, uploadMemory.single("file"), async (req, res) => {
-    const userId = (req as express.Request & { userId: string }).userId;
-    if (!(await moduleAllowed(userId, "hr"))) {
-      res.status(403).json({ error: "القسم غير مفعّل" });
-      return;
-    }
     const file = req.file;
     if (!file?.buffer?.length) {
       res.status(400).json({ error: "ملف مفقود" });
@@ -2332,10 +2311,6 @@ app.post("/api/hr/employees/:id/parse-document", authMiddleware, uploadMemory.si
 app.patch("/api/hr/metrics/:id", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const id = paramString(req.params.id);
-  if (!(await moduleAllowed(userId, "hr"))) {
-    res.status(403).json({ error: "القسم غير مفعّل" });
-    return;
-  }
   const b = req.body as {
     week_label: string;
     production: number;
@@ -2388,6 +2363,7 @@ app.get("/api/hr/metrics", authMiddleware, async (req, res) => {
 async function getUserGateFlags(userId: string): Promise<{ bypass: boolean }> {
   const u = (await db
     .prepare("SELECT role, email, name FROM users WHERE id = ?")
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     .get(userId)) as { role: string; email: string; name: string } | undefined;
   if (!u) return { bypass: false };
   const bypass =
