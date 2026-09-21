@@ -1100,6 +1100,11 @@ export function InventoryPosModule() {
       }
 
       console.log("submitQuickDraft - Calling sale-batch API");
+      if (!token) {
+        console.error("[submitQuickDraft] No token available");
+        toast.error(locale.startsWith("ar") ? 'يجب تسجيل الدخول' : 'Must be logged in');
+        return;
+      }
       const saleResponse = await api<{ id: string; total: number; credit: number }>("/inventory/sale-batch", {
         method: "POST",
         token,
@@ -1324,35 +1329,18 @@ export function InventoryPosModule() {
 
       console.log("logShiftOperation called:", { operationType, details, today, shiftGroup, userId: authUserId });
 
-      // Super Admin: use Express API for shift reports
+      // Use Express API for shift reports (both Super Admin and regular users)
       let existingReport = null;
-      if (isAdmin) {
-        try {
-          const reports = await api<any[]>("/super-admin/shift-reports", { token });
-          existingReport = reports.find((r: any) => 
-            r.shift_date === today && 
-            r.shift_group === shiftGroup && 
-            r.user_id === authUserId
-          ) || null;
-        } catch (error) {
-          console.error("[Super Admin] Error fetching shift reports:", error);
-          return;
-        }
-      } else {
-        // Regular user: use Supabase
-        const { data: existingReportData, error: fetchError } = await supabase
-          .from("shift_reports")
-          .select("*")
-          .eq("shift_date", today)
-          .eq("shift_group", shiftGroup)
-          .eq("user_id", authUserId)
-          .maybeSingle();
-
-        if (fetchError) {
-          console.error("Error fetching shift report:", fetchError);
-          return;
-        }
-        existingReport = existingReportData;
+      try {
+        const reports = await api<any[]>(isAdmin ? "/super-admin/shift-reports" : "/shift-reports", { token });
+        existingReport = reports.find((r: any) =>
+          r.shift_date === today &&
+          r.shift_group === shiftGroup &&
+          r.user_id === authUserId
+        ) || null;
+      } catch (error) {
+        console.error("Error fetching shift reports:", error);
+        return;
       }
 
       const operationLog = {
@@ -1411,28 +1399,20 @@ export function InventoryPosModule() {
               })
             });
           } else {
-            // Regular user: use Supabase
-            const { data: updatedReport, error: updateError } = await supabase
-              .from("shift_reports")
-              .update({
+            // Regular user: use Express API
+            await api(`/shift-reports/${existingReport.id}`, {
+              method: "PUT",
+              token,
+              body: JSON.stringify({
                 ...updates,
                 customer_name: shiftCustomerName || existingReport.customer_name,
                 customer_number: shiftCustomerPhone || existingReport.customer_number,
                 week: shiftWeek || existingReport.week
               })
-              .eq("id", existingReport.id)
-              .select()
-              .single();
-
-            if (updateError) {
-              console.error("Error updating shift report:", updateError);
-            } else if (updatedReport) {
-              console.log("Report updated successfully:", updatedReport);
-              // Update selectedShiftReport to reflect changes in UI immediately
-              setSelectedShiftReport(updatedReport);
-              // Force reload to ensure UI shows latest data
-              await loadShiftReport();
-            }
+            });
+            console.log("Report updated successfully");
+            // Force reload to ensure UI shows latest data
+            await loadShiftReport();
           }
         } catch (error) {
           console.error("Error updating shift report:", error);
@@ -1507,27 +1487,19 @@ export function InventoryPosModule() {
       if (isAdmin) {
         // Super Admin: use Express API
         const reports = await api<any[]>("/super-admin/shift-reports", { token });
-        report = reports.find((r: any) => 
-          r.shift_date === today && 
-          r.shift_group === shiftGroup && 
+        report = reports.find((r: any) =>
+          r.shift_date === today &&
+          r.shift_group === shiftGroup &&
           r.user_id === user.id
         ) || null;
       } else {
-        // Regular user: use Supabase
-        const { data: reportData, error } = await supabase
-          .from("shift_reports")
-          .select("*")
-          .eq("shift_date", today)
-          .eq("shift_group", shiftGroup)
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (error) {
-          console.log("No existing shift report found, will calculate from activity logs");
-        }
-        report = reportData;
+        // Regular user: use Express API
+        const reports = await api<any[]>("/shift-reports", { token });
+        report = reports.find((r: any) =>
+          r.shift_date === today &&
+          r.shift_group === shiftGroup &&
+          r.user_id === user.id
+        ) || null;
       }
 
       if (report) {
@@ -3737,13 +3709,12 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                           toast.error(locale.startsWith("ar") ? 'خطأ في الاتصال بقاعدة البيانات' : 'Database connection error');
                           return;
                         }
-                        const { data: existingReport } = await supabase
-                          .from("shift_reports")
-                          .select("*")
-                          .eq("shift_date", today)
-                          .eq("shift_group", shiftGroup)
-                          .eq("user_id", authUserId)
-                          .maybeSingle();
+                        const reports = await api<any[]>(isAdmin ? "/super-admin/shift-reports" : "/shift-reports", { token });
+                        const existingReport = reports.find((r: any) =>
+                          r.shift_date === today &&
+                          r.shift_group === shiftGroup &&
+                          r.user_id === authUserId
+                        );
 
                         if (existingReport) {
                           toast.info(locale.startsWith("ar") ? 'النوبة مفتوحة بالفعل' : 'Shift already started');
@@ -3768,22 +3739,17 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                           total_operations: 0,
                           operations_log: [],
                           customer_name: shiftCustomerName,
-                          customer_phone: shiftCustomerPhone,
+                          customer_number: shiftCustomerPhone,
                           week: shiftWeek
                         };
 
-                        if (!supabase) {
-                          toast.error(locale.startsWith("ar") ? 'خطأ في الاتصال بقاعدة البيانات' : 'Database connection error');
-                          return;
-                        }
-                        const { data: createdReport, error } = await supabase
-                          .from("shift_reports")
-                          .insert([newReport])
-                          .select()
-                          .single();
+                        const createdReport = await api(isAdmin ? "/super-admin/shift-reports" : "/shift-reports", {
+                          method: "POST",
+                          token,
+                          body: JSON.stringify(newReport)
+                        });
 
-                        if (error) throw error;
-                        setSelectedShiftReport(createdReport);
+                        setSelectedShiftReport({ ...newReport, ...createdReport });
                         toast.success(locale.startsWith("ar") ? 'تم بدء النوبة بنجاح' : 'Shift started successfully');
                       } catch (error) {
                         console.error("Error starting shift:", error);
