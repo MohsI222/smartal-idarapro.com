@@ -823,7 +823,7 @@ export function InventoryPosModule() {
     try {
       // Restore stock for each line
       for (const line of previousDraftLines) {
-        await updateProductStock(line.product_id, line.qty_pieces);
+        await updateProductStock(line.product_id, line.qty_pieces, user?.id, token);
       }
 
       // Restore draft lines
@@ -1096,7 +1096,7 @@ export function InventoryPosModule() {
       // Deduct stock from inventory_products table
       for (const line of draftLines) {
         console.log("submitQuickDraft - Deducting stock for product:", line.product_id, "qty:", line.qty_pieces);
-        await updateProductStock(line.product_id, -line.qty_pieces, authUserId);
+        await updateProductStock(line.product_id, -line.qty_pieces, authUserId, token);
       }
 
       console.log("submitQuickDraft - Calling sale-batch API");
@@ -1966,7 +1966,7 @@ export function InventoryPosModule() {
               body: JSON.stringify({ unit_price: row.unit_price }),
             });
           }
-          await updateProductStock(row.product_id, row.add_pieces);
+          await updateProductStock(row.product_id, row.add_pieces, user?.id, token);
         }
         return;
       }
@@ -2185,7 +2185,7 @@ export function InventoryPosModule() {
             body: JSON.stringify({ unit_price: Number(row.unit_price) }),
           });
         }
-        await updateProductStock(row.product_id, row.add_pieces, authUserId);
+        await updateProductStock(row.product_id, row.add_pieces, authUserId, token);
       }
       
       // Reload from database to ensure updated items are visible
@@ -2345,7 +2345,7 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
       setQuickStockProductId(null);
       return;
     }
-    await updateProductStock(quickStockProductId, add);
+    await updateProductStock(quickStockProductId, add, user?.id, token);
     setQuickStockOpen(false);
     setQuickStockProductId(null);
     await refreshInventoryTables();
