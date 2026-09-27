@@ -87,13 +87,14 @@ function detectInitial(): AppLocale {
     }
     return fromSaved;
   }
-  const nav = (navigator.language?.toLowerCase() ?? "en").split(",")[0]?.trim() ?? "en";
-  if (nav.startsWith("ar")) {
-    return nav.startsWith("ar-sa") ? "ar-SA" : "ar-MA";
+  
+  // Force Arabic as default for this project
+  try {
+    localStorage.setItem(STORAGE_KEY, "ar-MA");
+  } catch {
+    /* ignore */
   }
-  if (nav.startsWith("fr")) return "fr";
-  if (nav.startsWith("es")) return "es";
-  return "en";
+  return "ar-MA";
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
