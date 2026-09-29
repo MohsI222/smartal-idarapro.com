@@ -20,24 +20,20 @@ type Props = {
 function buildDecodeHints(): Map<DecodeHintType, unknown> {
   const hints = new Map<DecodeHintType, unknown>();
   hints.set(DecodeHintType.TRY_HARDER, true);
+  hints.set(DecodeHintType.TRY_READ_INVERTED, true); // Read inverted barcodes
+  hints.set(DecodeHintType.ASSUME_GS1, true); // Better for retail products
   hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-    BarcodeFormat.AZTEC,
-    BarcodeFormat.CODABAR,
-    BarcodeFormat.CODE_39,
+    BarcodeFormat.EAN_8,    // Most common for small products
+    BarcodeFormat.EAN_13,   // Standard retail
+    BarcodeFormat.UPC_A,    // US retail
+    BarcodeFormat.UPC_E,    // Compressed UPC
+    BarcodeFormat.CODE_128, // Logistics
+    BarcodeFormat.CODE_39,  // Industrial
     BarcodeFormat.CODE_93,
-    BarcodeFormat.CODE_128,
-    BarcodeFormat.DATA_MATRIX,
-    BarcodeFormat.EAN_8,
-    BarcodeFormat.EAN_13,
+    BarcodeFormat.CODABAR,
     BarcodeFormat.ITF,
-    BarcodeFormat.MAXICODE,
-    BarcodeFormat.PDF_417,
+    BarcodeFormat.DATA_MATRIX,
     BarcodeFormat.QR_CODE,
-    BarcodeFormat.RSS_14,
-    BarcodeFormat.RSS_EXPANDED,
-    BarcodeFormat.UPC_A,
-    BarcodeFormat.UPC_E,
-    BarcodeFormat.UPC_EAN_EXTENSION,
   ]);
   return hints;
 }
@@ -96,9 +92,14 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
         return;
       }
 
-      // Request camera permissions explicitly
+      // Request camera permissions explicitly with better settings for small barcodes
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1920 },  // Higher resolution for small barcodes
+          height: { ideal: 1080 },
+          focusMode: "continuous",  // Continuous autofocus
+        },
       });
 
       // Stop the test stream immediately after permission check
@@ -106,8 +107,8 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
 
       await resumeAudioIfNeeded();
       const reader = new BrowserMultiFormatReader(buildDecodeHints(), {
-        delayBetweenScanSuccess: 30,
-        delayBetweenScanAttempts: 10,
+        delayBetweenScanSuccess: 50,  // Slower cooldown to avoid duplicate scans
+        delayBetweenScanAttempts: 5,   // Faster attempts for small barcodes
       });
       const video = videoRef.current;
       if (!video) return;
