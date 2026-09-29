@@ -18,6 +18,8 @@ type Props = {
   compact?: boolean;
   /** استخدام Quagga بدلاً من ZXing (أفضل للباركودات 1D) */
   useQuagga?: boolean;
+  /** إضافة مباشرة للسلة بدون قائمة اختيار */
+  autoAddToCart?: boolean;
 };
 
 function buildDecodeHints(): Map<DecodeHintType, unknown> {
@@ -32,11 +34,6 @@ function buildDecodeHints(): Map<DecodeHintType, unknown> {
     BarcodeFormat.UPC_E,    // Compressed UPC
     BarcodeFormat.CODE_128, // Logistics
     BarcodeFormat.CODE_39,  // Industrial
-    BarcodeFormat.CODE_93,
-    BarcodeFormat.CODABAR,
-    BarcodeFormat.ITF,
-    BarcodeFormat.DATA_MATRIX,
-    BarcodeFormat.QR_CODE,
   ]);
   return hints;
 }
@@ -197,15 +194,15 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
         stream.getTracks().forEach(track => track.stop());
 
         const reader = new BrowserMultiFormatReader(buildDecodeHints(), {
-          delayBetweenScanSuccess: 50,  // Slower cooldown to avoid duplicate scans
-          delayBetweenScanAttempts: 5,   // Faster attempts for small barcodes
+          delayBetweenScanSuccess: 100,  // 100ms cooldown allows quick scanning of same product multiple times
+          delayBetweenScanAttempts: 2,    // Faster attempts for better performance
         });
         const controls = await reader.decodeFromVideoDevice(undefined, video, (result, err) => {
           if (!result) return;
           const text = result.getText()?.trim();
           if (!text) return;
           const now = Date.now();
-          if (now - lastFireRef.current < 50) return;
+          if (now - lastFireRef.current < 100) return; // Match cooldown with delayBetweenScanSuccess
           lastFireRef.current = now;
           playBarcodeScanBeep();
           setLastCode(text);
