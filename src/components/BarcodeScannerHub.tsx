@@ -90,13 +90,17 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
     (code: string) => {
       const c = code.trim();
       if (!c) return;
+      console.log("[BarcodeScannerHub] Scanned code:", c);
+      console.log("[BarcodeScannerHub] Available SKUs:", products.map(p => ({ name: p.name, sku: p.sku })));
       // Match exact SKU only - no loose name matching
       const bySku = products.find((p) => p.sku && p.sku.trim() === c);
       if (bySku) {
+        console.log("[BarcodeScannerHub] Matched product:", bySku.name);
         onMatchedProduct(bySku.id, c);
         setHint(t("barcode.matchedSku"));
         return;
       }
+      console.log("[BarcodeScannerHub] No match found for code:", c);
       setHint(t("barcode.noMatch"));
       onUnknownBarcode?.(c);
     },
@@ -194,7 +198,7 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
         stream.getTracks().forEach(track => track.stop());
 
         const reader = new BrowserMultiFormatReader(buildDecodeHints(), {
-          delayBetweenScanSuccess: 100,  // 100ms cooldown allows quick scanning of same product multiple times
+          delayBetweenScanSuccess: 50,   // 50ms cooldown for quick scanning of same product multiple times
           delayBetweenScanAttempts: 2,    // Faster attempts for better performance
         });
         const controls = await reader.decodeFromVideoDevice(undefined, video, (result, err) => {

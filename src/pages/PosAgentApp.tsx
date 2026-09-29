@@ -12,7 +12,6 @@ import { api } from "@/lib/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { BarcodeScannerHub } from "@/components/BarcodeScannerHub";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
-import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import * as XLSX from 'xlsx';
 
 type Employee = {
@@ -288,29 +287,25 @@ export function PosAgentApp() {
     }
   }, [currentView]);
 
-  // Realtime sync for inventory_products - sync changes from inventory module
-  useSupabaseRealtime(
-    {
-      table: "inventory_products",
-      events: ["INSERT", "UPDATE", "DELETE"],
-      onInsert: (item) => {
-        console.log("[PosAgentApp] Realtime INSERT - new product:", item);
-        setProducts(prev => [...prev, item]);
-        setFilteredProducts(prev => [...prev, item]);
-      },
-      onUpdate: (item) => {
-        console.log("[PosAgentApp] Realtime UPDATE - product updated:", item);
-        setProducts(prev => prev.map(p => p.id === item.id ? item : p));
-        setFilteredProducts(prev => prev.map(p => p.id === item.id ? item : p));
-      },
-      onDelete: (item) => {
-        console.log("[PosAgentApp] Realtime DELETE - product removed:", item);
-        setProducts(prev => prev.filter(p => p.id !== item.id));
-        setFilteredProducts(prev => prev.filter(p => p.id !== item.id));
-      },
-    },
-    !!token // Enable when token is available
-  );
+  // Polling for inventory sync - using Neon as source of truth instead of Supabase Realtime
+  useEffect(() => {
+    if (!token) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const response = await api<{ success: boolean; products: Product[] }>(`/inventory/standalone-products?token=${token}`);
+        if (response.success) {
+          console.log("[PosAgentApp] Polling - Loaded products:", response.products.length);
+          setProducts(response.products);
+          setFilteredProducts(response.products);
+        }
+      } catch (error) {
+        console.error("[PosAgentApp] Error polling products:", error);
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [token]);
 
   const loadEmployees = async () => {
     try {
@@ -2108,6 +2103,7 @@ export function PosAgentApp() {
                           if (product) {
                             addToCart(product);
                             toast.success(`${getText("addedToCart")}: ${product.name}`);
+                            // Don't close scanner - allow continuous scanning
                           }
                         }}
                       />
