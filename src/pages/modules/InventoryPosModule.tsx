@@ -19,7 +19,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
-import { supabase } from "@/lib/supabaseClient";
 import { postBackendReportDocx } from "@/lib/backendExportClient";
 import * as XLSX from 'xlsx';
 import {
@@ -31,7 +30,6 @@ import { downloadTableAsWordDocx } from "@/lib/wordExport";
 import { downloadXlsxWorkbook } from "@/lib/excelDownload";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
-import { useInventoryRealtime, useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import {
   assignLogisticsItemBackend,
   createProductionRequestBackend,
@@ -39,16 +37,12 @@ import {
   fetchProductionRequestsBackend,
   reserveProductionMaterialBackend,
 } from "@/lib/productionApi";
-import {
-  fetchHrStaff,
-  fetchInventory,
-  reserveMaterial,
-  updateProductStock,
-  type HrStaffRow,
-  type InventoryItem,
-  type LogisticsQueueItem,
-  type ProductionRequestRow,
-} from "@/lib/supabaseClient";
+import type {
+  HrStaffRow,
+  InventoryItem,
+  LogisticsQueueItem,
+  ProductionRequestRow,
+} from "@/lib/types";
 import {
   tlDownloadMessageAttachment,
   tlMessageRecipients,
@@ -83,6 +77,7 @@ import {
   type ProductLite,
 } from "@/lib/inventoryReceiptParse";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
+import { inventoryRowFromLegacy, inventoryRowFromProduct } from "@/features/inventory/import-helpers";
 
 type Product = {
   id: string;
@@ -171,17 +166,16 @@ type ProductionBomItem = {
   quantity: number;
   available: number;
   reference?: string;
-  source: "supabase" | "inventory_products";
+  source: "legacy" | "inventory_products";
 };
 
 type InventorySourceRow = {
   id: string;
   name: string;
-  qty: number;
   sku: string;
   barcode: string;
   reference: string;
-  source: "supabase" | "inventory_products";
+  source: "legacy" | "inventory_products";
 };
 
 type SheetCell = string | number | boolean | Date | null | undefined;
@@ -327,23 +321,10 @@ function inventoryRowFromSupabase(item: InventoryItem): InventorySourceRow {
   return {
     id: item.id,
     name,
-    qty: Math.max(0, Number(item.quantity ?? item.stock_pieces ?? 0) || 0),
     sku: String(item.sku ?? "").trim(),
     barcode: String(item.barcode ?? "").trim(),
     reference: String(item.reference ?? "").trim(),
-    source: "supabase",
-  };
-}
-
-function inventoryRowFromProduct(product: Product): InventorySourceRow {
-  return {
-    id: product.id,
-    name: product.name,
-    qty: Math.max(0, Number(product.stock_pieces) || 0),
-    sku: product.sku,
-    barcode: product.sku,
-    reference: product.retail_type,
-    source: "inventory_products",
+    source: "legacy",
   };
 }
 
@@ -470,6 +451,9 @@ export function InventoryPosModule() {
     paid: "",
     due_at: todayIsoLocal(),
   });
+  const isSubmittingSaleRef = useRef(false);
+  const [isSubmittingSale, setIsSubmittingSale] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [quickListIndex, setQuickListIndex] = useState(0);
   const [quickSearch, setQuickSearch] = useState("");
   const [quickUnit, setQuickUnit] = useState<QuickUnit>("piece");
@@ -530,7 +514,7 @@ export function InventoryPosModule() {
   const ghostBarcodeBusyRef = useRef<string | null>(null);
 
   const refreshInventoryTables = useCallback(async () => {
-    if (!supabase || !token) return;
+    if (!token) return;
     // Use user.id from AuthContext
     const authUserId = user?.id;
     if (!authUserId) {
@@ -539,22 +523,17 @@ export function InventoryPosModule() {
     }
     console.log("[refreshInventoryTables] Fetching inventory for user:", authUserId);
 
-    // Use fetchInventory which now uses Express API for consistency
     const [productsData, invoicesData] = await Promise.all([
-      fetchInventory(authUserId),
+      api<ProductsResponse>("/inventory/products", { token }),
       api<InvoicesResponse>("/inventory/invoices", { token }),
     ]);
     startTransition(() => {
-      setProducts(productsData as Product[]);
+      setProducts(Array.isArray(productsData?.products) ? productsData.products as Product[] : []);
       setInvoices(invoicesData.invoices);
     });
   }, [token, user?.id]);
 
   const load = useCallback(async () => {
-    if (!supabase) {
-      setLoading(false);
-      return;
-    }
     if (!token) {
       setLoading(false);
       return;
@@ -567,10 +546,9 @@ export function InventoryPosModule() {
     }
     setLoading(true);
     try {
-      // Use fetchInventory which now uses Express API for consistency
       const productsPromise = isAdmin 
         ? api<Product[]>("/super-admin/inventory-products", { token })
-        : fetchInventory(user.id);
+        : api<ProductsResponse>("/inventory/products", { token });
 
       const [productsData, inv, br, supInv, prodRequests, prodLogistics, supHr, tlStaff] = await Promise.allSettled([
         productsPromise,
@@ -578,20 +556,20 @@ export function InventoryPosModule() {
         api<{
           branding: { activityType?: string; companyName?: string; logoDataUrl?: string };
         }>("/user/branding", { token }),
-        fetchInventory(user.id),
+        api<ProductsResponse>("/inventory/products", { token }),
         fetchProductionRequestsBackend(token),
         fetchLogisticsQueueBackend(token),
-        fetchHrStaff(),
+        api<HrStaffRow[]>("/hr/employees", { token }),
         tlWorkers(token),
       ]);
       startTransition(() => {
         // Ensure products are fetched from database directly
         const products = productsData.status === "fulfilled" 
-          ? (Array.isArray(productsData.value) ? productsData.value : (productsData.value.data || [])) 
+          ? (Array.isArray(productsData.value) ? productsData.value : (Array.isArray(productsData.value?.products) ? productsData.value.products : [])) 
           : [];
         setProducts(products as Product[]);
         setInvoices(inv.status === "fulfilled" ? inv.value.invoices : []);
-        if (supInv.status === "fulfilled") setInventoryItems(supInv.value);
+        if (supInv.status === "fulfilled") setInventoryItems(Array.isArray(supInv.value?.products) ? supInv.value.products : []);
         if (prodRequests.status === "fulfilled") setProductionRequests(prodRequests.value);
         if (prodLogistics.status === "fulfilled") setLogisticsQueue(prodLogistics.value);
         if (supHr.status === "fulfilled") setHrStaff(supHr.value);
@@ -671,17 +649,22 @@ export function InventoryPosModule() {
     const [backendRequests, backendLogistics, supInv] = await Promise.allSettled([
       fetchProductionRequestsBackend(token),
       fetchLogisticsQueueBackend(token),
-      fetchInventory(user?.id),
+      api<ProductsResponse>("/inventory/products", { token }),
     ]);
     if (backendRequests.status === "fulfilled") setProductionRequests(backendRequests.value);
     if (backendLogistics.status === "fulfilled") setLogisticsQueue(backendLogistics.value);
-    if (supInv.status === "fulfilled") setInventoryItems(supInv.value);
+    if (supInv.status === "fulfilled") setInventoryItems(Array.isArray(supInv.value?.products) ? supInv.value.products : []);
   }, [token, user?.id]);
 
   const inventorySourceRows = useMemo(() => {
-    const supabaseRows = inventoryItems.map(inventoryRowFromSupabase);
-    if (supabaseRows.length > 0) return supabaseRows;
-    return products.map(inventoryRowFromProduct);
+    // Ensure inventoryItems is an array before mapping
+    const safeInventoryItems = Array.isArray(inventoryItems) ? inventoryItems : [];
+    const legacyRows = safeInventoryItems.map(inventoryRowFromLegacy);
+    if (legacyRows.length > 0) return legacyRows;
+    
+    // Ensure products is an array before mapping
+    const safeProducts = Array.isArray(products) ? products : [];
+    return safeProducts.map(inventoryRowFromProduct);
   }, [inventoryItems, products]);
 
   const filteredInventoryRows = useMemo(() => {
@@ -823,7 +806,11 @@ export function InventoryPosModule() {
     try {
       // Restore stock for each line
       for (const line of previousDraftLines) {
-        await updateProductStock(line.product_id, line.qty_pieces, user?.id, token);
+        await api(`/inventory/products/${line.product_id}/stock`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify({ stock_change: line.qty_pieces }),
+        });
       }
 
       // Restore draft lines
@@ -864,9 +851,12 @@ export function InventoryPosModule() {
     const item = bomItems.find((row) => row.material_id === materialId);
     if (!item || !token) return;
     try {
-      if (item.source === "supabase") {
-        // Pass user.id from AuthContext to reserveMaterial
-        await reserveMaterial(materialId, item.quantity, user?.id);
+      if (item.source === "legacy") {
+        await api(`/inventory/products/${materialId}/reserve`, {
+          method: "POST",
+          token,
+          body: JSON.stringify({ quantity: item.quantity }),
+        });
 
         // Update local state immediately without full refresh - use map to preserve all products
         setProducts((prevProducts) =>
@@ -1072,7 +1062,15 @@ export function InventoryPosModule() {
   };
 
   const submitQuickDraft = async () => {
-    if (!supabase || !draftLines?.length) return;
+    if (!draftLines?.length) return;
+    if (isSubmittingSaleRef.current) {
+      console.log("[submitQuickDraft] Already submitting, ignoring duplicate click");
+      return;
+    }
+    
+    isSubmittingSaleRef.current = true;
+    setIsSubmittingSale(true);
+    
     const ovRaw = manualTotalOverride.trim().replace(",", ".");
     let override_total: number | undefined;
     if (ovRaw !== "") {
@@ -1096,7 +1094,11 @@ export function InventoryPosModule() {
       // Deduct stock from inventory_products table
       for (const line of draftLines) {
         console.log("submitQuickDraft - Deducting stock for product:", line.product_id, "qty:", line.qty_pieces);
-        await updateProductStock(line.product_id, -line.qty_pieces, authUserId, token);
+        await api(`/inventory/products/${line.product_id}/stock`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify({ stock_change: -line.qty_pieces }),
+        });
       }
 
       console.log("submitQuickDraft - Calling sale-batch API");
@@ -1105,6 +1107,27 @@ export function InventoryPosModule() {
         toast.error(locale.startsWith("ar") ? 'يجب تسجيل الدخول' : 'Must be logged in');
         return;
       }
+
+      // Calculate total from draft lines
+      const draftTotal = draftLines.reduce((sum, line) => sum + line.line_total, 0);
+      console.log("[submitQuickDraft] Draft total:", draftTotal);
+      console.log("[submitQuickDraft] Customer:", sale.customer);
+      console.log("[submitQuickDraft] Due date:", sale.due_at);
+      console.log("[submitQuickDraft] Paid:", sale.paid);
+
+      // Only record as credit if customer name AND due date are provided
+      // Otherwise, treat as regular sale (paid = total)
+      const hasCustomer = sale.customer && sale.customer.trim() !== "";
+      const hasDueDate = sale.due_at && sale.due_at.trim() !== "";
+      const isCreditSale = hasCustomer && hasDueDate;
+      console.log("[submitQuickDraft] Has customer:", hasCustomer);
+      console.log("[submitQuickDraft] Has due date:", hasDueDate);
+      console.log("[submitQuickDraft] Is credit sale:", isCreditSale);
+      const paidAmount = isCreditSale ? (Number(sale.paid) || 0) : draftTotal;
+      const dueDate = isCreditSale ? sale.due_at : null;
+      console.log("[submitQuickDraft] Final paid amount:", paidAmount);
+      console.log("[submitQuickDraft] Final due date:", dueDate);
+
       const saleResponse = await api<{ id: string; total: number; credit: number }>("/inventory/sale-batch", {
         method: "POST",
         token,
@@ -1114,9 +1137,9 @@ export function InventoryPosModule() {
             qty_pieces: l.qty_pieces,
             line_total: l.line_total,
           })),
-          customer_name: sale.customer,
-          paid: Number(sale.paid) || 0,
-          due_at: sale.due_at || null,
+          customer_name: isCreditSale ? sale.customer : null,
+          paid: paidAmount,
+          due_at: dueDate,
           ...(override_total != null ? { override_total } : {}),
         }),
       });
@@ -1152,6 +1175,9 @@ export function InventoryPosModule() {
       
       toast.success("تم تأكيد بيع المسودة بنجاح");
       
+      // Clear sale fields immediately to prevent double submission
+      setSale({ customer: "", paid: "", due_at: todayIsoLocal() });
+      
       // Move to next product in the list
       const currentIdx = quickListIndex;
       const nextIdx = Math.min(currentIdx + 1, Math.max(0, products.length - 1));
@@ -1166,12 +1192,15 @@ export function InventoryPosModule() {
     } catch (err) {
       console.error("Sale error:", JSON.stringify(err, null, 2));
       toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    } finally {
+      isSubmittingSaleRef.current = false;
+      setIsSubmittingSale(false);
     }
   };
 
-  const voidSale = async (saleId: string) => {
+  const voidSale = async (saleId: string, skipConfirm = false) => {
     if (!token) return;
-    if (!window.confirm(t("inv.confirmVoidSale"))) return;
+    if (!skipConfirm && !window.confirm(t("inv.confirmVoidSale"))) return;
     try {
       // Use API endpoint to void the invoice
       const res = await api<{ success: boolean }>(`/inventory/invoices/${saleId}/void`, {
@@ -1200,55 +1229,16 @@ export function InventoryPosModule() {
     }
   };
 
-  // Enable real-time inventory sync
-  useInventoryRealtime(
-    user?.id,
-    async (item) => {
-      // Handle INSERT - add new product
-      console.log("[InventoryPosModule] Real-time INSERT:", item);
-      setProducts((prev) => [...prev, item as Product]);
-    },
-    async (item) => {
-      // Handle UPDATE - update existing product stock
-      console.log("[InventoryPosModule] Real-time UPDATE:", item);
-      setProducts((prev) => 
-        prev.map((p) => 
-          p.id === item.id ? { ...p, stock_pieces: item.stock_pieces } : p
-        )
-      );
-    },
-    async (item) => {
-      // Handle DELETE - remove product
-      console.log("[InventoryPosModule] Real-time DELETE:", item);
-      setProducts((prev) => prev.filter((p) => p.id !== item.id));
-    },
-    !!user?.id // Enable only when user is logged in
-  );
-
-  // Enable real-time sync for pos_agent_sales - sync sales from agent app
-  useSupabaseRealtime(
-    {
-      table: "pos_agent_sales",
-      events: ["INSERT", "UPDATE", "DELETE"],
-      onInsert: (sale) => {
-        console.log("[InventoryPosModule] Real-time INSERT - new agent sale:", sale);
-        // Refresh inventory to update stock after agent sale
-        refreshInventoryTables();
-      },
-      onUpdate: (sale) => {
-        console.log("[InventoryPosModule] Real-time UPDATE - agent sale updated:", sale);
-        // Refresh inventory if sale was voided
-        if (sale.status === "voided") {
-          refreshInventoryTables();
-        }
-      },
-      onDelete: (sale) => {
-        console.log("[InventoryPosModule] Real-time DELETE - agent sale deleted:", sale);
-        refreshInventoryTables();
-      },
-    },
-    !!user?.id // Enable only when user is logged in
-  );
+  // Polling for inventory updates (replaces Supabase Realtime)
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    const interval = setInterval(async () => {
+      await refreshInventoryTables();
+    }, 30000); // Poll every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [user?.id, refreshInventoryTables]);
 
   const handleEditProduct = (productId: string) => {
     // ... (rest of the code remains the same)
@@ -1265,7 +1255,6 @@ export function InventoryPosModule() {
   };
 
   const handleSaveProduct = async (productId: string) => {
-    if (!supabase) return;
     try {
       console.log("handleSaveProduct - productId:", productId);
       console.log("handleSaveProduct - editingProductData:", JSON.stringify(editingProductData, null, 2));
@@ -1295,22 +1284,25 @@ export function InventoryPosModule() {
       setEditingProductData({});
       
       // Reload from database to ensure state is consistent with latest data
-      const freshProducts = await fetchInventory(user?.id);
-      setProducts(freshProducts as Product[]);
+      const freshProductsResponse = await api<ProductsResponse>("/inventory/products", { token });
+      const freshProducts = Array.isArray(freshProductsResponse?.products) ? freshProductsResponse.products as Product[] : [];
+      setProducts(freshProducts);
       
       // Log the operation
       await logShiftOperation('تعديل مخزون', `تعديل المنتج: ${productId}`);
       
       toast.success("تم الحفظ بنجاح");
     } catch (err) {
-      console.error("Supabase Error Details - handleSaveProduct:", JSON.stringify(err, null, 2));
+      console.error("Error Details - handleSaveProduct:", JSON.stringify(err, null, 2));
       toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
     }
   };
 
   const logShiftOperation = async (operationType: string, details: string) => {
-    if (!supabase || !user?.id) {
-      console.log("logShiftOperation: supabase or user not available");
+    console.log("[logShiftOperation] START - operationType:", operationType, "details:", details);
+    
+    if (!user?.id) {
+      console.error("[logShiftOperation] FAIL - user not available");
       return;
     }
 
@@ -1318,28 +1310,54 @@ export function InventoryPosModule() {
       // Use user.id from AuthContext
       const authUserId = user?.id;
       if (!authUserId) {
-        console.warn("[logShiftOperation] No user ID from AuthContext - skipping shift log (non-critical)");
+        console.error("[logShiftOperation] FAIL - No user ID from AuthContext");
         return;
       }
       console.log("[logShiftOperation] Using user ID from AuthContext:", authUserId);
 
-      const today = new Date().toISOString().split('T')[0];
-      const now = new Date().toISOString();
-      const time = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      // Use date object for accurate comparison
+      const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-      console.log("logShiftOperation called:", { operationType, details, today, shiftGroup, userId: authUserId });
+      console.log("[logShiftOperation] Parameters:", { operationType, details, today, shiftGroup, userId: authUserId });
 
       // Use Express API for shift reports (both Super Admin and regular users)
       let existingReport = null;
       try {
-        const reports = await api<any[]>(isAdmin ? "/super-admin/shift-reports" : "/shift-reports", { token });
-        existingReport = reports.find((r: any) =>
-          r.shift_date === today &&
-          r.shift_group === shiftGroup &&
-          r.user_id === authUserId
-        ) || null;
+        console.log("[logShiftOperation] Fetching shift reports for user:", authUserId);
+        // All users (including Super Admin) should use /shift-reports to get only their own reports
+        const reports = await api<any[]>("/shift-reports", { token });
+        console.log("[logShiftOperation] All reports fetched:", reports.length);
+        console.log("[logShiftOperation] Today (local):", today);
+        console.log("[logShiftOperation] Shift group:", shiftGroup);
+        console.log("[logShiftOperation] User ID:", authUserId);
+        // Log first 3 reports for debugging
+        console.log("[logShiftOperation] First 3 reports:", reports.slice(0, 3).map((r: any) => ({
+          id: r.id,
+          shift_date: r.shift_date,
+          shift_group: r.shift_group,
+          user_id: r.user_id
+        })));
+        // Normalize dates for comparison - compare date objects
+        existingReport = reports.find((r: any) => {
+          const reportDate = r.shift_date ? new Date(r.shift_date) : null;
+          // Compare year, month, and day
+          const match = reportDate &&
+                       reportDate.getFullYear() === todayDate.getFullYear() &&
+                       reportDate.getMonth() === todayDate.getMonth() &&
+                       reportDate.getDate() === todayDate.getDate() &&
+                       r.shift_group === shiftGroup &&
+                       r.user_id === authUserId;
+          if (match) {
+            console.log("[logShiftOperation] MATCH FOUND:", r.id, reportDate.toISOString().split('T')[0], r.shift_group);
+          }
+          return match;
+        }) || null;
+        console.log("[logShiftOperation] Existing report found:", existingReport ? existingReport.id : "None");
       } catch (error) {
-        console.error("Error fetching shift reports:", error);
+        console.error("[logShiftOperation] Error fetching shift reports:", error);
         return;
       }
 
@@ -1386,39 +1404,26 @@ export function InventoryPosModule() {
         }
 
         try {
-          if (isAdmin) {
-            // Super Admin: use Express API
-            await api(`/super-admin/shift-reports/${existingReport.id}`, {
-              method: "PUT",
-              token,
-              body: JSON.stringify({
-                ...updates,
-                customer_name: shiftCustomerName || existingReport.customer_name,
-                customer_number: shiftCustomerPhone || existingReport.customer_number,
-                week: shiftWeek || existingReport.week
-              })
-            });
-          } else {
-            // Regular user: use Express API
-            await api(`/shift-reports/${existingReport.id}`, {
-              method: "PUT",
-              token,
-              body: JSON.stringify({
-                ...updates,
-                customer_name: shiftCustomerName || existingReport.customer_name,
-                customer_number: shiftCustomerPhone || existingReport.customer_number,
-                week: shiftWeek || existingReport.week
-              })
-            });
-            console.log("Report updated successfully");
-            // Force reload to ensure UI shows latest data
-            await loadShiftReport();
-          }
+          // All users (including Super Admin) should use /shift-reports to update only their own reports
+          console.log("[logShiftOperation] Updating user report:", existingReport.id);
+          await api(`/shift-reports/${existingReport.id}`, {
+            method: "PUT",
+            token,
+            body: JSON.stringify({
+              ...updates,
+              customer_name: shiftCustomerName || existingReport.customer_name,
+              customer_number: shiftCustomerPhone || existingReport.customer_number,
+              week: shiftWeek || existingReport.week
+            })
+          });
+          console.log("[logShiftOperation] User report updated successfully");
+          // Force reload to ensure UI shows latest data
+          await loadShiftReport();
         } catch (error) {
-          console.error("Error updating shift report:", error);
+          console.error("[logShiftOperation] Error updating shift report:", error);
         }  
     } else {
-      console.log("Creating new report");
+      console.log("[logShiftOperation] Creating new report for user:", authUserId);
       // Create new shift report
       const newReport = {
         id: crypto.randomUUID(),
@@ -1440,34 +1445,22 @@ export function InventoryPosModule() {
         customer_number: shiftCustomerPhone,
         week: shiftWeek
       };
+      
+      console.log("[logShiftOperation] New report payload:", newReport);
 
       try {
-        if (isAdmin) {
-          // Super Admin: use Express API
-          await api("/super-admin/shift-reports", {
-            method: "POST",
-            token,
-            body: JSON.stringify(newReport)
-          });
-        } else {
-          // Regular user: use Supabase
-          const { data: createdReport, error: insertError } = await supabase
-            .from("shift_reports")
-            .insert([newReport])
-            .select()
-            .single();
-
-          if (insertError) {
-            console.error("Error creating shift report:", insertError);
-          } else if (createdReport) {
-            console.log("Report created successfully:", createdReport);
-            setSelectedShiftReport(createdReport);
-            // Force reload to ensure UI shows latest data
-            await loadShiftReport();
-          }
-        }
+        // All users (including Super Admin) should use /shift-reports to create their own reports
+        console.log("[logShiftOperation] Creating user report");
+        await api("/shift-reports", {
+          method: "POST",
+          token,
+          body: JSON.stringify(newReport)
+        });
+        console.log("[logShiftOperation] User report created successfully");
+        // Force reload to ensure UI shows latest data
+        await loadShiftReport();
       } catch (insertError) {
-        console.error("Silent error in insert operation:", insertError);
+        console.error("[logShiftOperation] Silent error in insert operation:", insertError);
       }
     }
   } catch (error) {
@@ -1480,26 +1473,38 @@ export function InventoryPosModule() {
     if (!user?.id) return;
 
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const today = now.toISOString().split('T')[0];
       console.log("Loading shift report for:", { today, shiftGroup, userId: user.id });
-      
+
       let report = null;
-      if (isAdmin) {
-        // Super Admin: use Express API
-        const reports = await api<any[]>("/super-admin/shift-reports", { token });
-        report = reports.find((r: any) =>
-          r.shift_date === today &&
-          r.shift_group === shiftGroup &&
-          r.user_id === user.id
-        ) || null;
+      // All users (including Super Admin) should use /shift-reports to get only their own reports
+      const reports = await api<any[]>("/shift-reports", { token });
+      console.log("Total reports fetched:", reports.length);
+      // Log dates of first few reports
+      if (reports.length > 0) {
+        console.log("First 3 report dates:", JSON.stringify(reports.slice(0, 3).map((r: any) => ({ id: r.id, date: r.shift_date, group: r.shift_group }))));
+      }
+      // Try to find report for today first, then any report for this shift group
+      report = reports.find((r: any) => {
+        const reportDate = r.shift_date ? new Date(r.shift_date) : null;
+        // Compare year, month, and day
+        return reportDate &&
+               reportDate.getFullYear() === todayDate.getFullYear() &&
+               reportDate.getMonth() === todayDate.getMonth() &&
+               reportDate.getDate() === todayDate.getDate() &&
+               r.shift_group === shiftGroup &&
+               r.user_id === user.id;
+      }) || reports.find((r: any) =>
+        r.shift_group === shiftGroup &&
+        r.user_id === user.id
+      ) || null;
+      
+      if (report) {
+        console.log("Found report for user:", report.id, "date:", report.shift_date);
       } else {
-        // Regular user: use Express API
-        const reports = await api<any[]>("/shift-reports", { token });
-        report = reports.find((r: any) =>
-          r.shift_date === today &&
-          r.shift_group === shiftGroup &&
-          r.user_id === user.id
-        ) || null;
+        console.log("No reports found for user at all");
       }
 
       if (report) {
@@ -1514,68 +1519,8 @@ export function InventoryPosModule() {
         if (report.customer_number) setShiftCustomerPhone(report.customer_number);
         if (report.week) setShiftWeek(report.week);
       } else {
-        console.log("No shift report found, calculating from all shift_reports for today");
-        // Calculate statistics from shift_reports table - fetch all reports for user and date (no shift requirement)
-        const { data: allReports, error: reportsError } = await supabase
-          .from("shift_reports")
-          .select("*")
-          .eq("shift_date", today)
-          .eq("user_id", user.id);
-
-        console.log("All shift reports query result:", { reportsError, reports: allReports?.length });
-
-        if (!reportsError && allReports && allReports.length > 0) {
-          // Aggregate all operations from all shift reports for today
-          const allOperations = allReports.flatMap(report => 
-            (report.operations_log && Array.isArray(report.operations_log)) ? report.operations_log : []
-          );
-
-          console.log("Total operations found:", allOperations.length);
-
-          // Calculate counts from operations_log - check Arabic action values
-          const salesCount = allOperations.filter((op: any) => 
-            op.action === 'بيع' || op.action === 'بيع منتج'
-          ).length;
-          const stockAddCount = allOperations.filter((op: any) => 
-            op.action === 'إضافة مخزون'
-          ).length;
-          const stockEditCount = allOperations.filter((op: any) => 
-            op.action === 'تعديل مخزون'
-          ).length;
-          const importCount = allOperations.filter((op: any) => 
-            op.action === 'استيراد'
-          ).length;
-          const exportCount = allOperations.filter((op: any) => 
-            op.action === 'تصدير'
-          ).length;
-          const deleteCount = allOperations.filter((op: any) => 
-            op.action === 'حذف'
-          ).length;
-
-          console.log("Calculated counts:", { salesCount, stockAddCount, stockEditCount, importCount, exportCount, deleteCount });
-
-          // Create a temporary report with calculated statistics
-          const tempReport = {
-            id: 'temp',
-            shift_date: today,
-            shift_group: shiftGroup,
-            user_id: user.id,
-            sales_count: salesCount,
-            stock_add_count: stockAddCount,
-            stock_edit_count: stockEditCount,
-            import_count: importCount,
-            export_count: exportCount,
-            delete_count: deleteCount,
-            total_operations: allOperations.length,
-            operations_log: allOperations
-          };
-          
-          console.log("Created temporary report from shift_reports:", tempReport);
-          setSelectedShiftReport(tempReport);
-        } else {
-          console.log("No shift reports found either, clearing state");
-          setSelectedShiftReport(null);
-        }
+        console.log("No shift report found for today, will be created on first operation");
+        setSelectedShiftReport(null);
       }
     } catch (error) {
       console.error("Error loading shift report:", error);
@@ -1602,7 +1547,6 @@ export function InventoryPosModule() {
   }, [selectedShiftReport?.total_operations, selectedShiftReport?.sales_count, selectedShiftReport?.stock_add_count, selectedShiftReport?.stock_edit_count, selectedShiftReport?.import_count, selectedShiftReport?.export_count, selectedShiftReport?.delete_count]);
 
   const handleDeleteProduct = async (productId: string) => {
-    if (!supabase) return;
     if (!window.confirm(t("inv.confirmDelete"))) return;
     try {
       console.log("handleDeleteProduct - Deleting product:", productId);
@@ -1620,8 +1564,9 @@ export function InventoryPosModule() {
       setProducts((prev) => prev.filter((p) => p.id !== productId));
 
       // Reload from database to ensure state is consistent
-      const freshProducts = await fetchInventory(user?.id);
-      setProducts(freshProducts as Product[]);
+      const freshProductsResponse = await api<ProductsResponse>("/inventory/products", { token });
+      const freshProducts = Array.isArray(freshProductsResponse?.products) ? freshProductsResponse.products as Product[] : [];
+      setProducts(freshProducts);
 
       // Force refresh inventory tables to ensure UI is updated
       await refreshInventoryTables();
@@ -1631,7 +1576,7 @@ export function InventoryPosModule() {
 
       toast.success("تم الحذف بنجاح");
     } catch (err) {
-      console.error("Supabase Error Details - handleDeleteProduct:", JSON.stringify(err, null, 2));
+      console.error("Error Details - handleDeleteProduct:", JSON.stringify(err, null, 2));
       toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
     }
   };
@@ -1729,10 +1674,11 @@ export function InventoryPosModule() {
   };
 
   const handleSelectAllProducts = () => {
-    if (selectedProductIds.size === products.length) {
+    const safeProducts = Array.isArray(products) ? products : [];
+    if (selectedProductIds.size === safeProducts.length) {
       setSelectedProductIds(new Set());
     } else {
-      setSelectedProductIds(new Set(products.map((p) => p.id)));
+      setSelectedProductIds(new Set(safeProducts.map((p) => p.id)));
     }
   };
 
@@ -1766,9 +1712,10 @@ export function InventoryPosModule() {
   };
 
   const filteredQuickProducts = useMemo(() => {
+    const safeProducts = Array.isArray(products) ? products : [];
     const q = quickSearch.trim().toLowerCase();
-    if (!q) return products;
-    const filtered = products.filter(
+    if (!q) return safeProducts;
+    const filtered = safeProducts.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
         (p.sku && p.sku.toLowerCase().includes(q))
@@ -1814,15 +1761,17 @@ export function InventoryPosModule() {
   }, [manualTotalOverride, draftGrandTotal]);
 
   const productsLite = useMemo(
-    (): ProductLite[] =>
-      products.map((p) => ({
+    (): ProductLite[] => {
+      const safeProducts = Array.isArray(products) ? products : [];
+      return safeProducts.map((p) => ({
         id: p.id,
         name: p.name,
         sku: p.sku,
         unit_price: p.unit_price,
         stock_pieces: p.stock_pieces,
         pieces_per_carton: p.pieces_per_carton,
-      })),
+      }));
+    },
     [products]
   );
 
@@ -1930,8 +1879,9 @@ export function InventoryPosModule() {
       }
       
       // Reload from database to ensure all imported items are visible immediately
-      const freshProducts = await fetchInventory(user?.id);
-      setProducts(freshProducts as Product[]);
+      const freshProductsResponse = await api<ProductsResponse>("/inventory/products", { token });
+      const freshProducts = Array.isArray(freshProductsResponse?.products) ? freshProductsResponse.products as Product[] : [];
+      setProducts(freshProducts);
     },
     [token, productsLite, brandingPrefs.activityType, user?.id]
   );
@@ -1966,7 +1916,11 @@ export function InventoryPosModule() {
               body: JSON.stringify({ unit_price: row.unit_price }),
             });
           }
-          await updateProductStock(row.product_id, row.add_pieces, user?.id, token);
+          await api(`/inventory/products/${row.product_id}/stock`, {
+            method: "PATCH",
+            token,
+            body: JSON.stringify({ stock_change: row.add_pieces }),
+          });
         }
         return;
       }
@@ -1981,8 +1935,6 @@ export function InventoryPosModule() {
   );
 
   const upsertImportedProducts = async (imported: ProductWritePayload[]) => {
-    if (!supabase) return 0;
-
     console.log("[upsertImportedProducts] Starting import with", imported.length, "items");
 
     // Use user.id from AuthContext instead of getSession()
@@ -2151,9 +2103,10 @@ export function InventoryPosModule() {
 
     // Reload from database to ensure all imported items are visible
     // Use authUserId to ensure we fetch the products we just inserted
-    const freshProducts = await fetchInventory(authUserId);
+    const freshProductsResponse = await api<ProductsResponse>("/inventory/products", { token });
+    const freshProducts = Array.isArray(freshProductsResponse?.products) ? freshProductsResponse.products as Product[] : [];
     console.log("[upsertImportedProducts] Fetched", freshProducts.length, "products from database with user_id:", authUserId);
-    setProducts(freshProducts as Product[]);
+    setProducts(freshProducts);
     console.log("[upsertImportedProducts] Updated products state");
 
     // Clear search filter to ensure all products are visible
@@ -2164,8 +2117,6 @@ export function InventoryPosModule() {
   };
 
   const importInventoryFromText = async (text: string) => {
-    if (!supabase) return 0;
-    
     // Use user.id from AuthContext instead of getSession()
     const authUserId = user?.id;
     if (!authUserId) {
@@ -2185,14 +2136,19 @@ export function InventoryPosModule() {
             body: JSON.stringify({ unit_price: Number(row.unit_price) }),
           });
         }
-        await updateProductStock(row.product_id, row.add_pieces, authUserId, token);
+        await api(`/inventory/products/${row.product_id}/stock`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify({ stock_change: row.add_pieces }),
+        });
       }
       
       // Reload from database to ensure updated items are visible
       console.log("[importInventoryFromText] Reloading from database with user_id:", authUserId);
-      const freshProducts = await fetchInventory(authUserId);
+      const freshProductsResponse = await api<ProductsResponse>("/inventory/products", { token });
+      const freshProducts = Array.isArray(freshProductsResponse?.products) ? freshProductsResponse.products as Product[] : [];
       console.log("[importInventoryFromText] Fetched", freshProducts.length, "products from database");
-      setProducts(freshProducts as Product[]);
+      setProducts(freshProducts);
       console.log("[importInventoryFromText] Updated products state");
 
       // Clear search filter to ensure all products are visible
@@ -2270,7 +2226,7 @@ export function InventoryPosModule() {
       
       toast.success(`${t("common.saved")} (${affected})`);
     } catch (err) {
-      console.error("Supabase Error Details - handleInventoryImportFile:", err);
+      console.error("Error Details - handleInventoryImportFile:", err);
       const errorMessage = err instanceof Error ? err.message : t("pay.errGeneric");
       toast.error(errorMessage);
       
@@ -2333,19 +2289,25 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
       window.setTimeout(() => setExportProcessing({ active: false, label: "" }), 420);
       // Clear any cached import data to prevent state bleeding into manual add
       setQuickSearch("");
-      setProducts(await fetchInventory(user?.id));
+      const freshProductsResponse = await api<ProductsResponse>("/inventory/products", { token });
+      const freshProducts = Array.isArray(freshProductsResponse?.products) ? freshProductsResponse.products as Product[] : [];
+      setProducts(freshProducts);
     }
   };
 
   const applyQuickStock = async () => {
-    if (!supabase || !quickStockProductId) return;
+    if (!quickStockProductId) return;
     const add = Math.max(0, Math.floor(Number(quickStockPieces) || 0));
     if (add <= 0) {
       setQuickStockOpen(false);
       setQuickStockProductId(null);
       return;
     }
-    await updateProductStock(quickStockProductId, add, user?.id, token);
+    await api(`/inventory/products/${quickStockProductId}/stock`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify({ stock_change: add }),
+    });
     setQuickStockOpen(false);
     setQuickStockProductId(null);
     await refreshInventoryTables();
@@ -2481,8 +2443,9 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
         }
 
         try {
-          const freshProducts = await fetchInventory(user?.id);
-          setProducts(freshProducts as Product[]);
+          const freshProductsResponse = await api<ProductsResponse>("/inventory/products", { token });
+          const freshProducts = Array.isArray(freshProductsResponse?.products) ? freshProductsResponse.products as Product[] : [];
+          setProducts(freshProducts);
           const idx = freshProducts.findIndex((p) => p.id === r.id);
           if (idx >= 0) {
             setQuickListIndex(idx);
@@ -2570,8 +2533,9 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
       
       // إعادة جلب أحدث بيانات المخزون قبل البحث عن المنتج
       try {
-        const freshProducts = await fetchInventory(user?.id);
-        setProducts(freshProducts as Product[]);
+        const freshProductsResponse = await api<ProductsResponse>("/inventory/products", { token });
+        const freshProducts = Array.isArray(freshProductsResponse?.products) ? freshProductsResponse.products as Product[] : [];
+        setProducts(freshProducts);
         
         // البحث عن المنتج بالباركود في البيانات المحدثة
         const product = freshProducts.find(p => p.sku === barcode);
@@ -2774,7 +2738,8 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
 
   const exportPdf = async () => {
     await runExport(t("inv.exportProcessing"), async () => {
-    const rows = products.map((p) => [
+    const safeProducts = Array.isArray(products) ? products : [];
+    const rows = safeProducts.map((p) => [
       p.name,
       p.sku,
       t(`inv.retail.${p.retail_type}`),
@@ -2815,13 +2780,14 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
     });
     
     // Log the operation
-    await logShiftOperation('تصدير', `تصدير PDF للمخزون (${products.length} منتج)`);
+    await logShiftOperation('تصدير', `تصدير PDF للمخزون (${safeProducts.length} منتج)`);
     });
   };
 
   const exportStockWord = async () => {
     await runExport(t("inv.exportProcessing"), async () => {
-    const rows = products.map((p) => [
+    const safeProducts = Array.isArray(products) ? products : [];
+    const rows = safeProducts.map((p) => [
       p.name,
       p.sku,
       t(`inv.retail.${p.retail_type}`),
@@ -2954,7 +2920,7 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
         t("inv.costPrice"),
         t("inv.col.stockP"),
       ],
-      ...products.map((p) => [
+      ...(Array.isArray(products) ? products : []).map((p) => [
         p.name,
         p.sku,
         p.retail_type,
@@ -3167,12 +3133,13 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                 <p className="text-xs font-bold text-slate-400">{t("inv.barcodeInPosTitle")}</p>
                 <BarcodeScannerHub
                   compact
-                  products={products.map((p) => ({ id: p.id, name: p.name, sku: p.sku }))}
+                  products={(Array.isArray(products) ? products : []).map((p) => ({ id: p.id, name: p.name, sku: p.sku }))}
                   onMatchedProduct={async (productId) => {
                     // إعادة جلب أحدث بيانات المخزون قبل معالجة المنتج
                     try {
-                      const freshProducts = await fetchInventory(user?.id);
-                      setProducts(freshProducts as Product[]);
+                      const freshProductsResponse = await api<ProductsResponse>("/inventory/products", { token });
+                      const freshProducts = Array.isArray(freshProductsResponse?.products) ? freshProductsResponse.products as Product[] : [];
+                      setProducts(freshProducts);
                       
                       const product = freshProducts.find(p => p.id === productId);
                       if (product) {
@@ -3557,10 +3524,10 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                       <Button
                         type="button"
                         className="flex-1 bg-[#0052CC]"
-                        disabled={draftLines.length === 0}
+                        disabled={draftLines.length === 0 || isSubmittingSale}
                         onClick={() => void submitQuickDraft()}
                       >
-                        {t("inv.quickConfirmBatch")}
+                        {isSubmittingSale ? "جاري التأكيد..." : t("inv.quickConfirmBatch")}
                       </Button>
                       <Button
                         type="button"
@@ -3585,7 +3552,7 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
 
         <TabsContent value="barcode" className="mt-6 space-y-4">
           <BarcodeScannerHub
-            products={products.map((p) => ({ id: p.id, name: p.name, sku: p.sku }))}
+            products={(Array.isArray(products) ? products : []).map((p) => ({ id: p.id, name: p.name, sku: p.sku }))}
             onMatchedProduct={(productId) => {
               const idx = products.findIndex((p) => p.id === productId);
               if (idx >= 0) {
@@ -3605,25 +3572,23 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
         </TabsContent>
 
         <TabsContent value="credit" className="mt-6 space-y-4">
-          {overdueCredits.length > 0 && (
+          {overdueCredits.filter(i => i.status !== "voided").length > 0 && (
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex items-start gap-2 text-amber-200">
               <AlertTriangle className="size-5 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <p className="font-black">{t("inv.overdueAlert")}</p>
                 <ul className="text-sm mt-1 list-disc ms-4">
-                  {overdueCredits.map((i) => (
+                  {overdueCredits.filter(i => i.status !== "voided").map((i) => (
                     <li key={i.id} className="flex items-center justify-between gap-4">
                       <span>{i.customer_name || "—"} — {i.credit} MAD — {i.due_at}</span>
-                      {i.status !== "voided" && (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="text-xs h-6 px-2"
-                          onClick={() => voidSale(i.id)}
-                        >
-                          {t("inv.voidSale")}
-                        </Button>
-                      )}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="text-xs h-6 px-2"
+                        onClick={() => voidSale(i.id)}
+                      >
+                        {t("inv.voidSale")}
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -3631,8 +3596,34 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
             </div>
           )}
           <Card className="border-slate-800 bg-[#0a1628]/90">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <p className="font-black text-white">{t("inv.creditList")}</p>
+              {invoices.some(i => i.status !== "voided") && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="text-xs"
+                  disabled={isDeletingAll}
+                  onClick={async () => {
+                    if (isDeletingAll) return;
+                    if (confirm(locale.startsWith("ar") ? "هل أنت متأكد من حذف جميع الفواتير؟" : "Are you sure you want to delete all invoices?")) {
+                      setIsDeletingAll(true);
+                      try {
+                        await Promise.all(
+                          invoices.filter(i => i.status !== "voided").map(i => voidSale(i.id, true))
+                        );
+                        toast.success(locale.startsWith("ar") ? "تم حذف جميع الفواتير" : "All invoices deleted");
+                      } catch (err) {
+                        toast.error(locale.startsWith("ar") ? "فشل الحذف" : "Failed to delete");
+                      } finally {
+                        setIsDeletingAll(false);
+                      }
+                    }
+                  }}
+                >
+                  {isDeletingAll ? "جاري الحذف..." : (locale.startsWith("ar") ? "إلغاء الكل" : "Delete All")}
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -3647,7 +3638,7 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.map((i) => (
+                  {invoices.filter(i => i.status !== "voided" && i.credit > 0).map((i) => (
                     <tr key={i.id} className="border-b border-slate-800/80 text-slate-200">
                       <td className="py-2">{i.customer_name || "—"}</td>
                       <td className="py-2">{i.total}</td>
@@ -3655,22 +3646,24 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                       <td className="py-2 text-orange-300">{i.credit}</td>
                       <td className="py-2 text-xs">{i.due_at ?? "—"}</td>
                       <td className="py-2">
-                        {i.status !== "voided" && (
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="text-xs"
-                            onClick={() => voidSale(i.id)}
-                          >
-                            {t("inv.voidSale")}
-                          </Button>
-                        )}
-                        {i.status === "voided" && (
-                          <span className="text-xs text-slate-500">{t("inv.voided")}</span>
-                        )}
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="text-xs"
+                          onClick={() => voidSale(i.id)}
+                        >
+                          {t("inv.voidSale")}
+                        </Button>
                       </td>
                     </tr>
                   ))}
+                  {invoices.filter(i => i.status !== "voided").length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-500">
+                        {locale.startsWith("ar") ? "لا توجد فواتير" : "No invoices"}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </CardContent>
@@ -3686,7 +3679,7 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                   <button
                     onClick={async () => {
                       // Allow operation if super admin override is active
-                      if (!supabase || !user?.id) {
+                      if (!user?.id) {
                         if (!isAdmin) {
                           toast.error(locale.startsWith("ar") ? 'يجب تسجيل الدخول' : 'Must be logged in');
                           return;
@@ -3705,10 +3698,6 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                       const now = new Date().toISOString();
 
                       try {
-                        if (!supabase) {
-                          toast.error(locale.startsWith("ar") ? 'خطأ في الاتصال بقاعدة البيانات' : 'Database connection error');
-                          return;
-                        }
                         const reports = await api<any[]>(isAdmin ? "/super-admin/shift-reports" : "/shift-reports", { token });
                         const existingReport = reports.find((r: any) =>
                           r.shift_date === today &&
@@ -3743,7 +3732,8 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                           week: shiftWeek
                         };
 
-                        const createdReport = await api(isAdmin ? "/super-admin/shift-reports" : "/shift-reports", {
+                        // All users (including Super Admin) should use /shift-reports to create their own reports
+                        const createdReport = await api("/shift-reports", {
                           method: "POST",
                           token,
                           body: JSON.stringify(newReport)
@@ -3800,7 +3790,7 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                   <button
                     onClick={async () => {
                       // Allow operation if super admin override is active
-                      if (!supabase || !user?.id) {
+                      if (!user?.id) {
                         if (!isAdmin) {
                           toast.error(locale.startsWith("ar") ? 'يجب تسجيل الدخول' : 'Must be logged in');
                           return;
@@ -3828,72 +3818,22 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
 
                         if (selectedShiftReport) {
                           console.log("Updating existing shift report:", selectedShiftReport.id);
-                          if (!supabase) {
-                            toast.error(locale.startsWith("ar") ? 'خطأ في الاتصال بقاعدة البيانات' : 'Database connection error');
-                            return;
-                          }
-                          const { error } = await supabase
-                            .from("shift_reports")
-                            .update({
+                          await api(`/shift-reports/${selectedShiftReport.id}`, {
+                            method: "PUT",
+                            token,
+                            body: JSON.stringify({
                               customer_name: shiftCustomerName,
                               customer_phone: shiftCustomerPhone,
                               week: shiftWeek
-                            })
-                            .eq("id", selectedShiftReport.id)
-                            .eq("user_id", authUserId);
-
-                          if (error) {
-                            console.error("Update error:", error);
-                            throw error;
-                          }
-
-                          setSelectedShiftReport({
-                            ...selectedShiftReport,
-                            customer_name: shiftCustomerName,
-                            customer_number: shiftCustomerPhone,
-                            week: shiftWeek
+                            }),
                           });
+                          toast.success(locale.startsWith("ar") ? 'تم حفظ معلومات العميل' : 'Customer info saved');
+                          setSelectedShiftReport({ ...selectedShiftReport, customer_name: shiftCustomerName, customer_phone: shiftCustomerPhone, week: shiftWeek });
                           console.log("Updated successfully");
                         } else {
                           console.log("No existing shift report, creating new one");
-                          const newReport = {
-                            id: crypto.randomUUID(),
-                            user_id: authUserId,
-                            shift_group: shiftGroup,
-                            shift_date: today,
-                            start_time: shiftStartTime?.toISOString() || now,
-                            end_time: shiftEndTime?.toISOString() || null,
-                            shift_description: shiftGroup === 'A' ? 'النوبة الصباحية (08:00 - 14:00)' : shiftGroup === 'B' ? 'النوبة المسائية (14:00 - 22:00)' : 'النوبة الليلية (22:00 - 06:00)',
-                            sales_count: 0,
-                            stock_add_count: 0,
-                            stock_edit_count: 0,
-                            import_count: 0,
-                            export_count: 0,
-                            delete_count: 0,
-                            total_operations: 0,
-                            operations_log: [],
-                            customer_name: shiftCustomerName,
-                            customer_number: shiftCustomerPhone,
-                            week: shiftWeek
-                          };
-
-                          console.log("Creating new report:", newReport);
-                          if (!supabase) {
-                            toast.error(locale.startsWith("ar") ? 'خطأ في الاتصال بقاعدة البيانات' : 'Database connection error');
-                            return;
-                          }
-                          const { data: createdReport, error } = await supabase
-                            .from("shift_reports")
-                            .insert([newReport])
-                            .select()
-                            .single();
-
-                          if (error) {
-                            console.error("Insert error:", error);
-                            throw error;
-                          }
-                          console.log("Created successfully:", createdReport);
-                          setSelectedShiftReport(createdReport);
+                          console.log("Selected shift report is null/undefined");
+                          toast.error(locale.startsWith("ar") ? 'لا يوجد تقرير نوبة حالي' : 'No shift report found');
                         }
 
                         await loadShiftReport();
