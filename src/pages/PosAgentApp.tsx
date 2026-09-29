@@ -656,30 +656,33 @@ export function PosAgentApp() {
   };
 
   const addToCart = (product: Product) => {
-    // Check if product has sufficient stock
-    const currentQuantityInCart = cart.find(line => line.product_id === product.id)?.quantity || 0;
-    if (product.stock_pieces <= currentQuantityInCart) {
-      toast.error(`${getText("insufficientStock")}: ${product.name} (${product.stock_pieces} ${getText("piece")})`);
-      playWarningSound();
-      return;
-    }
+    // Use functional state update to avoid race conditions with rapid scans
+    setCart(prevCart => {
+      // Check if product has sufficient stock
+      const currentQuantityInCart = prevCart.find(line => line.product_id === product.id)?.quantity || 0;
+      if (product.stock_pieces <= currentQuantityInCart) {
+        toast.error(`${getText("insufficientStock")}: ${product.name} (${product.stock_pieces} ${getText("piece")})`);
+        playWarningSound();
+        return prevCart;
+      }
 
-    const existingLine = cart.find(line => line.product_id === product.id);
-    if (existingLine) {
-      setCart(cart.map(line => 
-        line.product_id === product.id 
-          ? { ...line, quantity: line.quantity + 1, line_total: (line.quantity + 1) * line.unit_price }
-          : line
-      ));
-    } else {
-      setCart([...cart, {
-        product_id: product.id,
-        product_name: product.name,
-        quantity: 1,
-        unit_price: product.unit_price,
-        line_total: product.unit_price
-      }]);
-    }
+      const existingLine = prevCart.find(line => line.product_id === product.id);
+      if (existingLine) {
+        return prevCart.map(line =>
+          line.product_id === product.id
+            ? { ...line, quantity: line.quantity + 1, line_total: (line.quantity + 1) * line.unit_price }
+            : line
+        );
+      } else {
+        return [...prevCart, {
+          product_id: product.id,
+          product_name: product.name,
+          quantity: 1,
+          unit_price: product.unit_price,
+          line_total: product.unit_price
+        }];
+      }
+    });
   };
 
   const removeFromCart = (productId: string) => {

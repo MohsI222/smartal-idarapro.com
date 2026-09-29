@@ -1,5 +1,5 @@
 /** Contracts Module - وحدة العقود والتوقيع الإلكتروني */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -41,15 +41,7 @@ export function ContractsModule() {
     is_public: false,
   });
 
-  useEffect(() => {
-    if (id) {
-      loadContractDetails(id);
-    } else {
-      loadData();
-    }
-  }, [id]);
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem("idara_token");
@@ -76,9 +68,9 @@ export function ContractsModule() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [navigate]);
 
-  async function loadContractDetails(contractId: string) {
+  const loadContractDetails = useCallback(async (contractId: string) => {
     try {
       setLoading(true);
       const token = localStorage.getItem("idara_token");
@@ -89,10 +81,6 @@ export function ContractsModule() {
       }
 
       const data = await fetchContract(contractId);
-      console.log("[ContractsModule] Contract data loaded:", data);
-      console.log("[ContractsModule] Contract content:", data.contract?.content);
-      console.log("[ContractsModule] Signatures count:", data.signatures?.length);
-      console.log("[ContractsModule] First signature data length:", data.signatures?.[0]?.signature_data?.length);
       setSelectedContract(data.contract);
       setSignatures(data.signatures || []);
     } catch (error) {
@@ -107,7 +95,15 @@ export function ContractsModule() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [navigate]);
+
+  useEffect(() => {
+    if (id) {
+      loadContractDetails(id);
+    } else {
+      loadData();
+    }
+  }, [id, loadData, loadContractDetails]);
 
   async function handleCreateContract() {
     if (!formData.title || !formData.content) {
@@ -116,18 +112,11 @@ export function ContractsModule() {
     }
 
     try {
-      // Add logo to content if provided
-      let content = formData.content;
-      if (formData.logo_url) {
-        const logoHtml = `<div style="text-align: center; margin-bottom: 20px;">
-          <img src="${formData.logo_url}" alt="شعار" style="max-width: 200px; max-height: 100px; margin: 0 auto; display: block;" />
-        </div>`;
-        content = logoHtml + content;
-      }
-
+      // Don't add logo to content - keep it separate in logo_url field
+      // This prevents duplication and formatting issues
       const contractId = await createContract({
         ...formData,
-        content,
+        content: formData.content, // Keep content clean
       });
       toast.success("تم إنشاء العقد بنجاح");
       setCreateDialogOpen(false);
@@ -173,6 +162,47 @@ export function ContractsModule() {
     navigator.clipboard.writeText(url);
     toast.success(t("contracts.shareSuccess"));
   }
+
+  // Helper function to format contract content with proper paragraphs
+  const formatContractContent = (content: string, removeLogo: boolean = false): string => {
+    if (!content) return '';
+    
+    let formattedContent = content;
+    
+    // Remove logo images from content if specified (to avoid duplication)
+    if (removeLogo) {
+      formattedContent = formattedContent.replace(/<img[^>]*alt=["']شعار["'][^>]*>/gi, '');
+      formattedContent = formattedContent.replace(/<img[^>]*src=["'][^"']*["'][^>]*alt=["']شعار["'][^>]*>/gi, '');
+      // Also remove any image tags with شعار in src
+      formattedContent = formattedContent.replace(/<img[^>]*src=["'][^"']*شعار[^"']*["'][^>]*>/gi, '');
+    }
+    
+    // Check if content has complex HTML formatting (paragraphs, headings, etc.)
+    const hasComplexHTML = /<(p|h[1-6]|div|section|article)[^>]*>/i.test(formattedContent);
+    
+    if (hasComplexHTML) {
+      // Content already has proper formatting, return as-is (after logo removal)
+      return formattedContent;
+    }
+    
+    // Content is plain text or simple HTML - format it properly
+    // First, strip any remaining HTML tags to get plain text
+    const textArea = document.createElement('textarea');
+    textArea.innerHTML = formattedContent;
+    const plainText = textArea.value;
+    
+    // Split by double newlines to create paragraphs
+    const paragraphs = plainText.split(/\n\n+/);
+    
+    // Wrap each paragraph in <p> tags
+    return paragraphs
+      .map(para => {
+        // Convert single newlines to <br> within paragraphs
+        const formattedPara = para.replace(/\n/g, '<br>');
+        return `<p style="margin-bottom: 20px; line-height: 1.8; text-align: justify;">${formattedPara}</p>`;
+      })
+      .join('');
+  };
 
   function handleSendForSigning(contract: Contract) {
     const token = localStorage.getItem("idara_token");
@@ -400,7 +430,7 @@ export function ContractsModule() {
                     />
                   </div>
                 )}
-                <div dangerouslySetInnerHTML={{ __html: selectedContract.content }} />
+                <div dangerouslySetInnerHTML={{ __html: formatContractContent(selectedContract.content) }} />
               </div>
             </div>
             {selectedContract.parties && (
@@ -605,7 +635,7 @@ export function ContractsModule() {
                           ${contract.description ? `<p class="description">${contract.description}</p>` : ''}
                         </div>
                         <div class="content">
-                          ${selectedContract.content}
+                          ${formatContractContent(selectedContract.content, true)}
                         </div>
                         <div class="metadata">
                           <div class="metadata-item">
@@ -869,20 +899,13 @@ export function ContractsModule() {
                   </div>
                 </div>
                 <Button onClick={() => {
-                  // Add logo to content if provided
-                  let content = formData.content;
-                  if (formData.logo_url) {
-                    const logoHtml = `<div style="text-align: center; margin-bottom: 20px;">
-                      <img src="${formData.logo_url}" alt="شعار" style="max-width: 200px; max-height: 100px; margin: 0 auto; display: block;" />
-                    </div>`;
-                    content = logoHtml + content;
-                  }
-
+                  // Don't add logo to content - keep it separate in logo_url field
+                  // This prevents duplication and formatting issues
                   createTemplate({
                     name: formData.title,
                     description: formData.description,
                     contract_type: formData.contract_type,
-                    content,
+                    content: formData.content, // Keep content clean
                     is_public: formData.is_public,
                     logo_url: formData.logo_url,
                   })
