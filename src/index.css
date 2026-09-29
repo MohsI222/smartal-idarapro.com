@@ -26,6 +26,33 @@
   unicode-range: U+0030-0039;
 }
 
+/* Quagga Barcode Scanner Styles */
+#interactive.viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#interactive.viewport > canvas,
+#interactive.viewport > video {
+  max-width: 100%;
+  width: 100%;
+  height: 100%;
+}
+
+#interactive.viewport.drawingBuffer > canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+#interactive.viewport.drawingBuffer > video {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
 :root {
   --font-sans: "Cairo", "Noto Sans", ui-sans-serif, system-ui, sans-serif;
   --color-royal: #0a1628;
@@ -403,5 +430,94 @@ html[data-visual-theme="neon"] [data-app-shell] main > header {
     font-family: "Noto Naskh Arabic", "Cairo", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif !important;
     font-feature-settings: "liga" 1, "calt" 1 !important;
     font-variant-ligatures: normal !important;
+  }
+}
+
+/* Contracts Module Print Styles */
+@media print {
+  .contracts-print-hide {
+    display: none !important;
+  }
+
+  /* Hide navigation and header when printing contracts */
+  body [data-app-shell] > aside,
+  body [data-app-shell] > main > header {
+    display: none !important;
+  }
+
+  body [data-app-shell] > main {
+    background: #fff !important;
+    color: #000 !important;
+    padding: 20px !important;
+    margin: 0 !important;
+  }
+
+  /* Ensure cards are visible */
+  .card {
+    border: 1px solid #000 !important;
+    box-shadow: none !important;
+    margin-bottom: 20px !important;
+    page-break-inside: avoid;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Ensure images (logos) are visible when printing */
+  img {
+    display: block !important;
+    visibility: visible !important;
+    max-width: 200px !important;
+    max-height: 100px !important;
+  }
+
+  /* Force standard colors for print (fix oklch issues) */
+  * {
+    color: #000 !important;
+    background-color: #fff !important;
+  }
+
+  /* Preserve specific important colors */
+  .text-red-500 {
+    color: #dc2626 !important;
+  }
+  .text-green-500 {
+    color: #16a34a !important;
+  }
+  .text-blue-500 {
+    color: #2563eb !important;
+  }
+
+  /* Prevent blank pages */
+  * {
+    page-break-after: avoid !important;
+    page-break-before: avoid !important;
+  }
+
+  /* Only allow page breaks between major sections */
+  .card {
+    page-break-after: auto !important;
+  }
+
+  /* Hide empty elements that might cause blank pages */
+  .card:empty {
+    display: none !important;
+  }
+
+  .card-header,
+  .card-content {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  /* Ensure all text is visible */
+  p, div, span, label, h1, h2, h3, h4, h5, h6 {
+    color: #000 !important;
+  }
+
+  img {
+    max-width: 100% !important;
+    max-height: 150px !important;
+    display: block !important;
+    visibility: visible !important;
   }
 }

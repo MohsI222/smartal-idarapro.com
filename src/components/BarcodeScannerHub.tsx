@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import { BarcodeFormat, DecodeHintType } from "@zxing/library";
+import Quagga from "quagga";
 import { Camera, CameraOff, ScanBarcode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nProvider";
@@ -15,6 +16,8 @@ type Props = {
   onUnknownBarcode?: (code: string) => void;
   /** ارتفاع أقصى لمنطقة الفيديو (البيع السريع) */
   compact?: boolean;
+  /** استخدام Quagga بدلاً من ZXing (أفضل للباركودات 1D) */
+  useQuagga?: boolean;
 };
 
 function buildDecodeHints(): Map<DecodeHintType, unknown> {
@@ -41,7 +44,7 @@ function buildDecodeHints(): Map<DecodeHintType, unknown> {
 /**
  * قراءة الباركود محلياً عبر الكاميرا — لا يُرفع الفيديو إلى خوادم المنصة.
  */
-export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode, compact }: Props) {
+export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode, compact, useQuagga = true }: Props) {
   const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
@@ -49,10 +52,30 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
   const [active, setActive] = useState(false);
   const [lastCode, setLastCode] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
+  const quaggaRef = useRef<boolean>(false);
+  const quaggaContainerRef = useRef<HTMLDivElement>(null);
+
+  // Cleanup Quagga on unmount
+  useEffect(() => {
+    return () => {
+      if (quaggaRef.current) {
+        try {
+          Quagga.stop();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+  }, []);
 
   const stopCamera = useCallback(() => {
     try {
-      controlsRef.current?.stop();
+      if (quaggaRef.current) {
+        Quagga.stop();
+        quaggaRef.current = false;
+      } else {
+        controlsRef.current?.stop();
+      }
     } catch {
       /* ignore */
     }
@@ -92,40 +115,97 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
         return;
       }
 
-      // Request camera permissions explicitly with better settings for small barcodes
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1920 },  // Higher resolution for small barcodes
-          height: { ideal: 1080 },
-          focusMode: "continuous",  // Continuous autofocus
-        },
-      });
-
-      // Stop the test stream immediately after permission check
-      stream.getTracks().forEach(track => track.stop());
-
       await resumeAudioIfNeeded();
-      const reader = new BrowserMultiFormatReader(buildDecodeHints(), {
-        delayBetweenScanSuccess: 50,  // Slower cooldown to avoid duplicate scans
-        delayBetweenScanAttempts: 5,   // Faster attempts for small barcodes
-      });
       const video = videoRef.current;
       if (!video) return;
       setActive(true);
-      const controls = await reader.decodeFromVideoDevice(undefined, video, (result, err) => {
-        if (!result) return;
-        const text = result.getText()?.trim();
-        if (!text) return;
-        const now = Date.now();
-        if (now - lastFireRef.current < 50) return;
-        lastFireRef.current = now;
-        playBarcodeScanBeep();
-        setLastCode(text);
-        matchProduct(text);
-        if (err && String(err).includes("NotFound")) return;
-      });
-      controlsRef.current = controls;
+
+      if (useQuagga) {
+        // Use Quagga for better 1D barcode support (EAN-13, EAN-8, UPC)
+        const container = quaggaContainerRef.current;
+        if (!container) return;
+
+        Quagga.init({
+          inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: container,
+            constraints: {
+              facingMode: "environment",
+              width: { min: 640, ideal: 1280, max: 1920 },
+              height: { min: 480, ideal: 720, max: 1080 },
+            },
+          },
+          locator: {
+            patchSize: "medium",
+            halfSample: true,
+          },
+          numOfWorkers: 2,
+          decoder: {
+            readers: [
+              "ean_reader",       // EAN-13
+              "ean_8_reader",     // EAN-8 (small products)
+              "upc_reader",       // UPC-A
+              "upc_e_reader",     // UPC-E (compressed)
+              "code_128_reader",  // Code 128
+              "code_39_reader",   // Code 39
+            ],
+          },
+          locate: true,
+        }, (err) => {
+          if (err) {
+            console.error("Quagga init error:", err);
+            setHint(`${t("barcode.cameraError")}: ${err.message}`);
+            setActive(false);
+            return;
+          }
+          Quagga.start();
+          quaggaRef.current = true;
+        });
+
+        Quagga.onDetected((result) => {
+          const code = result.codeResult.code;
+          if (!code) return;
+          const now = Date.now();
+          if (now - lastFireRef.current < 200) return; // Longer cooldown for Quagga
+          lastFireRef.current = now;
+          playBarcodeScanBeep();
+          setLastCode(code);
+          matchProduct(code);
+        });
+      } else {
+        // Use ZXing as fallback
+        // Request camera permissions explicitly with better settings for small barcodes
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1920 },  // Higher resolution for small barcodes
+            height: { ideal: 1080 },
+            focusMode: "continuous",  // Continuous autofocus
+          },
+        });
+
+        // Stop the test stream immediately after permission check
+        stream.getTracks().forEach(track => track.stop());
+
+        const reader = new BrowserMultiFormatReader(buildDecodeHints(), {
+          delayBetweenScanSuccess: 50,  // Slower cooldown to avoid duplicate scans
+          delayBetweenScanAttempts: 5,   // Faster attempts for small barcodes
+        });
+        const controls = await reader.decodeFromVideoDevice(undefined, video, (result, err) => {
+          if (!result) return;
+          const text = result.getText()?.trim();
+          if (!text) return;
+          const now = Date.now();
+          if (now - lastFireRef.current < 50) return;
+          lastFireRef.current = now;
+          playBarcodeScanBeep();
+          setLastCode(text);
+          matchProduct(text);
+          if (err && String(err).includes("NotFound")) return;
+        });
+        controlsRef.current = controls;
+      }
     } catch (err) {
       console.error("Camera error:", err);
       if (err instanceof Error) {
@@ -143,7 +223,7 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
       }
       setActive(false);
     }
-  }, [matchProduct, t]);
+  }, [matchProduct, t, useQuagga]);
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
@@ -157,11 +237,17 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
       <p className="text-[10px] text-cyan-300 leading-relaxed">✓ دعم مسدس الباركود السلكي واللاسلكي - يعمل تلقائياً عند توجيهه نحو الباركود</p>
       <p className="text-[10px] text-slate-600 leading-relaxed">{t("barcode.privacy")}</p>
       <div
+        id="interactive"
+        ref={quaggaContainerRef}
         className={`relative mx-auto rounded-xl overflow-hidden bg-black border border-white/10 ${
           compact ? "max-h-52 aspect-[4/3] max-w-lg" : "aspect-video max-w-md"
         }`}
       >
-        <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
+        {useQuagga ? (
+          <div className="viewport" />
+        ) : (
+          <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
+        )}
         {!active && (
           <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm">
             {t("barcode.previewOff")}
