@@ -14,6 +14,7 @@ import { registerBase44StudioRoutes } from "./base44Studio.js";
 import { registerTlErpRoutes } from "./tlErpRoutes.js";
 import { registerDeliveryHubRoutes } from "./deliveryHubRoutes.js";
 import { registerPosAgentRoutes } from "./posAgentRoutes.js";
+import contractsRoutes, { initContractsTables } from "./contractsRoutes.js";
 import { getTlUploadRoot, getUploadDir } from "./paths.js";
 import { getVisaRadarProService } from "./visaRadarPro.js";
 import { randomUUID } from "node:crypto";
@@ -701,10 +702,14 @@ app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
     rememberMe?: boolean;
   };
   const emailSafe = sanitizeEmail(email ?? "");
+  console.log("[Login] Attempt for email:", emailSafe);
+  
   if (!emailSafe || !password) {
+    console.log("[Login] Missing email or password");
     res.status(400).json({ error: "بيانات ناقصة" });
     return;
   }
+  
   const user = await db
     .prepare("SELECT * FROM users WHERE email = ?")
     .get(emailSafe) as
@@ -717,7 +722,16 @@ app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
         whatsapp?: string | null;
       }
     | undefined;
+    
+  console.log("[Login] User found:", !!user);
+  if (user) {
+    console.log("[Login] Password hash format:", user.password_hash.substring(0, 30) + "...");
+    const passwordValid = verifyPassword(password, user.password_hash);
+    console.log("[Login] Password valid:", passwordValid);
+  }
+  
   if (!user || !verifyPassword(password, user.password_hash)) {
+    console.log("[Login] Authentication failed");
     res.status(401).json({ error: "بريد أو كلمة مرور خاطئة" });
     return;
   }
@@ -776,6 +790,121 @@ app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
       trial_balance: tb,
     },
   });
+});
+
+/**
+ * إعادة تعيين كلمة المرور - مؤقت للترحيل من Supabase
+ * يتطلب ADMIN_BOOTSTRAP_KEY
+ */
+app.post("/api/auth/reset-password", async (req, res) => {
+  const expected = process.env.ADMIN_BOOTSTRAP_KEY?.trim();
+  if (!expected || expected.length < 16) {
+    res.status(404).json({ error: "غير مفعّل" });
+    return;
+  }
+  const sent = (req.headers["x-admin-bootstrap"] as string | undefined)?.trim();
+  if (sent !== expected) {
+    res.status(403).json({ error: "مرفوض" });
+    return;
+  }
+  const { email, newPassword } = req.body as { email?: string; newPassword?: string };
+  if (!email || !newPassword) {
+    res.status(400).json({ error: "بيانات ناقصة" });
+    return;
+  }
+  const user = db.prepare("SELECT id FROM users WHERE email = ?").get(email) as { id: string } | undefined;
+  if (!user) {
+    res.status(404).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+  const newHash = hashPassword(newPassword);
+  db.prepare("UPDATE users SET password_hash = ? WHERE email = ?").run(newHash, email);
+  res.json({ success: true, message: "تم إعادة تعيين كلمة المرور" });
+});
+
+/**
+ * الحصول على قائمة الحسابات التي تحتاج إلى إعادة تعيين كلمة المرور
+ * يتطلب ADMIN_BOOTSTRAP_KEY
+ */
+app.get("/api/auth/legacy-accounts", async (req, res) => {
+  const expected = process.env.ADMIN_BOOTSTRAP_KEY?.trim();
+  if (!expected || expected.length < 16) {
+    res.status(404).json({ error: "غير مفعّل" });
+    return;
+  }
+  const sent = (req.headers["x-admin-bootstrap"] as string | undefined)?.trim();
+  if (sent !== expected) {
+    res.status(403).json({ error: "مرفوض" });
+    return;
+  }
+  const users = await db.prepare("SELECT id, email, name, password_hash FROM users").all() as { id: string; email: string; name: string; password_hash: string }[];
+  const legacyAccounts = users.filter(u => {
+    const hash = u.password_hash;
+    // Check for legacy formats (not scrypt salt:hash format)
+    return !hash.includes(":") || (hash.length !== 161); // scrypt format is 32+1+128 = 161 chars
+  });
+  res.json({ accounts: legacyAccounts.map(u => ({ id: u.id, email: u.email, name: u.name, hashFormat: u.password_hash.substring(0, 30) + "..." })) });
+});
+
+/**
+ * إعادة تعيين كلمة مرور لحساب معين (للمستخدمين الذين لا يستطيعون تسجيل الدخول بعد الترحيل)
+ * يتطلب ADMIN_BOOTSTRAP_KEY
+ */
+app.post("/api/auth/reset-password-for-user", async (req, res) => {
+  const expected = process.env.ADMIN_BOOTSTRAP_KEY?.trim();
+  if (!expected || expected.length < 16) {
+    res.status(404).json({ error: "غير مفعّل" });
+    return;
+  }
+  const sent = (req.headers["x-admin-bootstrap"] as string | undefined)?.trim();
+  if (sent !== expected) {
+    res.status(403).json({ error: "مرفوض" });
+    return;
+  }
+
+  const { email, newPassword } = req.body as { email?: string; newPassword?: string };
+  if (!email || !newPassword) {
+    res.status(400).json({ error: "البريد الإلكتروني وكلمة المرور الجديدة مطلوبة" });
+    return;
+  }
+
+  const user = await db.prepare("SELECT id, email FROM users WHERE email = ?").get(email) as { id: string; email: string } | undefined;
+  if (!user) {
+    res.status(404).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+
+  const newHash = hashPassword(newPassword);
+  await db.prepare("UPDATE users SET password_hash = ? WHERE email = ?").run(newHash, email);
+  console.log(`[Auth] Password reset for user: ${email}`);
+  res.json({ success: true, message: "تم إعادة تعيين كلمة المرور بنجاح" });
+});
+
+/**
+ * فحص عزل الموظفين - مؤقت للتصحيح
+ */
+app.get("/api/debug/hr-employees", async (req, res) => {
+  const expected = process.env.ADMIN_BOOTSTRAP_KEY?.trim();
+  if (!expected || expected.length < 16) {
+    res.status(404).json({ error: "غير مفعّل" });
+    return;
+  }
+  const sent = (req.headers["x-admin-bootstrap"] as string | undefined)?.trim();
+  if (sent !== expected) {
+    res.status(403).json({ error: "مرفوض" });
+    return;
+  }
+  const employees = await db.prepare("SELECT id, user_id, name, employee_id FROM hr_employees ORDER BY created_at DESC LIMIT 30").all();
+  const users = await db.prepare("SELECT id, email FROM users").all();
+  const userMap = new Map(users.map((u: any) => [u.id, u.email]));
+  const result = employees.map((e: any) => ({
+    id: e.id,
+    user_id: e.user_id,
+    user_email: userMap.get(e.user_id) || "unknown",
+    name: e.name,
+    employee_id: e.employee_id
+  }));
+  res.json({ employees: result });
 });
 
 /**
@@ -1003,7 +1132,7 @@ app.get("/api/super-admin/hr-employees", authMiddleware, platformSettingsEditor,
   try {
     // Get all HR employees (bypass RLS)
     const employees = await db
-      .prepare(`SELECT * FROM hr_employees ORDER BY created_at DESC`)
+      .prepare(`SELECT id, user_id, name, employee_id FROM hr_employees ORDER BY created_at DESC`)
       .all();
     res.json(employees);
   } catch (error) {
@@ -1196,6 +1325,140 @@ app.delete("/api/super-admin/shift-reports/:id", authMiddleware, platformSetting
     res.json({ message: "Shift report deleted successfully" });
   } catch (error) {
     console.error("[Super Admin] Error deleting shift report:", error);
+    res.status(500).json({ error: "Failed to delete shift report" });
+  }
+});
+
+// Regular user shift reports endpoints
+app.get("/api/shift-reports", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    console.log("[Server /api/shift-reports] Fetching reports for userId:", userId);
+    const reports = await db
+      .prepare(`SELECT * FROM shift_reports WHERE user_id = ? ORDER BY shift_date DESC`)
+      .all(userId);
+    console.log("[Server /api/shift-reports] Found reports:", reports.length);
+    // Log first report's user_id to verify
+    if (reports.length > 0) {
+      console.log("[Server /api/shift-reports] First report user_id:", (reports[0] as any).user_id);
+      console.log("[Server /api/shift-reports] Last report user_id:", (reports[reports.length - 1] as any).user_id);
+    }
+    res.json(reports);
+  } catch (error) {
+    console.error("[User] Error fetching shift reports:", error);
+    res.status(500).json({ error: "Failed to fetch shift reports" });
+  }
+});
+
+// Temporary endpoint to clear all shift reports (for testing only)
+app.delete("/api/shift-reports/clear-all", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    console.log("[Server /api/shift-reports/clear-all] Clearing all reports for userId:", userId);
+    const result = await db.prepare(`DELETE FROM shift_reports WHERE user_id = ?`).run(userId);
+    console.log("[Server /api/shift-reports/clear-all] Deleted reports:", result.changes);
+    res.json({ message: "Cleared all reports", deleted: result.changes });
+  } catch (error) {
+    console.error("[Server /api/shift-reports/clear-all] Error clearing reports:", error);
+    res.status(500).json({ error: "Failed to clear reports" });
+  }
+});
+
+// Temporary endpoint to delete ALL shift reports regardless of user (for testing only - DANGEROUS!)
+app.delete("/api/shift-reports/delete-all-dangerous", authMiddleware, async (req, res) => {
+  try {
+    console.log("[Server /api/shift-reports/delete-all-dangerous] DELETING ALL SHIFT REPORTS - DANGEROUS!");
+    const result = await db.prepare(`DELETE FROM shift_reports`).run();
+    console.log("[Server /api/shift-reports/delete-all-dangerous] Deleted ALL reports:", result.changes);
+    res.json({ message: "DELETED ALL REPORTS - DANGEROUS!", deleted: result.changes });
+  } catch (error) {
+    console.error("[Server /api/shift-reports/delete-all-dangerous] Error:", error);
+    res.status(500).json({ error: "Failed to delete all reports" });
+  }
+});
+
+app.post("/api/shift-reports", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const { shift_date, shift_group, customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations, start_time, import_count, export_count, delete_count } = req.body;
+    
+    if (!shift_date || !shift_group) {
+      res.status(400).json({ error: "Missing required fields: shift_date, shift_group" });
+      return;
+    }
+    
+    const id = randomUUID();
+    
+    // Safely handle all fields with proper null/undefined checks
+    const customerName = customer_name !== null && customer_name !== undefined && customer_name !== "" ? String(customer_name) : null;
+    const customerNumber = customer_number !== null && customer_number !== undefined && customer_number !== "" ? String(customer_number) : null;
+    const weekValue = week !== null && week !== undefined && week !== "" ? String(week) : null;
+    const operationsLog = operations_log !== null && operations_log !== undefined ? operations_log : [];
+    const salesCount = sales_count !== null && sales_count !== undefined && !isNaN(Number(sales_count)) ? Number(sales_count) : 0;
+    const stockAddCount = stock_add_count !== null && stock_add_count !== undefined && !isNaN(Number(stock_add_count)) ? Number(stock_add_count) : 0;
+    const stockEditCount = stock_edit_count !== null && stock_edit_count !== undefined && !isNaN(Number(stock_edit_count)) ? Number(stock_edit_count) : 0;
+    const totalOperations = total_operations !== null && total_operations !== undefined && !isNaN(Number(total_operations)) ? Number(total_operations) : 0;
+    const importCount = import_count !== null && import_count !== undefined && !isNaN(Number(import_count)) ? Number(import_count) : 0;
+    const exportCount = export_count !== null && export_count !== undefined && !isNaN(Number(export_count)) ? Number(export_count) : 0;
+    const deleteCount = delete_count !== null && delete_count !== undefined && !isNaN(Number(delete_count)) ? Number(delete_count) : 0;
+    const startTime = start_time !== null && start_time !== undefined && start_time !== "" ? String(start_time) : new Date().toISOString();
+    
+    await db.prepare(
+      `INSERT INTO shift_reports (id, user_id, shift_date, shift_group, start_time, customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+    ).run(id, userId, shift_date, shift_group, startTime, customerName, customerNumber, weekValue, JSON.stringify(operationsLog), salesCount, stockAddCount, stockEditCount, totalOperations);
+    
+    res.json({ id, message: "Shift report created successfully" });
+  } catch (error) {
+    console.error("[User] Error creating shift report:", error);
+    res.status(500).json({ error: "Failed to create shift report", details: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+app.put("/api/shift-reports/:id", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const { id } = req.params;
+    const { customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations, import_count, export_count, delete_count } = req.body;
+    
+    // Verify the report belongs to the user
+    const report = await db.prepare(`SELECT user_id FROM shift_reports WHERE id = ?`).get(id);
+    if (!report || (report as any).user_id !== userId) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    
+    await db.prepare(
+      `UPDATE shift_reports 
+       SET customer_name = ?, customer_number = ?, week = ?, operations_log = ?, 
+           sales_count = ?, stock_add_count = ?, stock_edit_count = ?, total_operations = ?, updated_at = NOW()
+       WHERE id = ?`
+    ).run(customer_name || null, customer_number || null, week || null, JSON.stringify(operations_log || []), sales_count || 0, stock_add_count || 0, stock_edit_count || 0, total_operations || 0, id);
+    
+    res.json({ message: "Shift report updated successfully" });
+  } catch (error) {
+    console.error("[User] Error updating shift report:", error);
+    res.status(500).json({ error: "Failed to update shift report" });
+  }
+});
+
+app.delete("/api/shift-reports/:id", authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const { id } = req.params;
+    
+    // Verify the report belongs to the user
+    const report = await db.prepare(`SELECT user_id FROM shift_reports WHERE id = ?`).get(id);
+    if (!report || (report as any).user_id !== userId) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    
+    await db.prepare(`DELETE FROM shift_reports WHERE id = ?`).run(id);
+    
+    res.json({ message: "Shift report deleted successfully" });
+  } catch (error) {
+    console.error("[User] Error deleting shift report:", error);
     res.status(500).json({ error: "Failed to delete shift report" });
   }
 });
@@ -2304,6 +2567,115 @@ app.delete("/api/hr/absence-records/:id", authMiddleware, async (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+
+// HR Permissions endpoints
+app.get("/api/hr/permissions/:employeeId", authMiddleware, async (req, res) => {
+  const employeeId = paramString(req.params.employeeId);
+  try {
+    const permissions = await db.prepare(`
+      SELECT * FROM permissions WHERE employee_id = ?
+    `).get(employeeId);
+    res.json({ permissions: permissions || null });
+  } catch (error) {
+    console.error("[HR] Error fetching permissions:", error);
+    res.json({ permissions: null });
+  }
+});
+
+app.post("/api/hr/permissions", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const {
+    employee_id,
+    can_access_inventory,
+    can_access_hr,
+    can_access_delivery,
+    can_access_contracts,
+    can_access_transport_logistics,
+    can_access_wedding_invitations,
+    can_access_legal,
+    can_access_ai,
+    can_access_settings,
+    is_admin,
+  } = req.body;
+
+  try {
+    const id = randomUUID();
+    await db.prepare(`
+      INSERT INTO permissions (
+        id, employee_id, can_access_inventory, can_access_hr, can_access_delivery,
+        can_access_contracts, can_access_transport_logistics, can_access_wedding_invitations,
+        can_access_legal, can_access_ai, can_access_settings, is_admin
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      employee_id,
+      can_access_inventory ?? false,
+      can_access_hr ?? false,
+      can_access_delivery ?? false,
+      can_access_contracts ?? false,
+      can_access_transport_logistics ?? false,
+      can_access_wedding_invitations ?? false,
+      can_access_legal ?? false,
+      can_access_ai ?? false,
+      can_access_settings ?? false,
+      is_admin ?? false
+    );
+    res.json({ id });
+  } catch (error) {
+    console.error("[HR] Error creating permissions:", error);
+    res.status(500).json({ error: "فشل إنشاء الصلاحيات" });
+  }
+});
+
+app.patch("/api/hr/permissions/:employeeId", authMiddleware, async (req, res) => {
+  const employeeId = paramString(req.params.employeeId);
+  const {
+    can_access_inventory,
+    can_access_hr,
+    can_access_delivery,
+    can_access_contracts,
+    can_access_transport_logistics,
+    can_access_wedding_invitations,
+    can_access_legal,
+    can_access_ai,
+    can_access_settings,
+    is_admin,
+  } = req.body;
+
+  try {
+    await db.prepare(`
+      UPDATE permissions SET
+        can_access_inventory = ?,
+        can_access_hr = ?,
+        can_access_delivery = ?,
+        can_access_contracts = ?,
+        can_access_transport_logistics = ?,
+        can_access_wedding_invitations = ?,
+        can_access_legal = ?,
+        can_access_ai = ?,
+        can_access_settings = ?,
+        is_admin = ?,
+        updated_at = NOW()
+      WHERE employee_id = ?
+    `).run(
+      can_access_inventory ?? false,
+      can_access_hr ?? false,
+      can_access_delivery ?? false,
+      can_access_contracts ?? false,
+      can_access_transport_logistics ?? false,
+      can_access_wedding_invitations ?? false,
+      can_access_legal ?? false,
+      can_access_ai ?? false,
+      can_access_settings ?? false,
+      is_admin ?? false,
+      employeeId
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    console.error("[HR] Error updating permissions:", error);
+    res.status(500).json({ error: "فشل تحديث الصلاحيات" });
+  }
 });
 
 app.post("/api/hr/employees/:id/parse-document", authMiddleware, uploadMemory.single("file"), async (req, res) => {
@@ -3852,291 +4224,128 @@ app.get("/api/auto-real-estate/load", authMiddleware, async (req, res) => {
   res.json({ data: row?.value ? JSON.parse(row.value) : null });
 });
 
-// Supabase auto_real_estate endpoints for super admin
-app.get("/api/supabase/auto-real-estate", authMiddleware, async (req, res) => {
+// Regular user auto_real_estate CRUD endpoints (Neon database)
+app.get("/api/auto-real-estate", authMiddleware, async (req, res) => {
   try {
     const userId = (req as express.Request & { userId: string }).userId;
-    const user = await db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
-    
-    // Only allow super admin to access this endpoint
-    if (!user || user.email !== SUPER_ADMIN_EMAIL) {
-      res.status(403).json({ error: "غير مصرح" });
+    const hasAccess = await hasModuleAccess(userId, "auto_real_estate");
+    if (!hasAccess) {
+      res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذا القسم" });
       return;
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
-    
-    // Get super admin's Supabase user ID - SUPER ADMIN SEES ONLY THEIR OWN DATA
-    const superAdminSupabaseId = 'f13bed00-cd13-4075-8716-d9939ea8ba16'; // lahcenm534@gmail.com
-    
-    // Filter by user_id to ensure data isolation - super admin sees only their own data
-    const response = await fetch(`${supabaseUrl}/rest/v1/auto_real_estate?select=*&user_id=eq.${superAdminSupabaseId}&order=created_at.desc`, {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Supabase error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    res.json({ data });
+    const rows = await db.prepare("SELECT * FROM auto_real_estate WHERE user_id = ? ORDER BY created_at DESC").all(userId);
+    res.json({ data: rows });
   } catch (error) {
-    console.error("Error fetching auto_real_estate:", error);
+    console.error("[AutoRealEstate] Error fetching:", error);
     res.status(500).json({ error: "فشل جلب البيانات" });
   }
 });
 
-app.post("/api/supabase/auto-real-estate", authMiddleware, async (req, res) => {
+app.post("/api/auto-real-estate", authMiddleware, async (req, res) => {
   try {
     const userId = (req as express.Request & { userId: string }).userId;
-    const user = await db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
-    
-    // Only allow super admin to access this endpoint
-    if (!user || user.email !== SUPER_ADMIN_EMAIL) {
-      res.status(403).json({ error: "غير مصرح" });
+    console.log("[AutoRealEstate] POST request from user:", userId);
+    const hasAccess = await hasModuleAccess(userId, "auto_real_estate");
+    console.log("[AutoRealEstate] Has access:", hasAccess);
+    if (!hasAccess) {
+      res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذا القسم" });
       return;
     }
 
     const item = req.body;
-    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
-    
-    console.log('[AutoRealEstate API] Supabase URL:', supabaseUrl);
-    console.log('[AutoRealEstate API] Supabase Key available:', !!supabaseKey);
-    console.log('[AutoRealEstate API] Request body:', item);
-    
-    // Get super admin's Supabase user ID
-    const superAdminSupabaseId = 'f13bed00-cd13-4075-8716-d9939ea8ba16'; // lahcenm534@gmail.com
-    
-    const dbItem = {
-      user_id: superAdminSupabaseId, // Use actual super admin user ID - CRITICAL
-      type: item.type,
-      brand_or_title: item.brandOrTitle,
-      plate_or_address: item.plateOrAddress,
-      specs: item.specs || '',
-      price: item.price || 0,
-      status: item.status || 'Available',
-      expiry_date: item.expiryDate || null,
-      image: item.image || null,
-      color: item.color || null,
-      fuel: item.fuel || null,
-      mileage: item.mileage || null,
-      defects: item.defects || null,
-      rent_start: item.rentStart || null,
-      rent_end: item.rentEnd || null,
-      prop_type: item.propType || null,
-      commercial_type: item.commercialType || null,
-      floor_num: item.floorNum || null,
-      total_floors: item.totalFloors || null,
-      rooms: item.rooms || null,
-      bathrooms: item.bathrooms || null,
-      amenities: item.amenities || null,
-      zoning: item.zoning || null,
-      sqm: item.sqm || null,
-    };
-    
-    // CRITICAL: Ensure user_id is never null
-    if (!dbItem.user_id) {
-      console.error('[AutoRealEstate API] CRITICAL: user_id is null, setting to super admin ID');
-      dbItem.user_id = superAdminSupabaseId;
-    }
+    console.log("[AutoRealEstate] Item data:", item);
+    const id = randomUUID();
 
-    console.log('[AutoRealEstate API] Sending to Supabase:', dbItem);
-    console.log('[AutoRealEstate API] user_id value:', dbItem.user_id);
-    console.log('[AutoRealEstate API] user_id type:', typeof dbItem.user_id);
-    
-    // Final verification before sending
-    if (!dbItem.user_id) {
-      throw new Error('CRITICAL: user_id is still null before sending to Supabase');
-    }
+    await db.prepare(
+      `INSERT INTO auto_real_estate (
+        id, user_id, type, brand_or_title, plate_or_address, specs, price, status,
+        expiry_date, image, color, fuel, mileage, defects, rent_start, rent_end,
+        prop_type, commercial_type, floor_num, total_floors, rooms, bathrooms,
+        amenities, zoning, sqm, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+    ).run(
+      id, userId, item.type, item.brandOrTitle, item.plateOrAddress, item.specs || '',
+      item.price || 0, item.status || 'Available', item.expiryDate || null,
+      item.image || null, item.color || null, item.fuel || null, item.mileage || null,
+      item.defects || null, item.rentStart || null, item.rentEnd || null,
+      item.propType || null, item.commercialType || null, item.floorNum || null,
+      item.totalFloors || null, item.rooms || null, item.bathrooms || null,
+      item.amenities || null, item.zoning || null, item.sqm || null
+    );
 
-    const jsonBody = JSON.stringify(dbItem);
-    console.log('[AutoRealEstate API] JSON body length:', jsonBody.length);
-    console.log('[AutoRealEstate API] JSON body preview:', jsonBody.substring(0, 200));
-
-    const response = await fetch(`${supabaseUrl}/rest/v1/auto_real_estate`, {
-      method: 'POST',
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: jsonBody,
-    });
-
-    console.log('[AutoRealEstate API] Supabase response status:', response.status);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[AutoRealEstate API] Supabase error:', response.status, errorText);
-      throw new Error(`Supabase error: ${response.status} - ${errorText}`);
-    }
-
-    const responseText = await response.text();
-    console.log('[AutoRealEstate API] Response text length:', responseText.length);
-    
-    let data;
-    if (responseText.length > 0) {
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('[AutoRealEstate API] JSON parse error:', parseError);
-        console.error('[AutoRealEstate API] Response text:', responseText);
-        throw new Error('Failed to parse Supabase response');
-      }
-    } else {
-      data = null;
-    }
-    
-    console.log('[AutoRealEstate API] Success:', data);
-    res.json({ data });
+    const newRow = await db.prepare("SELECT * FROM auto_real_estate WHERE id = ?").get(id);
+    res.json({ data: newRow });
   } catch (error) {
-    console.error("[AutoRealEstate API] Error saving auto_real_estate:", error);
-    res.status(500).json({ error: "فشل حفظ البيانات", details: error instanceof Error ? error.message : String(error) });
+    console.error("[AutoRealEstate] Error creating:", error);
+    res.status(500).json({ error: "فشل حفظ البيانات" });
   }
 });
 
-app.put("/api/supabase/auto-real-estate/:id", authMiddleware, async (req, res) => {
+app.patch("/api/auto-real-estate/:id", authMiddleware, async (req, res) => {
   try {
     const userId = (req as express.Request & { userId: string }).userId;
-    const user = await db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
-    
-    // Only allow super admin to access this endpoint
-    if (!user || user.email !== SUPER_ADMIN_EMAIL) {
-      res.status(403).json({ error: "غير مصرح" });
+    const hasAccess = await hasModuleAccess(userId, "auto_real_estate");
+    if (!hasAccess) {
+      res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذا القسم" });
       return;
     }
 
     const { id } = req.params;
     const item = req.body;
-    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
-    
-    console.log('[AutoRealEstate API PUT] Updating record ID:', id);
-    console.log('[AutoRealEstate API PUT] Request body:', item);
-    
-    // Get super admin's Supabase user ID - SUPER ADMIN CAN ONLY UPDATE THEIR OWN DATA
-    const superAdminSupabaseId = 'f13bed00-cd13-4075-8716-d9939ea8ba16'; // lahcenm534@gmail.com
-    
-    const dbItem = {
-      user_id: superAdminSupabaseId, // Use actual super admin user ID
-      type: item.type,
-      brand_or_title: item.brandOrTitle,
-      plate_or_address: item.plateOrAddress,
-      specs: item.specs || '',
-      price: item.price || 0,
-      status: item.status || 'Available',
-      expiry_date: item.expiryDate || null,
-      image: item.image || null,
-      color: item.color || null,
-      fuel: item.fuel || null,
-      mileage: item.mileage || null,
-      defects: item.defects || null,
-      rent_start: item.rentStart || null,
-      rent_end: item.rentEnd || null,
-      prop_type: item.propType || null,
-      commercial_type: item.commercialType || null,
-      floor_num: item.floorNum || null,
-      total_floors: item.totalFloors || null,
-      rooms: item.rooms || null,
-      bathrooms: item.bathrooms || null,
-      amenities: item.amenities || null,
-      zoning: item.zoning || null,
-      sqm: item.sqm || null,
-    };
 
-    console.log('[AutoRealEstate API PUT] dbItem:', dbItem);
-    
-    // Filter by both id AND user_id to ensure super admin can only update their own records
-    const url = `${supabaseUrl}/rest/v1/auto_real_estate?id=eq.${id}&user_id=eq.${superAdminSupabaseId}`;
-    console.log('[AutoRealEstate API PUT] Supabase URL:', url);
-    
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify(dbItem),
-    });
+    await db.prepare(
+      `UPDATE auto_real_estate SET
+        type = ?, brand_or_title = ?, plate_or_address = ?, specs = ?, price = ?, status = ?,
+        expiry_date = ?, image = ?, color = ?, fuel = ?, mileage = ?, defects = ?,
+        rent_start = ?, rent_end = ?, prop_type = ?, commercial_type = ?, floor_num = ?,
+        total_floors = ?, rooms = ?, bathrooms = ?, amenities = ?, zoning = ?, sqm = ?, updated_at = NOW()
+      WHERE id = ? AND user_id = ?`
+    ).run(
+      item.type, item.brandOrTitle, item.plateOrAddress, item.specs || '',
+      item.price || 0, item.status || 'Available', item.expiryDate || null,
+      item.image || null, item.color || null, item.fuel || null, item.mileage || null,
+      item.defects || null, item.rentStart || null, item.rentEnd || null,
+      item.propType || null, item.commercialType || null, item.floorNum || null,
+      item.totalFloors || null, item.rooms || null, item.bathrooms || null,
+      item.amenities || null, item.zoning || null, item.sqm || null, id, userId
+    );
 
-    console.log('[AutoRealEstate API PUT] Supabase response status:', response.status);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[AutoRealEstate API PUT] Supabase error:', response.status, errorText);
-      throw new Error(`Supabase error: ${response.status} - ${errorText}`);
-    }
-
-    const responseText = await response.text();
-    console.log('[AutoRealEstate API PUT] Response text length:', responseText.length);
-    
-    let data;
-    if (responseText.length > 0) {
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('[AutoRealEstate API PUT] JSON parse error:', parseError);
-        console.error('[AutoRealEstate API PUT] Response text:', responseText);
-        data = null;
-      }
-    } else {
-      data = null;
-    }
-    
-    console.log('[AutoRealEstate API PUT] Success:', data);
-    res.json({ data });
+    const updatedRow = await db.prepare("SELECT * FROM auto_real_estate WHERE id = ?").get(id);
+    res.json({ data: updatedRow });
   } catch (error) {
-    console.error("[AutoRealEstate API PUT] Error updating auto_real_estate:", error);
-    res.status(500).json({ error: "فشل تحديث البيانات", details: error instanceof Error ? error.message : String(error) });
+    console.error("[AutoRealEstate] Error updating:", error);
+    res.status(500).json({ error: "فشل تحديث البيانات" });
   }
 });
 
-app.delete("/api/supabase/auto-real-estate/:id", authMiddleware, async (req, res) => {
+app.delete("/api/auto-real-estate/:id", authMiddleware, async (req, res) => {
   try {
     const userId = (req as express.Request & { userId: string }).userId;
-    const user = await db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as { email: string } | undefined;
-    
-    // Only allow super admin to access this endpoint
-    if (!user || user.email !== SUPER_ADMIN_EMAIL) {
-      res.status(403).json({ error: "غير مصرح" });
+    const hasAccess = await hasModuleAccess(userId, "auto_real_estate");
+    if (!hasAccess) {
+      res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذا القسم" });
       return;
     }
 
     const { id } = req.params;
-    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
-    
-    // Get super admin's Supabase user ID - SUPER ADMIN CAN ONLY DELETE THEIR OWN DATA
-    const superAdminSupabaseId = 'f13bed00-cd13-4075-8716-d9939ea8ba16'; // lahcenm534@gmail.com
-    
-    // Filter by both id AND user_id to ensure super admin can only delete their own records
-    const response = await fetch(`${supabaseUrl}/rest/v1/auto_real_estate?id=eq.${id}&user_id=eq.${superAdminSupabaseId}`, {
-      method: 'DELETE',
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-      },
-    });
+    const result = await db.prepare("DELETE FROM auto_real_estate WHERE id = ? AND user_id = ?").run(id, userId);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Supabase error: ${response.status} - ${errorText}`);
+    if (result.changes === 0) {
+      res.status(404).json({ error: "غير موجود" });
+      return;
     }
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting auto_real_estate:", error);
+    console.error("[AutoRealEstate] Error deleting:", error);
     res.status(500).json({ error: "فشل حذف البيانات" });
   }
 });
+
+// DEPRECATED: All Supabase auto_real_estate endpoints removed
+// Super Admin and regular users now use the same /api/auto-real-estate endpoints
+// This ensures complete tenant isolation - each user sees only their own data
 
 /** ملف تأشيرة — بيانات محفوظة للحجز التلقائي */
 app.get("/api/visa/profile", authMiddleware, async (req, res) => {
@@ -4913,6 +5122,16 @@ app.post("/api/inventory/sale-batch", authMiddleware, async (req, res) => {
     /** تجاوز إداري لمجموع الفاتورة (يُحفظ في pos_invoices.total) */
     override_total?: number | null;
   };
+  
+  console.log("[sale-batch] Request received:", {
+    userId,
+    customer_name: b.customer_name,
+    paid: b.paid,
+    due_at: b.due_at,
+    lines_count: b.lines?.length,
+    override_total: b.override_total
+  });
+  
   if (!Array.isArray(b.lines) || b.lines.length === 0) {
     res.status(400).json({ error: "القائمة فارغة" });
     return;
@@ -5031,22 +5250,29 @@ app.put("/api/inventory/invoices/:id/void", authMiddleware, async (req, res) => 
   const invoiceId = req.params.id;
 
   try {
+    console.log("[Void Invoice] Voiding invoice:", invoiceId, "for user:", userId);
+    
     // Get the invoice details to restore stock
     const invoice = await db
       .prepare("SELECT lines_json FROM pos_invoices WHERE id = ? AND user_id = ?")
       .get(invoiceId, userId) as { lines_json: string } | undefined;
 
     if (!invoice) {
+      console.log("[Void Invoice] Invoice not found");
       res.status(404).json({ error: "Invoice not found" });
       return;
     }
 
+    console.log("[Void Invoice] lines_json:", invoice.lines_json);
+
     // Parse lines to restore stock
     const lines = JSON.parse(invoice.lines_json || "[]");
+    console.log("[Void Invoice] Parsed lines:", lines.length);
 
     // Restore stock for each line
     for (const line of lines) {
       if (line.product_id && line.qty_pieces) {
+        console.log("[Void Invoice] Restoring stock for product:", line.product_id, "qty:", line.qty_pieces);
         await db
           .prepare("UPDATE inventory_products SET stock_pieces = stock_pieces + ? WHERE id = ? AND user_id = ?")
           .run(line.qty_pieces, line.product_id, userId);
@@ -5058,9 +5284,10 @@ app.put("/api/inventory/invoices/:id/void", authMiddleware, async (req, res) => 
       .prepare("UPDATE pos_invoices SET status = 'voided' WHERE id = ? AND user_id = ?")
       .run(invoiceId, userId);
 
+    console.log("[Void Invoice] Invoice voided successfully");
     res.json({ success: true });
   } catch (error) {
-    console.error("Error voiding invoice:", error);
+    console.error("[Void Invoice] Error voiding invoice:", error);
     res.status(500).json({ error: "Failed to void invoice" });
   }
 });
@@ -5408,6 +5635,10 @@ registerBase44StudioRoutes(app, { authMiddleware, uploadDir, aiGenerateAllowed }
 registerBackendServices(app, authMiddleware);
 registerDeliveryHubRoutes(app, authMiddleware);
 registerPosAgentRoutes(app, authMiddleware);
+
+// Initialize contracts tables and register routes
+initContractsTables().catch(err => console.error("[Server] Failed to initialize contracts tables:", err));
+app.use(contractsRoutes);
 
 /** TTS API endpoint - using browser Web Speech API (client-side only) */
 app.post("/api/tts", async (_req, res) => {
