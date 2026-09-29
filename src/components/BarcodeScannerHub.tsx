@@ -44,7 +44,7 @@ function buildDecodeHints(): Map<DecodeHintType, unknown> {
 /**
  * قراءة الباركود محلياً عبر الكاميرا — لا يُرفع الفيديو إلى خوادم المنصة.
  */
-export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode, compact, useQuagga = true }: Props) {
+export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode, compact, useQuagga = false }: Props) {
   const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<{ stop: () => void } | null>(null);
@@ -123,8 +123,14 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
       if (useQuagga) {
         // Use Quagga for better 1D barcode support (EAN-13, EAN-8, UPC)
         const container = quaggaContainerRef.current;
-        if (!container) return;
+        if (!container) {
+          console.error("Quagga container not found");
+          setHint("Error: Container not found");
+          setActive(false);
+          return;
+        }
 
+        console.log("Initializing Quagga...");
         Quagga.init({
           inputStream: {
             name: "Live",
@@ -159,6 +165,7 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
             setActive(false);
             return;
           }
+          console.log("Quagga initialized successfully, starting...");
           Quagga.start();
           quaggaRef.current = true;
         });
@@ -175,6 +182,7 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
         });
       } else {
         // Use ZXing as fallback
+        console.log("Using ZXing...");
         // Request camera permissions explicitly with better settings for small barcodes
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
