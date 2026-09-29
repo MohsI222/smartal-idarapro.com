@@ -103,6 +103,8 @@ export function PosAgentApp() {
   });
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [showPrintDialog, setShowPrintDialog] = useState(false);
+  const [newProductBarcode, setNewProductBarcode] = useState("");
+  const [showAddProductDialog, setShowAddProductDialog] = useState(false);
 
   // Validate token on mount
   useEffect(() => {
@@ -2098,6 +2100,7 @@ export function PosAgentApp() {
                       <BarcodeScannerHub
                         compact
                         products={products.map((product) => ({ id: product.id, name: product.name, sku: product.sku }))}
+                        autoAddToCart={true}
                         onMatchedProduct={(productId) => {
                           const product = products.find(p => p.id === productId);
                           if (product) {
@@ -2105,6 +2108,11 @@ export function PosAgentApp() {
                             toast.success(`${getText("addedToCart")}: ${product.name}`);
                             // Don't close scanner - allow continuous scanning
                           }
+                        }}
+                        onUnknownBarcode={(code) => {
+                          // Show dialog to add new product
+                          setNewProductBarcode(code);
+                          setShowAddProductDialog(true);
                         }}
                       />
                     </div>
@@ -2877,6 +2885,124 @@ export function PosAgentApp() {
             >
               {getText("printReceiptNo")}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick Add Product Dialog */}
+      <Dialog open={showAddProductDialog} onOpenChange={setShowAddProductDialog}>
+        <DialogContent className="bg-slate-900 border-white/20 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle>إضافة منتج جديد</DialogTitle>
+            <DialogDescription className="text-white/70">
+              الباركود {newProductBarcode} غير موجود. أدخل بيانات المنتج.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-white">الباركود</Label>
+              <Input
+                value={newProductBarcode}
+                disabled
+                className="bg-white/10 border-white/20 text-white"
+              />
+            </div>
+            <div>
+              <Label className="text-white">اسم المنتج</Label>
+              <Input
+                placeholder="أدخل اسم المنتج"
+                value={productFormData.name}
+                onChange={(e) => setProductFormData({ ...productFormData, name: e.target.value })}
+                className="bg-white/10 border-white/20 text-white"
+              />
+            </div>
+            <div>
+              <Label className="text-white">السعر</Label>
+              <Input
+                type="number"
+                placeholder="السعر"
+                value={productFormData.unit_price}
+                onChange={(e) => setProductFormData({ ...productFormData, unit_price: e.target.value })}
+                className="bg-white/10 border-white/20 text-white"
+              />
+            </div>
+            <div>
+              <Label className="text-white">الكمية</Label>
+              <Input
+                type="number"
+                placeholder="الكمية"
+                value={productFormData.stock_pieces}
+                onChange={(e) => setProductFormData({ ...productFormData, stock_pieces: e.target.value })}
+                className="bg-white/10 border-white/20 text-white"
+              />
+            </div>
+            <div className="flex gap-3 pt-4">
+              <Button
+                onClick={async () => {
+                  if (!productFormData.name || !productFormData.unit_price || !productFormData.stock_pieces) {
+                    toast.error("يرجى ملء جميع الحقول");
+                    return;
+                  }
+                  try {
+                    const response = await api("/inventory/products", {
+                      method: "POST",
+                      token,
+                      body: JSON.stringify({
+                        name: productFormData.name,
+                        sku: newProductBarcode,
+                        unit_price: Number(productFormData.unit_price),
+                        stock_pieces: Number(productFormData.stock_pieces),
+                        unit_kind: "piece",
+                        pieces_per_carton: 1
+                      })
+                    });
+                    if (response) {
+                      toast.success("تم إضافة المنتج بنجاح");
+                      setShowAddProductDialog(false);
+                      // Reload products
+                      const freshProducts = await api<any[]>("/inventory/products", { token });
+                      setProducts(freshProducts);
+                      setProductFormData({
+                        name: "",
+                        sku: "",
+                        unit_price: "",
+                        stock_pieces: "",
+                        unit_kind: "",
+                        pieces_per_carton: "",
+                        image_url: ""
+                      });
+                      setNewProductBarcode("");
+                    }
+                  } catch (error) {
+                    toast.error("فشل إضافة المنتج");
+                  }
+                }}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              >
+                <Check className="w-4 h-4 mr-2" />
+                إضافة
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowAddProductDialog(false);
+                  setNewProductBarcode("");
+                  setProductFormData({
+                    name: "",
+                    sku: "",
+                    unit_price: "",
+                    stock_pieces: "",
+                    unit_kind: "",
+                    pieces_per_carton: "",
+                    image_url: ""
+                  });
+                }}
+                variant="outline"
+                className="flex-1 bg-slate-700 border-slate-600 text-white hover:bg-slate-600"
+              >
+                <X className="w-4 h-4 mr-2" />
+                إلغاء
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
