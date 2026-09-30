@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Bell, Calculator, Download, FileSpreadsheet, Lock } from "lucide-react";
+import { Bell, Calculator, Download, FileSpreadsheet, Lock, Trash2, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,10 +22,11 @@ type Report = {
 
 function AccModule() {
   const { t, locale, isRtl } = useI18n();
-  const { token, isApproved, approvedModules, isAdmin } = useAuth();
+  const { token, isApproved, approvedModules, isAdmin, user } = useAuth();
   const allowed = isAdmin || (isApproved && approvedModules.includes("acc"));
   const [reports, setReports] = useState<Report[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Report>>({});
+  const [selectedReports, setSelectedReports] = useState<Set<string>>(new Set());
   const [form, setForm] = useState({
     title: "",
     period: "",
@@ -98,6 +99,57 @@ function AccModule() {
     await load();
   };
 
+  const deleteReport = async (id: string) => {
+    if (!token) return;
+    if (!window.confirm(t("common.confirmDelete"))) return;
+    try {
+      await api(`/acc/reports/${id}`, {
+        method: "DELETE",
+        token,
+      });
+      await load();
+    } catch (error) {
+      console.error("Error deleting report:", error);
+    }
+  };
+
+  const bulkDeleteReports = async () => {
+    if (!token) return;
+    if (selectedReports.size === 0) return;
+    if (!window.confirm(t("common.confirmDeleteBulk"))) return;
+    try {
+      await api("/acc/reports/bulk-delete", {
+        method: "DELETE",
+        token,
+        body: JSON.stringify({ ids: Array.from(selectedReports) }),
+      });
+      setSelectedReports(new Set());
+      await load();
+    } catch (error) {
+      console.error("Error bulk deleting reports:", error);
+    }
+  };
+
+  const toggleSelectReport = (id: string) => {
+    setSelectedReports((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedReports.size === reports.length) {
+      setSelectedReports(new Set());
+    } else {
+      setSelectedReports(new Set(reports.map((r) => r.id)));
+    }
+  };
+
   const exportPdf = async () => {
     const dir = isRtl ? "rtl" : "ltr";
     const headers = [
@@ -168,6 +220,12 @@ function AccModule() {
             <Download className="size-4" />
             {t("pdf.export")}
           </Button>
+          {selectedReports.size > 0 && (
+            <Button variant="destructive" size="sm" onClick={() => void bulkDeleteReports()}>
+              <Trash2 className="size-4" />
+              {t("common.deleteSelected")} ({selectedReports.size})
+            </Button>
+          )}
           <Button variant="outline" size="sm" asChild>
             <Link to="/app/reminders" className="inline-flex items-center gap-2">
               <Bell className="size-4" />
@@ -240,12 +298,21 @@ function AccModule() {
         <table className="w-full text-sm">
           <thead className="bg-slate-900/80">
             <tr>
+              <th className="p-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={selectedReports.size === reports.length && reports.length > 0}
+                  onChange={toggleSelectAll}
+                  className="cursor-pointer"
+                />
+              </th>
               <th className="p-3 text-right min-w-[120px]">{t("tbl.caseTitle")}</th>
               <th className="p-3 text-right min-w-[100px]">{t("tbl.period")}</th>
               <th className="p-3 text-right min-w-[100px]">{t("acc.entryType")}</th>
               <th className="p-3 text-right min-w-[90px]">{t("tbl.amount")}</th>
               <th className="p-3 text-right min-w-[120px]">{t("tbl.notes")}</th>
               <th className="p-3 w-24">{t("common.saveRow")}</th>
+              <th className="p-3 w-10"></th>
             </tr>
           </thead>
           <tbody>
@@ -253,6 +320,14 @@ function AccModule() {
               const d = drafts[r.id] ?? r;
               return (
                 <tr key={r.id} className="border-t border-slate-800">
+                  <td className="p-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedReports.has(r.id)}
+                      onChange={() => toggleSelectReport(r.id)}
+                      className="cursor-pointer"
+                    />
+                  </td>
                   <td className="p-2">
                     <Input
                       className="h-9 bg-slate-900/50 border-slate-700"
@@ -331,6 +406,16 @@ function AccModule() {
                       onClick={() => void saveRow(r.id)}
                     >
                       {t("common.saveRow")}
+                    </Button>
+                  </td>
+                  <td className="p-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="w-full text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                      onClick={() => void deleteReport(r.id)}
+                    >
+                      <Trash className="size-4" />
                     </Button>
                   </td>
                 </tr>

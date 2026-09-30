@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, MessageCircle, Phone, MapPin, ArrowRight, MessageSquare, X, Trash2 } from "lucide-react";
 import {
   fetchOrders,
-  subscribeToStoreOrders,
+  pollStoreOrders,
   updateOrderStatus,
   updateProductStock,
   deleteOrder,
@@ -94,7 +94,7 @@ export function OrdersTab({
         if (!cancelled) setLoading(false);
       });
 
-    const unsubscribe = subscribeToStoreOrders(storeId, {
+    const unsubscribe = pollStoreOrders(storeId, {
       onInsert: (order) => {
         onOrdersChange([order, ...ordersRef.current]);
         playNewOrderChime();
@@ -103,7 +103,8 @@ export function OrdersTab({
       onUpdate: (order) => {
         onOrdersChange(ordersRef.current.map((o) => (o.id === order.id ? { ...o, ...order } : o)));
       },
-    });
+    }, 5000); // Poll every 5 seconds
+
     return () => {
       cancelled = true;
       unsubscribe();
@@ -220,7 +221,7 @@ export function OrdersTab({
               <div key={order.id} className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="font-semibold text-white">{order.customer_name}</p>
-                  <span className="text-xs text-slate-500">{order.total.toFixed(2)} DH</span>
+                  <span className="text-xs text-slate-500">{(order.total_amount || 0).toFixed(2)} DH</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                   <div className="flex items-center gap-1">

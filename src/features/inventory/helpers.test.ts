@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   inventoryRowFromProduct,
-  inventoryRowFromSupabase,
+  inventoryRowFromLegacy,
   parseDateCell,
   parseInventoryImportRows,
   piecesPerQuickUnit,
@@ -122,7 +122,7 @@ test("inventoryRow mappers keep stable source-specific fields", () => {
   });
 
   assert.deepEqual(
-    inventoryRowFromSupabase({
+    inventoryRowFromLegacy({
       id: "s1",
       name: "Flour",
       sku: "FLR-9",

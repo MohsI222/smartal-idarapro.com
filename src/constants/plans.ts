@@ -23,9 +23,9 @@ export const ALL_SAAS_MODULE_IDS: SectionId[] = [
   "auto_real_estate",
 ];
 
-/** تجربة 5 أيام — كل الأقسام عدا التأشيرة وقسم السيارات والعقارات (اشتراك مستقل) */
+/** تجربة 5 أيام — كل الأقسام عدا التأشيرة */
 export const TRIAL_MODULE_IDS: SectionId[] = ALL_SAAS_MODULE_IDS.filter(
-  (m) => m !== "visa" && m !== "auto_real_estate"
+  (m) => m !== "visa"
 );
 
 export type BillingPeriod = "monthly" | "yearly";

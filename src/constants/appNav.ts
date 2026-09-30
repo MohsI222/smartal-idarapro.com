@@ -43,6 +43,7 @@ export const PLATFORM_NAV: AppNavItem[] = [
   { to: "/app/company", icon: Building2, labelKey: "nav.company" },
   { to: "/app/tl", icon: Train, labelKey: "nav.transportLogistics", permission: "can_access_transport_logistics" },
   { to: "/app/delivery-hub", icon: Truck, labelKey: "nav.deliveryHub", emphasize: true, permission: "can_access_delivery" },
+  { to: "/app/contracts", icon: FileText, labelKey: "nav.contracts", emphasize: true, permission: "can_access_contracts" },
   { to: "/app/auto-real-estate", icon: HousePlus, labelKey: "nav.autoRealEstate", emphasize: true, permission: "can_access_auto_real_estate" },
   { to: "/app/company?sector=commercial-industrial", icon: Building2, labelKey: "nav.commercialCompany" },
   { to: "/app/academy", icon: Video, labelKey: "nav.corporateAcademy" },

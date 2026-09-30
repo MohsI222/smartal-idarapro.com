@@ -1,27 +1,13 @@
 /**
  * طبقة الوصول لبيانات قسم رادار الطلبات والتوصيل.
  *
- * القراءة العامة (واجهة المتجر للعميل، تتبع الطلب، الدردشة، إنشاء الطلبات من
- * الزبون) تمر مباشرة عبر Supabase (سياسات RLS العامة تسمح بها بدون تسجيل دخول).
- *
- * عمليات "المالك" (إنشاء/تعديل متجر التاجر، إدارة المنتجات، تحديث حالة الطلب)
- * تمر عبر الخادم الموثوق للتطبيق (`/api/delivery-hub/*`) وليس عبر Supabase
- * مباشرة، لأن هذه العمليات محمية بـ RLS تشترط جلسة Supabase Auth حقيقية، بينما
- * حسابات التطبيق (JWT خاص) لا تملك بالضرورة جلسة كهذه. راجع
- * `server/deliveryHubRoutes.ts` للتفاصيل.
+ * جميع العمليات تمر عبر الخادم الموثوق للتطبيق (`/api/delivery-hub/*`)
+ * باستخدام JWT الخاص بالتطبيق. راجع `server/deliveryHubRoutes.ts` للتفاصيل.
  */
 import { api } from "@/lib/api";
-import { supabase } from "@/lib/supabaseClient";
 import type { Order, OrderItem, OrderMessage, OrderStatus, Product, Store, StockAlert } from "./types";
 
 export class DeliveryHubError extends Error {}
-
-function db() {
-  if (!supabase) {
-    throw new DeliveryHubError("الاتصال بقاعدة بيانات Supabase غير مهيأ — تحقق من متغيرات البيئة.");
-  }
-  return supabase;
-}
 
 function slugify(input: string): string {
   const base = input
@@ -60,9 +46,14 @@ export async function ensureStoreForUser(token: string): Promise<Store> {
 }
 
 export async function fetchStoreBySlug(slug: string): Promise<Store | null> {
-  const { data, error } = await db().from("delivery_hub_stores").select("*").eq("slug", slug).maybeSingle();
-  if (error) throw new DeliveryHubError(error.message);
-  return (data as Store) ?? null;
+  try {
+    const res = await fetch(`/api/delivery-hub/stores/public/${slug}`);
+    if (!res.ok) throw new DeliveryHubError("فشل في تحميل المتجر");
+    const data = await res.json();
+    return data.store as Store;
+  } catch (e) {
+    throw new DeliveryHubError(e instanceof Error ? e.message : "فشل في تحميل المتجر");
+  }
 }
 
 export async function updateStore(token: string, patch: Partial<Store>): Promise<Store> {
@@ -86,13 +77,25 @@ export function suggestSlug(name: string): string {
 // Products
 // ---------------------------------------------------------------------------
 export async function fetchProducts(storeId: string): Promise<Product[]> {
-  const { data, error } = await db()
-    .from("delivery_hub_products")
-    .select("*")
-    .eq("store_id", storeId)
-    .order("sort_order", { ascending: true });
-  if (error) throw new DeliveryHubError(error.message);
-  return (data as Product[]) ?? [];
+  try {
+    const res = await fetch(`/api/delivery-hub/products/public?store_id=${storeId}`);
+    if (!res.ok) throw new DeliveryHubError("فشل في تحميل المنتجات");
+    const data = await res.json();
+    return data.products as Product[];
+  } catch (e) {
+    throw new DeliveryHubError(e instanceof Error ? e.message : "فشل في تحميل المنتجات");
+  }
+}
+
+export async function fetchProductsBySlug(slug: string): Promise<Product[]> {
+  try {
+    const res = await fetch(`/api/delivery-hub/products/public/${slug}`);
+    if (!res.ok) throw new DeliveryHubError("فشل في تحميل المنتجات");
+    const data = await res.json();
+    return data.products as Product[];
+  } catch (e) {
+    throw new DeliveryHubError(e instanceof Error ? e.message : "فشل في تحميل المنتجات");
+  }
 }
 
 export async function fetchProductsFromBackend(storeId: string, token: string): Promise<Product[]> {
@@ -148,23 +151,26 @@ export async function fetchOrders(storeId: string, token?: string): Promise<Orde
       throw new DeliveryHubError(e instanceof Error ? e.message : "تعذر تحميل الطلبات");
     }
   }
-  // Fallback to direct Supabase access (for public/client access)
-  const { data, error } = await db()
-    .from("delivery_hub_orders")
-    .select("*, order_items:delivery_hub_order_items(*)")
-    .eq("store_id", storeId)
-    .order("created_at", { ascending: false });
-  if (error) throw new DeliveryHubError(error.message);
-  return (data as Order[]) ?? [];
+  // Use public backend endpoint (for public/client access)
+  try {
+    const res = await fetch(`/api/delivery-hub/orders/public?store_id=${storeId}`);
+    if (!res.ok) throw new DeliveryHubError("فشل في تحميل الطلبات");
+    const data = await res.json();
+    return data.orders as Order[];
+  } catch (e) {
+    throw new DeliveryHubError(e instanceof Error ? e.message : "فشل في تحميل الطلبات");
+  }
 }
 
 export async function fetchOrderById(orderId: string): Promise<Order | null> {
   // Use public backend endpoint to bypass RLS
   try {
-    const res = await api<{ order: Order }>(`/delivery-hub/orders/${orderId}`);
-    return res.order;
+    const res = await fetch(`/api/delivery-hub/orders/${orderId}`);
+    if (!res.ok) throw new DeliveryHubError("فشل في تحميل الطلب");
+    const data = await res.json();
+    return data.order as Order;
   } catch (e) {
-    throw new DeliveryHubError(e instanceof Error ? e.message : "تعذر تحميل الطلب");
+    throw new DeliveryHubError(e instanceof Error ? e.message : "فشل في تحميل الطلب");
   }
 }
 
@@ -216,13 +222,16 @@ export type NewOrderInput = {
 };
 
 export async function placeOrder(input: NewOrderInput): Promise<string> {
-  // Use backend API to bypass RLS (for public client access)
+  // Use public backend endpoint (for public client access)
   try {
-    const res = await api<{ order_id: string }>("/delivery-hub/orders", {
+    const res = await fetch("/api/delivery-hub/orders", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     });
-    return res.order_id;
+    if (!res.ok) throw new DeliveryHubError("فشل إنشاء الطلب");
+    const data = await res.json();
+    return data.order_id;
   } catch (e) {
     throw new DeliveryHubError(e instanceof Error ? e.message : "فشل إنشاء الطلب");
   }
@@ -234,10 +243,12 @@ export async function placeOrder(input: NewOrderInput): Promise<string> {
 export async function fetchOrderMessages(orderId: string): Promise<OrderMessage[]> {
   // Use public backend endpoint to bypass RLS
   try {
-    const res = await api<{ messages: OrderMessage[] }>(`/delivery-hub/orders/${orderId}/messages`);
-    return res.messages;
+    const res = await fetch(`/api/delivery-hub/orders/${orderId}/messages`);
+    if (!res.ok) throw new DeliveryHubError("فشل في تحميل الرسائل");
+    const data = await res.json();
+    return data.messages as OrderMessage[];
   } catch (e) {
-    throw new DeliveryHubError(e instanceof Error ? e.message : "تعذر تحميل الرسائل");
+    throw new DeliveryHubError(e instanceof Error ? e.message : "فشل في تحميل الرسائل");
   }
 }
 
@@ -248,72 +259,91 @@ export async function sendOrderMessage(
 ): Promise<void> {
   // Use public backend endpoint to bypass RLS
   try {
-    await api(`/delivery-hub/orders/${orderId}/messages`, {
+    const res = await fetch(`/api/delivery-hub/orders/${orderId}/messages`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sender, message }),
     });
+    if (!res.ok) throw new DeliveryHubError("فشل إرسال الرسالة");
   } catch (e) {
-    throw new DeliveryHubError(e instanceof Error ? e.message : "تعذر إرسال الرسالة");
+    throw new DeliveryHubError(e instanceof Error ? e.message : "فشل إرسال الرسالة");
   }
 }
 
 // ---------------------------------------------------------------------------
-// Realtime subscriptions
+// Polling functions (replaces Realtime subscriptions)
 // ---------------------------------------------------------------------------
-export function subscribeToStoreOrders(
+export function pollStoreOrders(
   storeId: string,
-  handlers: { onInsert?: (order: Order) => void; onUpdate?: (order: Order) => void }
-) {
-  if (!supabase) return () => undefined;
-  const client = supabase;
-  const channel = client
-    .channel(`delivery-hub-orders-${storeId}`)
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "delivery_hub_orders", filter: `store_id=eq.${storeId}` },
-      (payload) => handlers.onInsert?.(payload.new as Order)
-    )
-    .on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "delivery_hub_orders", filter: `store_id=eq.${storeId}` },
-      (payload) => handlers.onUpdate?.(payload.new as Order)
-    )
-    .subscribe();
-  return () => {
-    void client.removeChannel(channel);
-  };
+  handlers: { onInsert?: (order: Order) => void; onUpdate?: (order: Order) => void },
+  intervalMs: number = 30000
+): () => void {
+  let lastOrders: Order[] = [];
+  
+  const interval = setInterval(async () => {
+    try {
+      const orders = await fetchOrders(storeId);
+      
+      // Check for new orders
+      if (handlers.onInsert) {
+        const newOrders = orders.filter(o => !lastOrders.find(lo => lo.id === o.id));
+        newOrders.forEach(handlers.onInsert);
+      }
+      
+      // Check for updated orders
+      if (handlers.onUpdate) {
+        orders.forEach(order => {
+          const lastOrder = lastOrders.find(lo => lo.id === order.id);
+          if (lastOrder && lastOrder.status !== order.status) {
+            handlers.onUpdate!(order);
+          }
+        });
+      }
+      
+      lastOrders = orders;
+    } catch (error) {
+      console.error("[pollStoreOrders] Error:", error);
+    }
+  }, intervalMs);
+  
+  return () => clearInterval(interval);
 }
 
-export function subscribeToOrder(orderId: string, onUpdate: (order: Order) => void) {
-  if (!supabase) return () => undefined;
-  const client = supabase;
-  const channel = client
-    .channel(`delivery-hub-order-${orderId}`)
-    .on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "delivery_hub_orders", filter: `id=eq.${orderId}` },
-      (payload) => onUpdate(payload.new as Order)
-    )
-    .subscribe();
-  return () => {
-    void client.removeChannel(channel);
-  };
+export function pollOrder(orderId: string, onUpdate: (order: Order) => void, intervalMs: number = 30000): () => void {
+  let lastStatus: string | null = null;
+  
+  const interval = setInterval(async () => {
+    try {
+      const order = await fetchOrderById(orderId);
+      if (order && lastStatus !== null && order.status !== lastStatus) {
+        onUpdate(order);
+      }
+      if (order) lastStatus = order.status;
+    } catch (error) {
+      console.error("[pollOrder] Error:", error);
+    }
+  }, intervalMs);
+  
+  return () => clearInterval(interval);
 }
 
-export function subscribeToOrderMessages(orderId: string, onInsert: (message: OrderMessage) => void) {
-  if (!supabase) return () => undefined;
-  const client = supabase;
-  const channel = client
-    .channel(`delivery-hub-messages-${orderId}`)
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "delivery_hub_order_messages", filter: `order_id=eq.${orderId}` },
-      (payload) => onInsert(payload.new as OrderMessage)
-    )
-    .subscribe();
-  return () => {
-    void client.removeChannel(channel);
-  };
+export function pollOrderMessages(orderId: string, onInsert: (message: OrderMessage) => void, intervalMs: number = 30000): () => void {
+  let lastMessages: OrderMessage[] = [];
+  
+  const interval = setInterval(async () => {
+    try {
+      const messages = await fetchOrderMessages(orderId);
+      
+      const newMessages = messages.filter(m => !lastMessages.find(lm => lm.id === m.id));
+      newMessages.forEach(onInsert);
+      
+      lastMessages = messages;
+    } catch (error) {
+      console.error("[pollOrderMessages] Error:", error);
+    }
+  }, intervalMs);
+  
+  return () => clearInterval(interval);
 }
 
 export type OrderItemInput = OrderItem;
@@ -323,23 +353,16 @@ export type OrderItemInput = OrderItem;
 // ---------------------------------------------------------------------------
 export async function getStockAlerts(storeId: string): Promise<StockAlert[]> {
   try {
-    const { data, error } = await db()
-      .from("delivery_hub_products")
-      .select("id, title, stock_quantity, low_stock_threshold")
-      .eq("store_id", storeId)
-      .order("stock_quantity", { ascending: true });
-
-    if (error) {
-      console.error("Database error fetching stock alerts:", error);
-      throw new DeliveryHubError(error.message);
-    }
-
-    if (!data || data.length === 0) {
+    const res = await fetch(`/api/delivery-hub/products/public?store_id=${storeId}`);
+    if (!res.ok) throw new DeliveryHubError("فشل في تحميل المنتجات");
+    const data = await res.json();
+    const products = data.products as { id: string; title: string; sku: string | null; stock_quantity: number; low_stock_threshold: number }[];
+    
+    if (!products || products.length === 0) {
       console.log("No products found for store:", storeId);
       return [];
     }
 
-    const products = data as { id: string; title: string; sku: string | null; stock_quantity: number; low_stock_threshold: number }[];
     console.log("Products fetched:", products.length);
     
     const alerts = products

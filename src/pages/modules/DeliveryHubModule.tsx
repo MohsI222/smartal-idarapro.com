@@ -4,16 +4,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Loader2, Radio, LayoutTemplate, QrCode, BarChart3, Lock } from "lucide-react";
 import { Link } from "react-router-dom";
-import { isSupabaseConfigured } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
-import { ensureStoreForUser, fetchProducts, fetchProductsFromBackend, fetchOrders } from "@/lib/deliveryHub/api";
+import { ensureStoreForUser, fetchProductsFromBackend, fetchOrders } from "@/lib/deliveryHub/api";
 import type { Order, Product, Store } from "@/lib/deliveryHub/types";
 import { OrdersTab } from "./deliveryHub/OrdersTab";
 import { CatalogTab } from "./deliveryHub/CatalogTab";
 import { QrTab } from "./deliveryHub/QrTab";
 import { StatsTab } from "./deliveryHub/StatsTab";
-import { useDeliveryOrdersRealtime, useDeliveryProductsRealtime } from "@/hooks/useSupabaseRealtime";
 
 export function DeliveryHubModule() {
   const { token, isAdmin, isApproved, approvedModules } = useAuth();
@@ -57,16 +55,6 @@ export function DeliveryHubModule() {
         }
         return;
       }
-      if (!isSupabaseConfigured) {
-        clearTimeout(timeoutId);
-        if (!cancelled) {
-          setError(
-            "الاتصال بقاعدة بيانات Supabase غير مهيأ — يرجى تحقق من متغيرات البيئة (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)."
-          );
-          setLoading(false);
-        }
-        return;
-      }
       try {
         console.log("[DeliveryHubModule] Bootstrapping for user, isAdmin:", isAdmin);
         const activeStore = await ensureStoreForUser(token);
@@ -98,50 +86,25 @@ export function DeliveryHubModule() {
     };
   }, [token, isAdmin]);
 
-  // Realtime subscriptions for orders
-  useDeliveryOrdersRealtime(
-    store?.id || "",
-    useCallback((newOrder: Order) => {
-      setOrders((prev) => {
-        // Check if order already exists
-        const exists = prev.some((o) => o.id === newOrder.id);
-        if (exists) {
-          // Update existing order
-          return prev.map((o) => (o.id === newOrder.id ? newOrder : o));
-        }
-        // Insert new order at the beginning
-        return [newOrder, ...prev];
-      });
-    }, []),
-    useCallback((updatedOrder: Order) => {
-      setOrders((prev) => prev.map((o) => (o.id === updatedOrder.id ? updatedOrder : o)));
-    }, []),
-    useCallback((deletedOrder: Order) => {
-      setOrders((prev) => prev.filter((o) => o.id !== deletedOrder.id));
-    }, []),
-    Boolean(store?.id) && isSupabaseConfigured
-  );
-
-  // Realtime subscriptions for products
-  useDeliveryProductsRealtime(
-    store?.id || "",
-    useCallback((newProduct: Product) => {
-      setProducts((prev) => {
-        const exists = prev.some((p) => p.id === newProduct.id);
-        if (exists) {
-          return prev.map((p) => (p.id === newProduct.id ? newProduct : p));
-        }
-        return [...prev, newProduct];
-      });
-    }, []),
-    useCallback((updatedProduct: Product) => {
-      setProducts((prev) => prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p)));
-    }, []),
-    useCallback((deletedProduct: Product) => {
-      setProducts((prev) => prev.filter((p) => p.id !== deletedProduct.id));
-    }, []),
-    Boolean(store?.id) && isSupabaseConfigured
-  );
+  // Polling for orders and products updates (replaces Supabase Realtime)
+  useEffect(() => {
+    if (!store?.id || !token) return;
+    
+    const interval = setInterval(async () => {
+      try {
+        const [ordersData, productsData] = await Promise.all([
+          fetchOrders(store.id, token),
+          fetchProductsFromBackend(store.id, token)
+        ]);
+        setOrders(ordersData);
+        setProducts(productsData);
+      } catch (err) {
+        console.error('Error polling delivery hub data:', err);
+      }
+    }, 30000); // Poll every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [store?.id, token]);
 
   if (loading) {
     return (

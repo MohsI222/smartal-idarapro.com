@@ -9,8 +9,8 @@ import {
   fetchOrderById,
   fetchOrderMessages,
   sendOrderMessage,
-  subscribeToOrder,
-  subscribeToOrderMessages,
+  pollOrder,
+  pollOrderMessages,
 } from "@/lib/deliveryHub/api";
 import { ORDER_STATUS_FLOW, ORDER_STATUS_LABELS, type Order, type OrderMessage } from "@/lib/deliveryHub/types";
 
@@ -45,10 +45,11 @@ export function OrderStatus() {
         if (!cancelled) setLoading(false);
       });
 
-    const unsubOrder = subscribeToOrder(orderId, (o) => setOrder((prev) => (prev ? { ...prev, ...o } : prev)));
-    const unsubMsgs = subscribeToOrderMessages(orderId, (m) =>
-      setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]))
+    const unsubOrder = pollOrder(orderId, (o) => setOrder((prev) => (prev ? { ...prev, ...o } : prev)), 5000);
+    const unsubMsgs = pollOrderMessages(orderId, (m) =>
+      setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m])), 5000
     );
+
     return () => {
       cancelled = true;
       unsubOrder();
@@ -154,15 +155,15 @@ export function OrderStatus() {
             {(order.order_items ?? []).map((it) => (
               <li key={it.id} className="flex justify-between">
                 <span>
-                  {it.title} × {it.quantity}
+                  {it.product_name} × {it.quantity}
                 </span>
-                <span>{(it.price * it.quantity).toFixed(2)} DH</span>
+                <span>{(it.unit_price * it.quantity).toFixed(2)} DH</span>
               </li>
             ))}
           </ul>
           <div className="flex justify-between border-t border-slate-800 pt-2 font-bold">
             <span>الإجمالي</span>
-            <span>{order.total.toFixed(2)} DH</span>
+            <span>{(order.total_amount || 0).toFixed(2)} DH</span>
           </div>
         </div>
 

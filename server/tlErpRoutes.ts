@@ -213,10 +213,10 @@ export function registerTlErpRoutes(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    const employees = await db
+    const workers = await db
       .prepare(`SELECT * FROM tl_workers WHERE user_id = ? ORDER BY department, full_name`)
       .all(w.user_id) as RowWorker[];
-    res.json({ success: true, employees });
+    res.json({ success: true, workers });
   });
 
   // GET /api/tl/standalone-vehicles - Get vehicles for standalone access (public, token-based)
@@ -238,14 +238,96 @@ export function registerTlErpRoutes(
       return;
     }
     
-    // Get vehicles for the department
+    // Get vehicles for the department - filter by worker_id to show only this worker's vehicles
     const logs = await db
-      .prepare(`SELECT * FROM tl_vehicles 
-                WHERE user_id = ? AND department = ?
+      .prepare(`SELECT * FROM tl_vehicle_logs
+                WHERE user_id = ? AND department = ? AND worker_id = ?
                 ORDER BY created_at DESC`)
-      .all(w.user_id, department || w.department) as any[];
+      .all(w.user_id, department || w.department, w.id) as any[];
     
     res.json({ success: true, logs: logs || [] });
+  });
+
+  // POST /api/tl/standalone-vehicles - Create vehicle log for standalone access (public, token-based)
+  app.post("/api/tl/standalone-vehicles", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { token, department, vehicle_id, driver_name, driver_phone, driver_id_doc, vehicle_kind,
+            expected_entry_at, entry_at, exit_at, passenger_count, seat_count, cargo_count, box_count,
+            marked_success, notes, worker_id } = req.body as {
+      token?: string; department?: string; vehicle_id?: string; driver_name?: string; driver_phone?: string;
+      driver_id_doc?: string; vehicle_kind?: string; expected_entry_at?: string; entry_at?: string;
+      exit_at?: string; passenger_count?: number; seat_count?: number; cargo_count?: number;
+      box_count?: number; marked_success?: boolean; notes?: string; worker_id?: string;
+    };
+
+    if (!token) {
+      res.status(400).json({ error: "token_required" });
+      return;
+    }
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as RowWorker | undefined;
+    if (!w) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    if (!vehicle_id || !driver_name || !driver_phone) {
+      res.status(400).json({ error: "missing_required_fields" });
+      return;
+    }
+
+    try {
+      const id = randomUUID();
+      const vKind = String(vehicle_kind ?? "truck") === "bus" ? "bus" : "truck";
+      const expectedEntry = expected_entry_at || new Date().toISOString();
+      const entry = entry_at || null;
+      const exit = exit_at || null;
+      const success = marked_success ? 1 : 0;
+
+      await db.prepare(
+        `INSERT INTO tl_vehicle_logs (
+          id, user_id, department, worker_id, vehicle_id, driver_name, driver_phone, driver_id_doc, vehicle_kind,
+          expected_entry_at, entry_at, exit_at, passenger_count, seat_count, cargo_count, box_count,
+          marked_success, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        id,
+        w.user_id,
+        department || w.department,
+        worker_id || w.id,
+        String(vehicle_id).trim(),
+        String(driver_name).trim(),
+        String(driver_phone).trim(),
+        String(driver_id_doc ?? "").trim(),
+        vKind,
+        String(expectedEntry),
+        entry,
+        exit,
+        passenger_count != null ? Number(passenger_count) : null,
+        seat_count != null ? Number(seat_count) : null,
+        cargo_count != null ? Number(cargo_count) : null,
+        box_count != null ? Number(box_count) : null,
+        success,
+        notes != null ? String(notes) : null
+      );
+
+      // Recalculate alert level
+      await recalcVehicleRow(w.user_id, id, {
+        expected_entry_at: expectedEntry,
+        entry_at: entry,
+        marked_success: success,
+      });
+
+      const row = await db.prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ?`).get(id);
+      res.json({ success: true, log: row });
+    } catch (error) {
+      console.error("[standalone-vehicles POST] Error:", error);
+      res.status(500).json({ error: "server_error", details: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   // GET /api/tl/standalone-items - Get logistics items for standalone access (public, token-based)
@@ -253,7 +335,7 @@ export function registerTlErpRoutes(
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    
+
     const { token, department } = req.query as { token?: string; department?: string };
     if (!token) {
       res.status(400).json({ error: "token_required" });
@@ -266,16 +348,28 @@ export function registerTlErpRoutes(
       res.status(404).json({ error: "not_found" });
       return;
     }
-    
-    // Query actual logistics operations from tl_ops table
-    const items = await db
-      .prepare(`SELECT id, title, status, priority, created_at, notes 
-                FROM tl_ops 
-                WHERE user_id = ? AND (department = ? OR ? IS NULL)
-                ORDER BY created_at DESC`)
-      .all(w.user_id, department || w.department, department) as any[];
-    
-    res.json({ success: true, items: items || [] });
+
+    console.log("[standalone-items] user_id:", w.user_id, "worker_id:", w.id, "department:", department || w.department);
+
+    try {
+      // Query actual logistics operations from tl_ops_logs table
+      // Filter by user_id, department, AND worker_id to show only this worker's operations
+      const targetDept = department || w.department;
+      const items = await db
+        .prepare(`SELECT o.*, w.full_name as worker_full_name
+                  FROM tl_ops_logs o
+                  JOIN tl_workers w ON w.id = o.worker_id
+                  WHERE o.user_id = ? AND o.department = ? AND o.worker_id = ?
+                  ORDER BY o.log_time DESC`)
+        .all(w.user_id, targetDept, w.id) as any[];
+
+      console.log("[standalone-items] items count:", items?.length || 0);
+
+      res.json({ success: true, items: items || [] });
+    } catch (error) {
+      console.error("[standalone-items] Error:", error);
+      res.status(500).json({ error: "server_error", details: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   // POST /api/tl/standalone-item-status - Update item status for standalone access (public, token-based)
@@ -299,6 +393,94 @@ export function registerTlErpRoutes(
     
     // In production, this would update the actual logistics queue
     res.json({ success: true, message: "Status updated" });
+  });
+
+  // POST /api/tl/standalone-ops - Create production/ops log for standalone access (public, token-based)
+  app.post("/api/tl/standalone-ops", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { token, worker_id, log_time, quantity, delay_reason, target_pct, department } = req.body as {
+      token?: string;
+      worker_id?: string;
+      log_time?: string;
+      quantity?: number;
+      delay_reason?: string;
+      target_pct?: number;
+      department?: string;
+    };
+
+    if (!token || !worker_id) {
+      res.status(400).json({ error: "missing_fields" });
+      return;
+    }
+
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as RowWorker | undefined;
+    if (!w) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    // Verify worker belongs to the same user
+    const worker = await db
+      .prepare(`SELECT id FROM tl_workers WHERE id = ? AND user_id = ?`)
+      .get(worker_id, w.user_id) as { id: string } | undefined;
+    if (!worker) {
+      res.status(400).json({ error: "worker_not_found" });
+      return;
+    }
+
+    const id = randomUUID();
+    await db.prepare(
+      `INSERT INTO tl_ops_logs (id, user_id, department, worker_id, log_time, quantity, delay_reason, target_pct)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      w.user_id,
+      department || w.department,
+      worker_id,
+      log_time || new Date().toISOString(),
+      Number(quantity ?? 0),
+      String(delay_reason ?? ""),
+      Math.min(100, Math.max(0, Number(target_pct ?? 100)))
+    );
+
+    console.log("[standalone-ops] Saved log id:", id, "user_id:", w.user_id, "department:", department || w.department);
+
+    const row = await db
+      .prepare(`SELECT o.*, w.full_name as worker_full_name FROM tl_ops_logs o JOIN tl_workers w ON w.id = o.worker_id WHERE o.id = ?`)
+      .get(id);
+    res.json({ success: true, log: row });
+  });
+
+  // GET /api/tl/standalone-recipients - Get message recipients for standalone access (public, token-based)
+  app.get("/api/tl/standalone-recipients", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { token } = req.query as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: "token_required" });
+      return;
+    }
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as RowWorker | undefined;
+    if (!w) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    // Get all workers for the same user as potential recipients
+    const recipients = await db
+      .prepare(`SELECT id, full_name, employee_id, department FROM tl_workers WHERE user_id = ? AND id != ? ORDER BY full_name`)
+      .all(w.user_id, w.id) as any[];
+
+    res.json({ success: true, recipients: recipients || [] });
   });
 
   app.get("/api/tl/resolve-magic", ...authGate, async (req, res) => {
@@ -443,14 +625,15 @@ export function registerTlErpRoutes(
     const marked_success = b.marked_success ? 1 : 0;
     await db.prepare(
       `INSERT INTO tl_vehicle_logs (
-        id, user_id, department, vehicle_id, driver_name, driver_phone, driver_id_doc, vehicle_kind,
+        id, user_id, department, worker_id, vehicle_id, driver_name, driver_phone, driver_id_doc, vehicle_kind,
         expected_entry_at, entry_at, exit_at, passenger_count, seat_count, cargo_count, box_count,
         marked_success, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       userId,
       department,
+      b.worker_id || null,
       String(b.vehicle_id).trim(),
       String(b.driver_name).trim(),
       String(b.driver_phone).trim(),
@@ -612,6 +795,194 @@ export function registerTlErpRoutes(
     const userId = (req as express.Request & { userId: string }).userId;
     await db.prepare(`DELETE FROM tl_ops_logs WHERE id = ? AND user_id = ?`).run(paramString(req.params.id), userId);
     res.json({ ok: true });
+  });
+
+  // DELETE /api/tl/standalone-ops/:id - Delete operation log for standalone access (public, token-based)
+  app.delete("/api/tl/standalone-ops/:id", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { token } = req.query as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: "missing_token" });
+      return;
+    }
+
+    // Verify magic token and get worker info
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as RowWorker | undefined;
+    if (!w) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    console.log("[standalone-ops DELETE] user_id:", w.user_id, "worker_id:", w.id, "log_id:", req.params.id);
+
+    try {
+      // Delete only if it belongs to this worker
+      const result = await db
+        .prepare(`DELETE FROM tl_ops_logs WHERE id = ? AND user_id = ? AND worker_id = ?`)
+        .run(req.params.id, w.user_id, w.id);
+
+      console.log("[standalone-ops DELETE] deleted rows:", result.changes);
+
+      if (result.changes === 0) {
+        res.status(404).json({ error: "not_found" });
+        return;
+      }
+
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[standalone-ops DELETE] Error:", error);
+      res.status(500).json({ error: "server_error", details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // DELETE /api/tl/standalone-ops/bulk - Bulk delete operation logs for standalone access
+  app.delete("/api/tl/standalone-ops/bulk", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { token, ids } = req.body as { token?: string; ids?: string[] };
+    if (!token || !ids || !Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: "missing_fields" });
+      return;
+    }
+
+    // Verify magic token and get worker info
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as RowWorker | undefined;
+    if (!w) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    console.log("[standalone-ops BULK DELETE] user_id:", w.user_id, "worker_id:", w.id, "ids:", ids);
+
+    try {
+      // Delete only if they belong to this worker
+      const placeholders = ids.map(() => '?').join(',');
+      const result = await db
+        .prepare(`DELETE FROM tl_ops_logs WHERE id IN (${placeholders}) AND user_id = ? AND worker_id = ?`)
+        .run(...ids, w.user_id, w.id);
+
+      console.log("[standalone-ops BULK DELETE] deleted rows:", result.changes);
+
+      res.json({ ok: true, deleted: result.changes });
+    } catch (error) {
+      console.error("[standalone-ops BULK DELETE] Error:", error);
+      res.status(500).json({ error: "server_error", details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // DELETE /api/tl/standalone-vehicles/:id - Delete vehicle log for standalone access (public, token-based)
+  app.delete("/api/tl/standalone-vehicles/:id", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { token } = req.query as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: "token_required" });
+      return;
+    }
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as RowWorker | undefined;
+    if (!w) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    try {
+      const id = paramString(req.params.id);
+      await db.prepare(`DELETE FROM tl_vehicle_logs WHERE id = ? AND user_id = ? AND worker_id = ?`).run(id, w.user_id, w.id);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[standalone-vehicles DELETE] Error:", error);
+      res.status(500).json({ error: "server_error", details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // POST /api/tl/standalone-vehicles/:id/success - Toggle vehicle success for standalone access (public, token-based)
+  app.post("/api/tl/standalone-vehicles/:id/success", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { token } = req.query as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: "token_required" });
+      return;
+    }
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as RowWorker | undefined;
+    if (!w) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    try {
+      const id = paramString(req.params.id);
+      const { marked_success } = req.body as { marked_success?: boolean };
+      const newSuccess = marked_success ? 1 : 0;
+
+      await db.prepare(`UPDATE tl_vehicle_logs SET marked_success = ? WHERE id = ? AND user_id = ? AND worker_id = ?`).run(newSuccess, id, w.user_id, w.id);
+
+      // Recalculate alert level
+      const row = await db.prepare(`SELECT * FROM tl_vehicle_logs WHERE id = ?`).get(id) as any;
+      if (row) {
+        await recalcVehicleRow(w.user_id, id, row);
+      }
+
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("[standalone-vehicles SUCCESS] Error:", error);
+      res.status(500).json({ error: "server_error", details: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // DELETE /api/tl/standalone-vehicles/bulk - Bulk delete vehicle logs for standalone access (public, token-based)
+  app.delete("/api/tl/standalone-vehicles/bulk", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { token, ids } = req.body as { token?: string; ids?: string[] };
+    if (!token) {
+      res.status(400).json({ error: "token_required" });
+      return;
+    }
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: "ids_required" });
+      return;
+    }
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as RowWorker | undefined;
+    if (!w) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    try {
+      const placeholders = ids.map(() => '?').join(',');
+      const result = await db.prepare(
+        `DELETE FROM tl_vehicle_logs WHERE id IN (${placeholders}) AND user_id = ? AND worker_id = ?`
+      ).run(...ids, w.user_id, w.id);
+
+      console.log("[standalone-vehicles BULK DELETE] deleted rows:", result.changes);
+
+      res.json({ ok: true, deleted: result.changes });
+    } catch (error) {
+      console.error("[standalone-vehicles BULK DELETE] Error:", error);
+      res.status(500).json({ error: "server_error", details: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   app.get("/api/tl/incidents", ...authGate, async (_req, res) => {

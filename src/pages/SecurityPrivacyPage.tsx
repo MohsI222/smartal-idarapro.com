@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
 
-/** Page publique — mesures de sécurité et confidentialité (HTTPS, Supabase, rate limiting). */
+/** Page publique — mesures de sécurité et confidentialité (HTTPS, custom auth, rate limiting). */
 export function SecurityPrivacyPage() {
   const { t } = useI18n();
 
@@ -34,8 +34,8 @@ export function SecurityPrivacyPage() {
               <p>{t("securityPage.encryption")}</p>
             </section>
             <section className="space-y-2">
-              <p className="font-semibold text-white">Supabase Auth</p>
-              <p>{t("securityPage.supabase")}</p>
+              <p className="font-semibold text-white">Custom Authentication</p>
+              <p>Secure JWT-based authentication with encrypted token storage and automatic session management.</p>
             </section>
             <section className="space-y-2">
               <p className="font-semibold text-white">Rate limiting</p>

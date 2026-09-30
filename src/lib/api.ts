@@ -135,7 +135,11 @@ export async function api<T>(
 
   const prefix = getApiUrlPrefix();
   const pathPart = path.startsWith("/") ? path : `/${path}`;
-  const res = await fetch(`${prefix}${pathPart}`, { ...rest, headers });
+  // Avoid duplicate /api prefix if path already starts with /api
+  const finalPath = pathPart.startsWith("/api") && prefix.endsWith("/api") 
+    ? pathPart 
+    : `${prefix}${pathPart}`;
+  const res = await fetch(finalPath, { ...rest, headers });
   const text = await res.text();
   const trimmed = text.trimStart();
   if (

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
+import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 interface HrEmployee {
@@ -25,31 +25,23 @@ export function EmployeeListInline({
   const [employees, setEmployees] = useState<HrEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const { user } = useAuth();
+  const { user, token } = useAuth();
 
   const fetchEmployees = async () => {
     try {
-      console.log('[EmployeeListInline] Fetching ALL employees from hr_employees table...');
+      console.log('[EmployeeListInline] Fetching ALL employees from backend API...');
       setLoading(true);
       
-      if (!supabase) {
-        throw new Error('Supabase client not initialized');
+      if (!token) {
+        throw new Error('Authentication token not available');
       }
       
-      // Fetch ALL employees from hr_employees table (same source as HR team list)
-      // No user_id filter - show all employees in the organization
-      const { data: employeesData, error: fetchError } = await supabase
-        .from('hr_employees')
-        .select('id, user_id, name, employee_id, work_number')
-        .order('created_at', { ascending: false });
+      // Fetch ALL employees from backend API
+      const response = await api<{ employees: any[] }>('/hr/employees', { token });
+      const employeesData = response.employees || [];
 
-      if (fetchError) {
-        console.error('[EmployeeListInline] Fetch error:', fetchError);
-        throw fetchError;
-      }
-
-      console.log('[EmployeeListInline] Fetched employees:', employeesData?.length || 0);
-      const employeesList: HrEmployee[] = (employeesData || []).map((emp: any) => ({
+      console.log('[EmployeeListInline] Fetched employees:', employeesData.length);
+      const employeesList: HrEmployee[] = employeesData.map((emp: any) => ({
         id: emp.id,
         user_id: emp.user_id,
         name: emp.name,

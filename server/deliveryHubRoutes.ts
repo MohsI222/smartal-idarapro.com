@@ -24,35 +24,40 @@ type Req = express.Request & { userId: string };
 
 async function getOrCreateOwnerId(userId: string): Promise<string> {
   console.log("[getOrCreateOwnerId] Creating/Getting owner for user:", userId);
-  const existing = await db.prepare(`SELECT owner_id FROM delivery_hub_owners WHERE app_user_id = ?`).get<{
-    owner_id: string;
-  }>(userId);
-  if (existing) {
-    console.log("[getOrCreateOwnerId] Found existing owner:", existing.owner_id);
-    return existing.owner_id;
-  }
-
-  console.log("[getOrCreateOwnerId] Creating new owner for user:", userId);
-  const ownerId = randomUUID();
   try {
-    await db
-      .prepare(`INSERT INTO delivery_hub_owners (app_user_id, owner_id) VALUES (?, ?) ON CONFLICT (app_user_id) DO NOTHING`)
-      .run(userId, ownerId);
-    console.log("[getOrCreateOwnerId] Inserted owner record:", ownerId);
-  } catch (insertErr) {
-    console.error("[getOrCreateOwnerId] Insert error:", insertErr);
-    throw insertErr;
-  }
+    const existing = await db.prepare(`SELECT owner_id FROM delivery_hub_owners WHERE app_user_id = ?`).get<{
+      owner_id: string;
+    }>(userId);
+    if (existing) {
+      console.log("[getOrCreateOwnerId] Found existing owner:", existing.owner_id);
+      return existing.owner_id;
+    }
 
-  const row = await db.prepare(`SELECT owner_id FROM delivery_hub_owners WHERE app_user_id = ?`).get<{
-    owner_id: string;
-  }>(userId);
-  if (!row) {
-    console.error("[getOrCreateOwnerId] Failed to retrieve owner after insert");
-    throw new Error("تعذر إنشاء معرّف المالك لقسم رادار الطلبات والتوصيل");
+    console.log("[getOrCreateOwnerId] Creating new owner for user:", userId);
+    const ownerId = randomUUID();
+    try {
+      await db
+        .prepare(`INSERT INTO delivery_hub_owners (app_user_id, owner_id) VALUES (?, ?) ON CONFLICT (app_user_id) DO NOTHING`)
+        .run(userId, ownerId);
+      console.log("[getOrCreateOwnerId] Inserted owner record:", ownerId);
+    } catch (insertErr) {
+      console.error("[getOrCreateOwnerId] Insert error:", insertErr);
+      throw insertErr;
+    }
+
+    const row = await db.prepare(`SELECT owner_id FROM delivery_hub_owners WHERE app_user_id = ?`).get<{
+      owner_id: string;
+    }>(userId);
+    if (!row) {
+      console.error("[getOrCreateOwnerId] Failed to retrieve owner after insert");
+      throw new Error("تعذر إنشاء معرّف المالك لقسم رادار الطلبات والتوصيل");
+    }
+    console.log("[getOrCreateOwnerId] Successfully retrieved owner:", row.owner_id);
+    return row.owner_id;
+  } catch (error) {
+    console.error("[getOrCreateOwnerId] Error:", error);
+    throw new Error("فشل في تحميل المتجر: " + (error instanceof Error ? error.message : String(error)));
   }
-  console.log("[getOrCreateOwnerId] Successfully retrieved owner:", row.owner_id);
-  return row.owner_id;
 }
 
 const FALLBACK_IMAGES = {
@@ -64,65 +69,56 @@ const FALLBACK_IMAGES = {
 
 async function ensureStoreForOwner(ownerId: string) {
   console.log("[ensureStoreForOwner] Checking for existing store for owner:", ownerId);
-  const existing = await db
-    .prepare(`SELECT * FROM public.delivery_hub_stores WHERE user_id = ? ORDER BY created_at ASC LIMIT 1`)
-    .get(ownerId);
-  if (existing) {
-    console.log("[ensureStoreForOwner] Found existing store:", existing.id);
-    return existing;
-  }
-
-  console.log("[ensureStoreForOwner] Creating new store for owner:", ownerId);
-  let slug = "demo-store";
-  const taken = await db.prepare(`SELECT id FROM public.delivery_hub_stores WHERE slug = ?`).get(slug);
-  if (taken) slug = `demo-store-${Math.random().toString(36).slice(2, 6)}`;
-
   try {
-    const store = await db
-      .prepare(
-        `INSERT INTO public.delivery_hub_stores (id, user_id, name, slug, tagline, theme, banner_url, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, true) RETURNING *`
-      )
-      .get(
-        randomUUID(),
-        ownerId,
-        "متجر التميز والسرعة",
-        slug,
-        "أسرع توصيل بأفضل جودة 🚀",
-        "neon-modern",
-        FALLBACK_IMAGES.banner
-      );
-    if (!store) throw new Error("تعذر إنشاء المتجر التجريبي");
-
-    console.log("[ensureStoreForOwner] Store created successfully:", store.id);
-
-    const demoProducts: [string, string, string, string, number, number | null, string, number][] = [
-      [
-        randomUUID(),
-        "برجر لحم مشوي فاخر",
-        "أطباق رئيسية",
-        "برجر لحم طازج مع جبنة وصلصة خاصة",
-        45,
-        60,
-        FALLBACK_IMAGES.product1,
-        0,
-      ],
-      [randomUUID(), "بيتزا مارغريتا", "بيتزا", "عجينة رقيقة مع جبنة موزاريلا وصلصة طماطم طازجة", 65, null, FALLBACK_IMAGES.product2, 1],
-      [randomUUID(), "عصير طبيعي مثلج", "مشروبات", "عصير فواكه طازج بدون سكر مضاف", 20, 25, FALLBACK_IMAGES.product3, 2],
-    ];
-    const storeId = (store as { id: string }).id;
-    for (const [id, title, category, description, price, originalPrice, imageUrl, sortOrder] of demoProducts) {
-      await db
-        .prepare(
-          `INSERT INTO public.delivery_hub_products (id, store_id, title, category, description, price, original_price, image_url, in_stock, sort_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, true, ?)`
-        )
-        .run(id, storeId, title, category, description, price, originalPrice, imageUrl, sortOrder);
+    const existing = await db
+      .prepare(`SELECT * FROM public.delivery_hub_stores WHERE user_id = ? ORDER BY created_at ASC LIMIT 1`)
+      .get(ownerId);
+    if (existing) {
+      console.log("[ensureStoreForOwner] Found existing store:", existing.id);
+      return existing;
     }
-    console.log("[ensureStoreForOwner] Demo products created successfully");
-    return store;
-  } catch (createErr) {
-    console.error("[ensureStoreForOwner] Error creating store:", createErr);
+
+    console.log("[ensureStoreForOwner] Creating new store for owner:", ownerId);
+    let slug = "demo-store";
+    const taken = await db.prepare(`SELECT id FROM public.delivery_hub_stores WHERE slug = ?`).get(slug);
+    if (taken) slug = `demo-store-${Math.random().toString(36).slice(2, 6)}`;
+
+    try {
+      const storeId = randomUUID();
+      await db.prepare(`
+        INSERT INTO public.delivery_hub_stores (
+          id, user_id, name, tagline, slug, phone, whatsapp, address, city, country,
+          banner_url, logo_url, facebook_url, instagram_url, tiktok_url, custom_domain,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        storeId,
+        ownerId,
+        "متجر تجريبي",
+        "متجر تجريبي لقسم رادار الطلبات والتوصيل",
+        slug,
+        "",
+        "",
+        "",
+        "",
+        "",
+        FALLBACK_IMAGES.banner,
+        "",
+        "",
+        "",
+        "",
+        "",
+        new Date().toISOString(),
+        new Date().toISOString()
+      );
+      console.log("[ensureStoreForOwner] Created new store:", storeId);
+      const newStore = await db.prepare(`SELECT * FROM public.delivery_hub_stores WHERE id = ?`).get(storeId);
+      if (newStore) return newStore;
+    } catch (createErr) {
+      console.error("[ensureStoreForOwner] Create error:", createErr);
+      throw createErr;
+    }
+
     // Fallback: return the demo store if creation fails
     console.log("[ensureStoreForOwner] Falling back to demo store");
     const demoStore = await db
@@ -132,7 +128,11 @@ async function ensureStoreForOwner(ownerId: string) {
       console.log("[ensureStoreForOwner] Using demo store as fallback:", demoStore.id);
       return demoStore;
     }
-    throw createErr;
+
+    throw new Error("تعذر إنشاء أو العثور على متجر");
+  } catch (error) {
+    console.error("[ensureStoreForOwner] Error:", error);
+    throw new Error("فشل في تحميل المتجر: " + (error instanceof Error ? error.message : String(error)));
   }
 }
 
@@ -605,12 +605,12 @@ export function registerDeliveryHubRoutes(app: express.Application, authMiddlewa
     const userId = (req as Req).userId;
     const ownerId = await getOrCreateOwnerId(userId);
     const storeId = String(req.query.store_id || "");
-    
+
     if (!storeId) {
       res.status(400).json({ error: "معرف المتجر مطلوب" });
       return;
     }
-    
+
     // Verify ownership
     const owned = await db
       .prepare(`SELECT id FROM public.delivery_hub_stores WHERE id = ? AND user_id = ?`)
@@ -619,10 +619,10 @@ export function registerDeliveryHubRoutes(app: express.Application, authMiddlewa
       res.status(403).json({ error: "لا تملك هذا المتجر" });
       return;
     }
-    
+
     // Fetch orders with items
     const orders = await db.prepare(`
-      SELECT 
+      SELECT
         o.id,
         o.store_id,
         o.customer_name,
@@ -650,8 +650,61 @@ export function registerDeliveryHubRoutes(app: express.Application, authMiddlewa
       GROUP BY o.id
       ORDER BY o.created_at DESC
     `).all(storeId);
-    
+
     res.json({ orders: orders || [] });
+  });
+
+  // Public endpoint to fetch orders for a store (for public store page - no auth required)
+  // Note: This is read-only and only shows basic order info, not sensitive customer data
+  app.get("/api/delivery-hub/orders/public", async (req, res) => {
+    try {
+      const storeId = String(req.query.store_id || "");
+
+      if (!storeId) {
+        res.status(400).json({ error: "معرف المتجر مطلوب" });
+        return;
+      }
+
+      // Verify store exists and is active
+      const store = await db.prepare(`
+        SELECT id FROM public.delivery_hub_stores WHERE id = ? AND is_active = true
+      `).get(storeId);
+
+      if (!store) {
+        res.status(404).json({ error: "المتجر غير موجود" });
+        return;
+      }
+
+      // Fetch orders with items (public view - limited info)
+      const orders = await db.prepare(`
+        SELECT
+          o.id,
+          o.store_id,
+          o.status,
+          o.created_at,
+          CAST(o.total AS REAL) as total,
+          json_agg(
+            json_build_object(
+              'id', oi.id,
+              'order_id', oi.order_id,
+              'product_id', oi.product_id,
+              'title', oi.title,
+              'price', CAST(oi.price AS REAL),
+              'quantity', oi.quantity
+            )
+          ) as order_items
+        FROM public.delivery_hub_orders o
+        LEFT JOIN public.delivery_hub_order_items oi ON o.id = oi.order_id
+        WHERE o.store_id = ?
+        GROUP BY o.id
+        ORDER BY o.created_at DESC
+      `).all(storeId);
+
+      res.json({ orders: orders || [] });
+    } catch (error) {
+      console.error("[delivery-hub/orders/public] Error:", error);
+      res.status(500).json({ error: "فشل تحميل الطلبات" });
+    }
   });
 
   // Create order via backend to bypass RLS (for public client access)
@@ -838,6 +891,62 @@ export function registerDeliveryHubRoutes(app: express.Application, authMiddlewa
     } catch (error) {
       console.error("[Delivery Hub] Error deleting order:", error);
       res.status(500).json({ error: "فشل حذف الطلب" });
+    }
+  });
+
+  // Public endpoint to fetch store by slug (for public store page - no auth required)
+  app.get("/api/delivery-hub/stores/public/:slug", async (req, res) => {
+    try {
+      const slug = String(req.params.slug);
+      console.log("[delivery-hub/stores/public] Fetching store with slug:", slug);
+      
+      const store = await db.prepare(`
+        SELECT * FROM public.delivery_hub_stores WHERE slug = ? AND is_active = true
+      `).get(slug);
+      
+      if (!store) {
+        console.log("[delivery-hub/stores/public] Store not found:", slug);
+        res.status(404).json({ error: "المتجر غير موجود" });
+        return;
+      }
+      
+      console.log("[delivery-hub/stores/public] Found store:", store.id);
+      res.json({ store });
+    } catch (error) {
+      console.error("[delivery-hub/stores/public] Error:", error);
+      res.status(500).json({ error: "فشل تحميل المتجر" });
+    }
+  });
+
+  // Public endpoint to fetch products for a store by slug (for public store page - no auth required)
+  app.get("/api/delivery-hub/products/public/:slug", async (req, res) => {
+    try {
+      const slug = String(req.params.slug);
+      console.log("[delivery-hub/products/public] Fetching products for store with slug:", slug);
+      
+      // First get the store by slug
+      const store = await db.prepare(`
+        SELECT id FROM public.delivery_hub_stores WHERE slug = ? AND is_active = true
+      `).get(slug);
+      
+      if (!store) {
+        console.log("[delivery-hub/products/public] Store not found:", slug);
+        res.status(404).json({ error: "المتجر غير موجود" });
+        return;
+      }
+      
+      // Fetch products for this store
+      const products = await db.prepare(`
+        SELECT * FROM public.delivery_hub_products 
+        WHERE store_id = ? AND in_stock = true
+        ORDER BY sort_order ASC
+      `).all((store as { id: string }).id);
+      
+      console.log("[delivery-hub/products/public] Found products:", products?.length || 0);
+      res.json({ products: products || [] });
+    } catch (error) {
+      console.error("[delivery-hub/products/public] Error:", error);
+      res.status(500).json({ error: "فشل تحميل المنتجات" });
     }
   });
 }

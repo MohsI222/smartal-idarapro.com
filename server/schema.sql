@@ -100,7 +100,7 @@ BEGIN
   END IF;
 END $$;
 
--- Disable RLS for hr_employees to allow all operations
+-- Enable RLS for hr_employees to ensure data isolation
 DO $$
 BEGIN
   IF EXISTS (
@@ -108,7 +108,8 @@ BEGIN
     WHERE schemaname = 'public' 
     AND tablename = 'hr_employees'
   ) THEN
-    ALTER TABLE hr_employees DISABLE ROW LEVEL SECURITY;
+    ALTER TABLE hr_employees ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE hr_employees FORCE ROW LEVEL SECURITY;
   END IF;
 END $$;
 
@@ -119,6 +120,7 @@ CREATE TABLE IF NOT EXISTS permissions (
   can_access_inventory BOOLEAN DEFAULT false,
   can_access_hr BOOLEAN DEFAULT false,
   can_access_delivery BOOLEAN DEFAULT false,
+  can_access_contracts BOOLEAN DEFAULT false,
   can_access_transport_logistics BOOLEAN DEFAULT false,
   can_access_wedding_invitations BOOLEAN DEFAULT false,
   can_access_legal BOOLEAN DEFAULT false,
@@ -138,6 +140,53 @@ CREATE TABLE IF NOT EXISTS lawyer_cases (
   status TEXT NOT NULL DEFAULT 'open',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_lawyer_cases_user ON lawyer_cases(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS auto_real_estate (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  brand_or_title TEXT NOT NULL,
+  plate_or_address TEXT NOT NULL,
+  specs TEXT,
+  price DOUBLE PRECISION,
+  status TEXT NOT NULL DEFAULT 'Available',
+  expiry_date TEXT,
+  image TEXT,
+  color TEXT,
+  fuel TEXT,
+  mileage TEXT,
+  defects TEXT,
+  rent_start TEXT,
+  rent_end TEXT,
+  prop_type TEXT,
+  commercial_type TEXT,
+  floor_num INTEGER,
+  total_floors INTEGER,
+  rooms INTEGER,
+  bathrooms INTEGER,
+  amenities TEXT,
+  zoning TEXT,
+  sqm DOUBLE PRECISION,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auto_real_estate_user ON auto_real_estate(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS hr_absence_records (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL,
+  from_date TEXT NOT NULL,
+  to_date TEXT NOT NULL,
+  reason TEXT,
+  return_date TEXT,
+  user_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_hr_absence_records_user ON hr_absence_records(user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS accountant_reports (
   id TEXT PRIMARY KEY,
@@ -202,7 +251,8 @@ CREATE TABLE IF NOT EXISTS pos_invoices (
   paid DOUBLE PRECISION NOT NULL DEFAULT 0,
   credit DOUBLE PRECISION NOT NULL DEFAULT 0,
   due_at TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  status TEXT DEFAULT 'active'
 );
 
 CREATE TABLE IF NOT EXISTS visa_user_profile (
@@ -310,6 +360,7 @@ CREATE TABLE IF NOT EXISTS tl_vehicle_logs (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users (id),
   department TEXT NOT NULL,
+  worker_id TEXT NOT NULL,
   vehicle_id TEXT NOT NULL,
   driver_name TEXT NOT NULL,
   driver_phone TEXT NOT NULL,
@@ -486,6 +537,77 @@ CREATE TABLE IF NOT EXISTS delivery_hub_owners (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_hub_owners_owner ON delivery_hub_owners(owner_id);
+
+-- Delivery Hub Stores Table
+CREATE TABLE IF NOT EXISTS delivery_hub_stores (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  tagline TEXT,
+  theme TEXT NOT NULL DEFAULT 'default',
+  banner_url TEXT,
+  facebook_url TEXT,
+  instagram_url TEXT,
+  tiktok_url TEXT,
+  youtube_url TEXT,
+  custom_domain TEXT UNIQUE,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_hub_stores_user ON delivery_hub_stores(user_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_hub_stores_slug ON delivery_hub_stores(slug);
+CREATE INDEX IF NOT EXISTS idx_delivery_hub_stores_custom_domain ON delivery_hub_stores(custom_domain);
+
+-- Delivery Hub Products Table
+CREATE TABLE IF NOT EXISTS delivery_hub_products (
+  id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL REFERENCES delivery_hub_stores(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  price DOUBLE PRECISION NOT NULL DEFAULT 0,
+  image_url TEXT,
+  category TEXT,
+  stock_quantity INTEGER NOT NULL DEFAULT 0,
+  low_stock_threshold INTEGER NOT NULL DEFAULT 10,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_hub_products_store ON delivery_hub_products(store_id);
+
+-- Delivery Hub Orders Table
+CREATE TABLE IF NOT EXISTS delivery_hub_orders (
+  id TEXT PRIMARY KEY,
+  store_id TEXT NOT NULL REFERENCES delivery_hub_stores(id) ON DELETE CASCADE,
+  customer_name TEXT,
+  customer_phone TEXT,
+  customer_address TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  total_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_hub_orders_store ON delivery_hub_orders(store_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_hub_orders_status ON delivery_hub_orders(status);
+
+-- Delivery Hub Order Items Table
+CREATE TABLE IF NOT EXISTS delivery_hub_order_items (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES delivery_hub_orders(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL,
+  product_name TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  unit_price DOUBLE PRECISION NOT NULL DEFAULT 0,
+  line_total DOUBLE PRECISION NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_hub_order_items_order ON delivery_hub_order_items(order_id);
 
 -- POS Agent Tokens Table
 CREATE TABLE IF NOT EXISTS pos_agent_tokens (

@@ -2396,12 +2396,20 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
             });
             console.log("[resolveGhostBarcode] Increased quantity for existing line:", newQty);
           } else {
-            // Add new line if not in draft
-            const ok = tryAddQuickLineForProductId(existing.id, "piece");
-            if (!ok) {
-              setQuickStockProductId(existing.id);
-              setQuickStockPieces("1");
-              setQuickStockOpen(true);
+            // Add new line if not in draft - always add regardless of stock
+            const p = products.find(x => x.id === existing.id);
+            if (p) {
+              setDraftLines((d) => [
+                ...d,
+                {
+                  id: crypto.randomUUID(),
+                  product_id: p.id,
+                  product_name: p.name,
+                  qty_pieces: 1,
+                  sale_unit: "piece",
+                  line_total: p.unit_price || 0,
+                },
+              ]);
             }
           }
           return;
@@ -2451,11 +2459,20 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
             setQuickListIndex(idx);
             setQuickUnit("piece");
           }
-          const ok = tryAddQuickLineForProductId(r.id, "piece");
-          if (!ok) {
-            setQuickStockProductId(r.id);
-            setQuickStockPieces("1");
-            setQuickStockOpen(true);
+          // Always add to cart regardless of stock
+          const p = freshProducts.find(x => x.id === r.id);
+          if (p) {
+            setDraftLines((d) => [
+              ...d,
+              {
+                id: crypto.randomUUID(),
+                product_id: p.id,
+                product_name: p.name,
+                qty_pieces: 1,
+                sale_unit: "piece",
+                line_total: p.unit_price || 0,
+              },
+            ]);
           }
           console.log("[resolveGhostBarcode] New product added to inventory");
         } catch {
@@ -3564,7 +3581,8 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                 setQuickStockProductId(productId);
                 setQuickStockPieces("1");
                 setQuickStockOpen(true);
-              } else onInvTabChange("pos");
+              }
+              // Don't switch to POS tab - keep adding to cart in barcode tab
             }}
             onUnknownBarcode={resolveGhostBarcode}
           />

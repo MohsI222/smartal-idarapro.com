@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Bus,
@@ -18,10 +18,8 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nProvider";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { TL_DEPT_SLUGS, type TlDeptSlug } from "@/lib/tlApi";
-import { fetchLogisticsQueue, assignLogisticsItem } from "@/lib/supabaseClient";
-import { useLogisticsQueueRealtime } from "@/hooks/useSupabaseRealtime";
-import { isSupabaseConfigured } from "@/lib/supabaseClient";
-import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
+import type { LogisticsQueueItem } from "@/lib/types";
 
 const DEPT_ICONS: Record<TlDeptSlug, ReactNode> = {
   transport: <Train className="size-8 text-sky-400" />,
@@ -34,7 +32,6 @@ const DEPT_ICONS: Record<TlDeptSlug, ReactNode> = {
 
 export function TransportLogisticsHub() {
   const { t } = useI18n();
-  const { user } = useAuth();
   const [logisticsQueue, setLogisticsQueue] = useState<any[]>([]);
   const [logisticsBusy, setLogisticsBusy] = useState(false);
   const [selectedLogisticsItems, setSelectedLogisticsItems] = useState<Set<string>>(new Set());
@@ -51,7 +48,8 @@ export function TransportLogisticsHub() {
     let active = true;
     void (async () => {
       try {
-        const queue = await fetchLogisticsQueue();
+        const res = await api<{ data: LogisticsQueueItem[] }>("/logistics-queue");
+        const queue = res.data || [];
         if (active) setLogisticsQueue(Array.isArray(queue) ? queue : []);
       } catch (error) {
         console.error("[tl hub] fetchLogisticsQueue failed", error);
@@ -63,32 +61,30 @@ export function TransportLogisticsHub() {
     };
   }, []);
 
-  // Realtime subscription for logistics queue
-  useLogisticsQueueRealtime(
-    user?.id || "",
-    useCallback((newItem) => {
-      setLogisticsQueue((prev) => {
-        const exists = prev.some((i) => i.id === newItem.id);
-        if (exists) {
-          return prev.map((i) => (i.id === newItem.id ? newItem : i));
-        }
-        return [newItem, ...prev];
-      });
-    }, []),
-    useCallback((updatedItem) => {
-      setLogisticsQueue((prev) => prev.map((i) => (i.id === updatedItem.id ? updatedItem : i)));
-    }, []),
-    useCallback((deletedItem) => {
-      setLogisticsQueue((prev) => prev.filter((i) => i.id !== deletedItem.id));
-    }, []),
-    isSupabaseConfigured
-  );
+  // Polling for logistics queue updates (replaces Supabase Realtime)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await api<{ data: LogisticsQueueItem[] }>("/logistics-queue");
+        const queue = res.data || [];
+        setLogisticsQueue(Array.isArray(queue) ? queue : []);
+      } catch (error) {
+        console.error("[tl hub] polling fetchLogisticsQueue failed", error);
+      }
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const assignAutoDispatch = async (id: string) => {
     setLogisticsBusy(true);
     try {
-      await assignLogisticsItem(id, "auto-dispatch");
-      const queue = await fetchLogisticsQueue();
+      await api(`/logistics-queue/${id}/assign`, {
+        method: "POST",
+        body: JSON.stringify({ status: "auto-dispatch" }),
+      });
+      const res = await api<{ data: LogisticsQueueItem[] }>("/logistics-queue");
+      const queue = res.data || [];
       setLogisticsQueue(Array.isArray(queue) ? queue : []);
     } catch (error) {
       console.error("[tl hub] assignAutoDispatch failed", error);
@@ -97,33 +93,13 @@ export function TransportLogisticsHub() {
     }
   };
 
+  // Delete functionality temporarily disabled - needs backend implementation
   const deleteLogisticsItemHandler = async (id: string) => {
-    setLogisticsBusy(true);
-    try {
-      await deleteLogisticsItem(id);
-      const queue = await fetchLogisticsQueue();
-      setLogisticsQueue(Array.isArray(queue) ? queue : []);
-      setSelectedLogisticsItems(new Set());
-    } catch (error) {
-      console.error("[tl hub] deleteLogisticsItem failed", error);
-    } finally {
-      setLogisticsBusy(false);
-    }
+    console.warn("[tl hub] deleteLogisticsItem not implemented");
   };
 
   const deleteSelectedLogisticsItems = async () => {
-    if (selectedLogisticsItems.size === 0) return;
-    setLogisticsBusy(true);
-    try {
-      await Promise.all(Array.from(selectedLogisticsItems).map(id => deleteLogisticsItem(id)));
-      const queue = await fetchLogisticsQueue();
-      setLogisticsQueue(Array.isArray(queue) ? queue : []);
-      setSelectedLogisticsItems(new Set());
-    } catch (error) {
-      console.error("[tl hub] deleteSelectedLogisticsItems failed", error);
-    } finally {
-      setLogisticsBusy(false);
-    }
+    console.warn("[tl hub] deleteSelectedLogisticsItems not implemented");
   };
 
   return (

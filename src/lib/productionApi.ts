@@ -1,5 +1,5 @@
 import { api } from "@/lib/api";
-import type { LogisticsQueueItem, ProductionRequestRow } from "@/lib/supabaseClient";
+import type { LogisticsQueueItem, ProductionRequestRow } from "@/lib/types";
 
 export type ProductionBomItem = {
   material_id: string;

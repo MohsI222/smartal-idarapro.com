@@ -42,6 +42,7 @@
     "arabic-persian-reshaper": "^1.0.1",
     "axios": "^1.18.1",
     "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
     "bidi-js": "^1.0.3",
     "class-variance-authority": "^0.7.1",
     "cloudinary": "^2.9.0",
@@ -85,6 +86,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.7",

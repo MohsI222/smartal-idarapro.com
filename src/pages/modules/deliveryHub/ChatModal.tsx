@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Send, Loader2 } from "lucide-react";
-import { fetchOrderMessages, sendOrderMessage, subscribeToOrderMessages } from "@/lib/deliveryHub/api";
+import { fetchOrderMessages, sendOrderMessage, pollOrderMessages } from "@/lib/deliveryHub/api";
 import type { OrderMessage } from "@/lib/deliveryHub/types";
 
 export function OrderChatModal({
@@ -37,9 +37,9 @@ export function OrderChatModal({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    const unsubscribe = subscribeToOrderMessages(orderId, (msg) => {
+    const unsubscribe = pollOrderMessages(orderId, (msg) => {
       setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
-    });
+    }, 5000);
     return () => {
       cancelled = true;
       unsubscribe();

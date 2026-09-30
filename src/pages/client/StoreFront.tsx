@@ -16,14 +16,13 @@ import {
   Youtube,
   Share2,
 } from "lucide-react";
-import { fetchProducts, fetchProductsFromBackend, fetchStoreBySlug, ensureStoreForUser } from "@/lib/deliveryHub/api";
+import { fetchProducts, fetchProductsBySlug, fetchProductsFromBackend, fetchStoreBySlug, ensureStoreForUser } from "@/lib/deliveryHub/api";
 import { STORE_THEMES, type Product, type Store } from "@/lib/deliveryHub/types";
 import { buildWhatsAppLink } from "@/lib/deliveryHub/whatsapp";
 import { CartDrawer, type CartEntry } from "@/components/client/CartDrawer";
 import { CheckoutModal } from "@/components/client/CheckoutModal";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/context/AuthContext";
-import { supabase } from "@/lib/supabaseClient";
 
 function isVideoSrc(value: string): boolean {
   return value.startsWith("data:video") || /\.(mp4|webm|ogg)(\?.*)?$/i.test(value);
@@ -71,15 +70,15 @@ export function StoreFront() {
       .then(async (s) => {
         if (s) {
           // Store found, load products
-          // Use backend for logged-in users to bypass RLS, otherwise use Supabase directly
-          const prods = token 
+          // Use backend for logged-in users to bypass RLS, otherwise use public endpoint by slug
+          const prods = token
             ? await fetchProductsFromBackend(s.id, token)
-            : await fetchProducts(s.id);
-          
+            : await fetchProductsBySlug(storeSlug);
+
           if (!cancelled) {
             setStore(s);
             setProducts(prods.filter((p) => p.in_stock));
-            
+
             // Clean up cart - remove items for products that no longer exist or are out of stock
             const validProductIds = new Set(prods.filter(p => p.in_stock).map(p => p.id));
             setCart(prevCart => {
@@ -139,55 +138,50 @@ export function StoreFront() {
     };
   }, [storeSlug, token, navigate]);
 
-  // Real-time subscription for product changes
+  // Polling for product changes (replaces Supabase Realtime)
   useEffect(() => {
-    if (!store || !supabase) return;
+    if (!store) return;
 
-    const channel = supabase
-      .channel(`products-${store.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'delivery_hub_products',
-          filter: `store_id=eq.${store.id}`
-        },
-        async (payload) => {
-          console.log('[StoreFront] Product change detected:', payload.eventType, payload.new);
-          
-          // Refresh products from appropriate source
-          try {
-            const updatedProducts = token 
-              ? await fetchProductsFromBackend(store.id, token)
-              : await fetchProducts(store.id);
-            
-            setProducts(updatedProducts.filter((p) => p.in_stock));
-            
-            // Clean up cart if needed
-            const validProductIds = new Set(updatedProducts.filter(p => p.in_stock).map(p => p.id));
-            setCart(prevCart => {
-              const cleanedCart = prevCart.filter(entry => validProductIds.has(entry.product.id));
-              return cleanedCart;
-            });
-          } catch (err) {
-            console.error('[StoreFront] Error refreshing products:', err);
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('[StoreFront] Realtime subscription status:', status);
-      });
+    const interval = setInterval(async () => {
+      try {
+        const updatedProducts = token
+          ? await fetchProductsFromBackend(store.id, token)
+          : await fetchProductsBySlug(storeSlug);
+        
+        setProducts(updatedProducts.filter((p) => p.in_stock));
+        
+        // Clean up cart if needed
+        const validProductIds = new Set(updatedProducts.filter(p => p.in_stock).map(p => p.id));
+        setCart(prevCart => {
+          const cleanedCart = prevCart.filter(entry => validProductIds.has(entry.product.id));
+          return cleanedCart;
+        });
+      } catch (err) {
+        console.error('[StoreFront] Error refreshing products:', err);
+      }
+    }, 30000); // Poll every 30 seconds
 
     return () => {
-      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [store, token]);
 
   const categories = useMemo(() => {
+    // If store has custom categories, use them
+    if (store && store.categories) {
+      try {
+        const customCategories = JSON.parse(store.categories);
+        if (Array.isArray(customCategories) && customCategories.length > 0) {
+          return ["الكل", ...customCategories];
+        }
+      } catch (e) {
+        console.error("[StoreFront] Error parsing custom categories:", e);
+      }
+    }
+    // Fallback to auto-generated categories from products
     const set = new Set(products.map((p) => p.category || "عام"));
     return ["الكل", ...Array.from(set)];
-  }, [products]);
+  }, [products, store]);
 
   const filtered = useMemo(() => {
     return products.filter((p) => {
@@ -222,7 +216,10 @@ export function StoreFront() {
     setCart([]);
     setCheckoutOpen(false);
     setCartOpen(false);
-    navigate(`/order-status/${orderId}`);
+    // Small delay to allow Dialog to close before navigation
+    setTimeout(() => {
+      navigate(`/order-status/${orderId}`);
+    }, 100);
   }
 
   if (loading) {

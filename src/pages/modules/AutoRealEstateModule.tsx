@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { 
-  LayoutDashboard, Car, Calculator, History, 
-  Bell, Search, Plus, Edit, Trash2, Download, 
-  Printer, CheckCircle, AlertTriangle, 
-  FileCheck, X, Sparkles, Loader2, FileUp, ShieldCheck, 
+import {
+  LayoutDashboard, Car, Calculator, History,
+  Bell, Search, Plus, Edit, Trash2, Download,
+  Printer, CheckCircle, AlertTriangle,
+  FileCheck, X, Sparkles, Loader2, FileUp, ShieldCheck,
   Image as ImageIcon, Map, Building, DollarSign, FileText, ExternalLink, Clock
 } from "lucide-react";
 import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
-import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/context/AuthContext";
+import { api } from "@/lib/api";
 import html2pdf from 'html2pdf.js';
 
 type ItemType = "Car" | "Property" | "Land";
@@ -133,7 +133,20 @@ const TRANSLATIONS = {
 // MAIN COMPONENT
 // ----------------------------------------------------------------------
 export default function AutoRealEstateModule() {
-  const { user, supabaseSession, isAdmin } = useAuth();
+  const { user, isAdmin, isApproved, approvedModules } = useAuth();
+  const token = localStorage.getItem('idara_token');
+  const autoRealEstateAllowed = isAdmin || (isApproved && approvedModules.includes("auto_real_estate"));
+  
+  if (!autoRealEstateAllowed) {
+    return (
+      <div className="rounded-2xl border border-orange-500/30 p-8 text-center space-y-4 max-w-lg mx-auto">
+        <Car className="size-12 mx-auto text-orange-400" />
+        <h2 className="text-xl font-bold">السيارات والعقارات غير مفعّل</h2>
+        <p className="text-slate-400">يرجى الاشتراك للوصول إلى هذا القسم</p>
+      </div>
+    );
+  }
+  
   const [lang, setLang] = useState<Lang>("ar");
   const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "contracts" | "accounting">("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
@@ -177,9 +190,10 @@ export default function AutoRealEstateModule() {
   const t = TRANSLATIONS[lang];
   const isRTL = lang === "ar";
 
-  // LOAD DATA FROM SUPABASE - Use useCallback to make it accessible by handleSaveProduct
+  // LOAD DATA FROM NEON API - All users (including Super Admin) use the same endpoint
+  // This ensures complete tenant isolation - each user sees only their own data
   const fetchInventory = useCallback(async () => {
-    if (!user || !supabase) {
+    if (!user) {
       setLoading(false);
       return;
     }
@@ -187,269 +201,75 @@ export default function AutoRealEstateModule() {
     try {
       setLoading(true);
       
-      // If super admin, use backend API endpoint instead of direct Supabase
-      if (isAdmin) {
-        console.warn('[AutoRealEstate] Super admin - using backend API endpoint');
-        const token = localStorage.getItem('idara_token');
-        const response = await fetch('/api/supabase/auto-real-estate', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-        
-        if (!response.ok) {
-          console.error('Error fetching inventory for super admin:', response.status);
-          setInventory([]);
-          setLoading(false);
-          return;
-        }
-        
-        const { data: inventoryData } = await response.json();
-        
-        if (inventoryData) {
-          const transformedInventory = inventoryData.map((item: any) => ({
-            id: item.id,
-            type: item.type,
-            brandOrTitle: item.brand_or_title,
-            plateOrAddress: item.plate_or_address,
-            specs: item.specs || '',
-            price: Number(item.price),
-            status: item.status,
-            expiryDate: item.expiry_date,
-            createdAt: item.created_at,
-            image: item.image,
-            color: item.color,
-            fuel: item.fuel,
-            mileage: item.mileage,
-            defects: item.defects,
-            rentStart: item.rent_start,
-            rentEnd: item.rent_end,
-            propType: item.prop_type,
-            commercialType: item.commercial_type,
-            floorNum: item.floor_num,
-            totalFloors: item.total_floors,
-            rooms: item.rooms,
-            bathrooms: item.bathrooms,
-            amenities: item.amenities,
-            zoning: item.zoning,
-            sqm: item.sqm,
-          }));
-          setInventory(transformedInventory);
-        } else {
-          setInventory([]);
-        }
-        setLoading(false);
-        return;
-      }
-      
-      // Use Supabase session from AuthContext if available, otherwise try to get it
-      let session = supabaseSession;
-      if (!session) {
-        const { data: { session: fetchedSession }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          console.error('Supabase session error:', sessionError);
-          setInventory([]);
-          setLoading(false);
-          return;
-        }
-        session = fetchedSession;
-      }
-      
-      // If no Supabase session exists and user is NOT super admin, skip fetch
-      if (!session || !session.user) {
-        console.warn('[AutoRealEstate] No Supabase session found - user may be authenticated via backend. Skipping RLS-protected fetch.');
+      // Use Neon API directly (no Supabase session check needed)
+      if (!token) {
+        console.warn('[AutoRealEstate] No token found - skipping fetch');
         setInventory([]);
         setLoading(false);
         return;
       }
 
-      const authUserId = session.user.id;
+      const response = await api<{ data: any[] }>("/api/auto-real-estate", { token });
       
-      const { data: inventoryData, error: inventoryError } = await supabase
-        .from('auto_real_estate')
-        .select('*')
-        .eq('user_id', authUserId)
-        .order('created_at', { ascending: false });
-
-      if (inventoryError) {
-        console.error('Error fetching inventory:', inventoryError);
+      if (response.data) {
+        const transformedInventory = response.data.map((item: any) => ({
+          id: item.id,
+          type: item.type,
+          brandOrTitle: item.brand_or_title,
+          plateOrAddress: item.plate_or_address,
+          specs: item.specs || '',
+          price: Number(item.price),
+          status: item.status,
+          expiryDate: item.expiry_date,
+          createdAt: item.created_at,
+          image: item.image,
+          color: item.color,
+          fuel: item.fuel,
+          mileage: item.mileage,
+          defects: item.defects,
+          rentStart: item.rent_start,
+          rentEnd: item.rent_end,
+          propType: item.prop_type,
+          commercialType: item.commercial_type,
+          floorNum: item.floor_num,
+          totalFloors: item.total_floors,
+          rooms: item.rooms,
+          bathrooms: item.bathrooms,
+          amenities: item.amenities,
+          zoning: item.zoning,
+          sqm: item.sqm,
+        }));
+        setInventory(transformedInventory);
+      } else {
         setInventory([]);
-      } else if (inventoryData) {
-        // Transform database data to match InventoryItem interface
-          const transformedInventory = inventoryData.map((item: any) => ({
-            id: item.id,
-            type: item.type,
-            brandOrTitle: item.brand_or_title,
-            plateOrAddress: item.plate_or_address,
-            specs: item.specs || '',
-            price: Number(item.price),
-            status: item.status,
-            expiryDate: item.expiry_date,
-            createdAt: item.created_at,
-            image: item.image,
-            color: item.color,
-            fuel: item.fuel,
-            mileage: item.mileage,
-            defects: item.defects,
-            rentStart: item.rent_start,
-            rentEnd: item.rent_end,
-            propType: item.prop_type,
-            commercialType: item.commercial_type,
-            floorNum: item.floor_num,
-            totalFloors: item.total_floors,
-            rooms: item.rooms,
-            bathrooms: item.bathrooms,
-            amenities: item.amenities,
-            zoning: item.zoning,
-            sqm: item.sqm,
-          }));
-          setInventory(transformedInventory);
-        } else {
-          // No data yet, but no error - this is normal for new users
-          setInventory([]);
-        }
+      }
 
-        setLogs([{ id: `${Date.now()}-init`, action: "System Initialized", timestamp: new Date().toISOString(), user: user.email || "Admin" }]);
+      setLogs([{ id: `${Date.now()}-init`, action: "System Initialized", timestamp: new Date().toISOString(), user: user.email || "Admin" }]);
       } catch (error) {
         console.error('Error in fetchInventory:', error);
         setInventory([]);
       } finally {
         setLoading(false);
       }
-  }, [user, supabase, supabaseSession, isAdmin]);
+  }, [user, isAdmin]);
 
   // Call fetchInventory on mount and when dependencies change
   useEffect(() => {
     fetchInventory();
   }, [fetchInventory]);
 
-  // Real-time subscription for inventory changes
+  // Polling for inventory changes (replaces Supabase Realtime)
   useEffect(() => {
-    if (!user || !supabase) return;
+    if (!user) return;
 
-    const setupSubscription = async () => {
-      // Use Supabase session from AuthContext if available, otherwise try to get it
-      let session = supabaseSession;
-      if (!session) {
-        const { data: { session: fetchedSession }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          console.error('Supabase session error:', sessionError);
-          return;
-        }
-        session = fetchedSession;
-      }
-      
-      // If no Supabase session, skip real-time subscription
-      if (!session || !session.user) {
-        console.warn('[AutoRealEstate] No Supabase session found - skipping real-time subscription');
-        return null;
-      }
-
-      const authUserId = session.user.id;
-
-      // Create unique channel name with random suffix to prevent conflicts
-      const randomSuffix = Math.random().toString(36).substring(2, 9);
-      const channelName = `auto_real_estate_${authUserId}_${randomSuffix}`;
-      
-      // Create channel first, then add callbacks, then subscribe
-      if (!supabase) return;
-      const channel = supabase.channel(channelName);
-      
-      channel.on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'auto_real_estate',
-          filter: `user_id=eq.${authUserId}`
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newItem = payload.new as any;
-            const transformedItem = {
-              id: newItem.id,
-              type: newItem.type,
-              brandOrTitle: newItem.brand_or_title,
-              plateOrAddress: newItem.plate_or_address,
-              specs: newItem.specs || '',
-              price: Number(newItem.price),
-              status: newItem.status,
-              expiryDate: newItem.expiry_date,
-              createdAt: newItem.created_at,
-              image: newItem.image,
-              color: newItem.color,
-              fuel: newItem.fuel,
-              mileage: newItem.mileage,
-              defects: newItem.defects,
-              rentStart: newItem.rent_start,
-              rentEnd: newItem.rent_end,
-              propType: newItem.prop_type,
-              commercialType: newItem.commercial_type,
-              floorNum: newItem.floor_num,
-              totalFloors: newItem.total_floors,
-              rooms: newItem.rooms,
-              bathrooms: newItem.bathrooms,
-              amenities: newItem.amenities,
-              zoning: newItem.zoning,
-              sqm: newItem.sqm,
-            };
-            setInventory(prev => [transformedItem, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
-            const updatedItem = payload.new as any;
-            setInventory(prev => prev.map(item => 
-              item.id === updatedItem.id ? {
-                ...item,
-                type: updatedItem.type,
-                brandOrTitle: updatedItem.brand_or_title,
-                plateOrAddress: updatedItem.plate_or_address,
-                specs: updatedItem.specs || '',
-                price: Number(updatedItem.price),
-                status: updatedItem.status,
-                expiryDate: updatedItem.expiry_date,
-                image: updatedItem.image,
-                color: updatedItem.color,
-                fuel: updatedItem.fuel,
-                mileage: updatedItem.mileage,
-                defects: updatedItem.defects,
-                rentStart: updatedItem.rent_start,
-                rentEnd: updatedItem.rent_end,
-                propType: updatedItem.prop_type,
-                commercialType: updatedItem.commercial_type,
-                floorNum: updatedItem.floor_num,
-                totalFloors: updatedItem.total_floors,
-                rooms: updatedItem.rooms,
-                bathrooms: updatedItem.bathrooms,
-                amenities: updatedItem.amenities,
-                zoning: updatedItem.zoning,
-                sqm: updatedItem.sqm,
-              } : item
-            ));
-          } else if (payload.eventType === 'DELETE') {
-            setInventory(prev => prev.filter(item => item.id !== payload.old.id));
-          }
-        }
-      );
-
-      const subscription = channel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('[AutoRealEstate] Real-time subscription established');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('[AutoRealEstate] Real-time subscription error');
-        }
-      });
-      return subscription;
-    };
-
-    let subscriptionPromise = setupSubscription();
+    const interval = setInterval(async () => {
+      await fetchInventory();
+    }, 30000); // Poll every 30 seconds
 
     return () => {
-      subscriptionPromise.then(subscription => {
-        if (subscription && supabase) {
-          supabase.removeChannel(subscription);
-        }
-      });
+      clearInterval(interval);
     };
-  }, [user, supabaseSession]);
+  }, [user, fetchInventory]);
 
   // Pre-fill fields when selecting an asset for the contract
   useEffect(() => {
@@ -500,223 +320,140 @@ export default function AutoRealEstateModule() {
     }
 
     try {
-      // If super admin, use backend API endpoint instead of direct Supabase
-      if (isAdmin) {
-        console.warn('[AutoRealEstate] Super admin - using backend API endpoint for save');
-        const token = localStorage.getItem('idara_token');
-        
-        const dbItem = {
-          type: newItem.type,
-          brandOrTitle: brandOrTitleTrimmed,
-          plateOrAddress: plateOrAddressTrimmed,
-          specs: newItem.specs || '',
-          price: newItem.price || 0,
-          status: newItem.status || 'Available',
-          expiryDate: newItem.expiryDate || null,
-          image: newItem.image || null,
-          color: newItem.color || null,
-          fuel: newItem.fuel || null,
-          mileage: newItem.mileage || null,
-          defects: newItem.defects || null,
-          rentStart: newItem.rentStart || null,
-          rentEnd: newItem.rentEnd || null,
-          propType: newItem.propType || null,
-          commercialType: newItem.commercialType || null,
-          floorNum: newItem.floorNum || null,
-          totalFloors: newItem.totalFloors || null,
-          rooms: newItem.rooms || null,
-          bathrooms: newItem.bathrooms || null,
-          amenities: newItem.amenities || null,
-          zoning: newItem.zoning || null,
-          sqm: newItem.sqm || null,
-          // Don't send user_id - server will handle it
-        };
-
-        let response;
-        if (editingId) {
-          response = await fetch(`/api/supabase/auto-real-estate/${editingId}`, {
-            method: 'PUT',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(dbItem),
-          });
-        } else {
-          response = await fetch('/api/supabase/auto-real-estate', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(dbItem),
-          });
-        }
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Error saving product:', response.status, errorText);
-          showToast("Failed to save product", "error");
-          return;
-        }
-        
-        await response.json();
-        
-        // Refresh inventory after save
-        await fetchInventory();
-        
-        setIsModalOpen(false);
-        setEditingId(null);
-        setNewItem({ type: "Car", status: "Available", price: 0 });
-        showToast(editingId ? "تم التعديل بنجاح" : "تمت الإضافة بنجاح", "success");
+      // All users (including Super Admin) use the same Neon API endpoint
+      // This ensures complete tenant isolation - each user sees only their own data
+      if (!token) {
+        showToast("Authentication error. Please log in again.", "error");
         return;
       }
-      
-      // Regular users use Supabase directly
-      if (!supabase) {
-        showToast("Supabase not configured", "error");
-        return;
-      }
-      
-      // Use Supabase session from AuthContext if available, otherwise try to get it
-      let session = supabaseSession;
-      if (!session) {
-        const { data: { session: fetchedSession }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          console.error('Supabase session error:', sessionError);
-          showToast("Authentication error. Please log in again.", "error");
-          return;
-        }
-        session = fetchedSession;
-      }
-      
-      if (!session || !session.user) {
-        console.warn('[AutoRealEstate] No Supabase session found - user may be authenticated via backend. Cannot perform RLS-protected operation.');
-        showToast("Supabase authentication required for this operation. Please log in via Supabase.", "error");
-        return;
-      }
-
-      const authUserId = session.user.id;
-
-      const dbItem = {
-        user_id: authUserId,
-        type: newItem.type,
-        brand_or_title: brandOrTitleTrimmed,
-        plate_or_address: plateOrAddressTrimmed,
-        specs: newItem.specs || '',
-        price: newItem.price || 0,
-        status: newItem.status || 'Available',
-        expiry_date: newItem.expiryDate || null,
-        image: newItem.image || null,
-        color: newItem.color || null,
-        fuel: newItem.fuel || null,
-        mileage: newItem.mileage || null,
-        defects: newItem.defects || null,
-        rent_start: newItem.rentStart || null,
-        rent_end: newItem.rentEnd || null,
-        prop_type: newItem.propType || null,
-        commercial_type: newItem.commercialType || null,
-        floor_num: newItem.floorNum || null,
-        total_floors: newItem.totalFloors || null,
-        rooms: newItem.rooms || null,
-        bathrooms: newItem.bathrooms || null,
-        amenities: newItem.amenities || null,
-        zoning: newItem.zoning || null,
-        sqm: newItem.sqm || null,
-      };
 
       if (editingId) {
-        const { data: updateData, error: updateError } = await supabase
-          .from('auto_real_estate')
-          .update(dbItem)
-          .eq('id', editingId)
-          .eq('user_id', authUserId)
-          .select()
-          .maybeSingle();
+        const response = await api<{ data: any }>(`/api/auto-real-estate/${editingId}`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify({
+            type: newItem.type,
+            brandOrTitle: newItem.brandOrTitle,
+            plateOrAddress: newItem.plateOrAddress,
+            specs: newItem.specs,
+            price: newItem.price,
+            status: newItem.status,
+            expiryDate: newItem.expiryDate,
+            image: newItem.image,
+            color: newItem.color,
+            fuel: newItem.fuel,
+            mileage: newItem.mileage,
+            defects: newItem.defects,
+            rentStart: newItem.rentStart,
+            rentEnd: newItem.rentEnd,
+            propType: newItem.propType,
+            commercialType: newItem.commercialType,
+            floorNum: newItem.floorNum,
+            totalFloors: newItem.totalFloors,
+            rooms: newItem.rooms,
+            bathrooms: newItem.bathrooms,
+            amenities: newItem.amenities,
+            zoning: newItem.zoning,
+            sqm: newItem.sqm,
+          }),
+        });
 
-        if (updateError) {
-          console.error('Update error details:', updateError.message, updateError.code, updateError.hint, updateError.details);
-          throw updateError;
-        }
-        
-        // Manually update the item in local state for immediate feedback
-        if (updateData) {
+        if (response.data) {
           setInventory(prev => prev.map(item => 
             item.id === editingId ? {
               ...item,
-              type: updateData.type,
-              brandOrTitle: updateData.brand_or_title,
-              plateOrAddress: updateData.plate_or_address,
-              specs: updateData.specs || '',
-              price: Number(updateData.price),
-              status: updateData.status,
-              expiryDate: updateData.expiry_date,
-              image: updateData.image,
-              color: updateData.color,
-              fuel: updateData.fuel,
-              mileage: updateData.mileage,
-              defects: updateData.defects,
-              rentStart: updateData.rent_start,
-              rentEnd: updateData.rent_end,
-              propType: updateData.prop_type,
-              commercialType: updateData.commercial_type,
-              floorNum: updateData.floor_num,
-              totalFloors: updateData.total_floors,
-              rooms: updateData.rooms,
-              bathrooms: updateData.bathrooms,
-              amenities: updateData.amenities,
-              zoning: updateData.zoning,
-              sqm: updateData.sqm,
+              type: response.data.type,
+              brandOrTitle: response.data.brand_or_title,
+              plateOrAddress: response.data.plate_or_address,
+              specs: response.data.specs,
+              price: Number(response.data.price),
+              status: response.data.status,
+              expiryDate: response.data.expiry_date,
+              image: response.data.image,
+              color: response.data.color,
+              fuel: response.data.fuel,
+              mileage: response.data.mileage,
+              defects: response.data.defects,
+              rentStart: response.data.rent_start,
+              rentEnd: response.data.rent_end,
+              propType: response.data.prop_type,
+              commercialType: response.data.commercial_type,
+              floorNum: response.data.floor_num,
+              totalFloors: response.data.total_floors,
+              rooms: response.data.rooms,
+              bathrooms: response.data.bathrooms,
+              amenities: response.data.amenities,
+              zoning: response.data.zoning,
+              sqm: response.data.sqm,
             } : item
           ));
         }
-        
+
         setLogs([{ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, action: `Edited ${newItem.brandOrTitle}`, timestamp: new Date().toISOString(), user: user.email || "Admin" }, ...logs]);
       } else {
-        const { data: insertData, error: insertError } = await supabase
-          .from('auto_real_estate')
-          .insert(dbItem)
-          .select()
-          .single();
+        console.log("[AutoRealEstate] Saving new product:", newItem);
+        const response = await api<{ data: any }>("/api/auto-real-estate", {
+          method: "POST",
+          token,
+          body: JSON.stringify({
+            type: newItem.type,
+            brandOrTitle: newItem.brandOrTitle,
+            plateOrAddress: newItem.plateOrAddress,
+            specs: newItem.specs,
+            price: newItem.price,
+            status: newItem.status,
+            expiryDate: newItem.expiryDate,
+            image: newItem.image,
+            color: newItem.color,
+            fuel: newItem.fuel,
+            mileage: newItem.mileage,
+            defects: newItem.defects,
+            rentStart: newItem.rentStart,
+            rentEnd: newItem.rentEnd,
+            propType: newItem.propType,
+            commercialType: newItem.commercialType,
+            floorNum: newItem.floorNum,
+            totalFloors: newItem.totalFloors,
+            rooms: newItem.rooms,
+            bathrooms: newItem.bathrooms,
+            amenities: newItem.amenities,
+            zoning: newItem.zoning,
+            sqm: newItem.sqm,
+          }),
+        });
+        console.log("[AutoRealEstate] Save response:", response);
 
-        if (insertError) {
-          console.error('Insert error details:', insertError.message, insertError.code, insertError.hint, insertError.details);
-          throw insertError;
+        if (response.data) {
+          setInventory(prev => [{
+            id: response.data.id,
+            type: response.data.type,
+            brandOrTitle: response.data.brand_or_title,
+            plateOrAddress: response.data.plate_or_address,
+            specs: response.data.specs,
+            price: Number(response.data.price),
+            status: response.data.status,
+            expiryDate: response.data.expiry_date,
+            createdAt: response.data.created_at,
+            image: response.data.image,
+            color: response.data.color,
+            fuel: response.data.fuel,
+            mileage: response.data.mileage,
+            defects: response.data.defects,
+            rentStart: response.data.rent_start,
+            rentEnd: response.data.rent_end,
+            propType: response.data.prop_type,
+            commercialType: response.data.commercial_type,
+            floorNum: response.data.floor_num,
+            totalFloors: response.data.total_floors,
+            rooms: response.data.rooms,
+            bathrooms: response.data.bathrooms,
+            amenities: response.data.amenities,
+            zoning: response.data.zoning,
+            sqm: response.data.sqm,
+          }, ...prev]);
         }
         
-        // Manually add the new item to local state for immediate feedback
-        if (insertData) {
-          const transformedItem = {
-            id: insertData.id,
-            type: insertData.type,
-            brandOrTitle: insertData.brand_or_title,
-            plateOrAddress: insertData.plate_or_address,
-            specs: insertData.specs || '',
-            price: Number(insertData.price),
-            status: insertData.status,
-            expiryDate: insertData.expiry_date,
-            createdAt: insertData.created_at,
-            image: insertData.image,
-            color: insertData.color,
-            fuel: insertData.fuel,
-            mileage: insertData.mileage,
-            defects: insertData.defects,
-            rentStart: insertData.rent_start,
-            rentEnd: insertData.rent_end,
-            propType: insertData.prop_type,
-            commercialType: insertData.commercial_type,
-            floorNum: insertData.floor_num,
-            totalFloors: insertData.total_floors,
-            rooms: insertData.rooms,
-            bathrooms: insertData.bathrooms,
-            amenities: insertData.amenities,
-            zoning: insertData.zoning,
-            sqm: insertData.sqm,
-          };
-          setInventory(prev => [transformedItem, ...prev]);
-        }
-        
-        setLogs([{ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, action: `Added ${newItem.brandOrTitle}`, timestamp: new Date().toISOString(), user: user?.email || "Admin" }, ...logs]);
+        setLogs([{ id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, action: `Added ${newItem.brandOrTitle}`, timestamp: new Date().toISOString(), user: user.email || "Admin" }, ...logs]);
       }
 
       setIsModalOpen(false);
@@ -739,65 +476,17 @@ export default function AutoRealEstateModule() {
     e.stopPropagation();
     
     try {
-      // If super admin, use backend API endpoint instead of direct Supabase
-      if (isAdmin) {
-        console.warn('[AutoRealEstate] Super admin - using backend API endpoint for delete');
-        const token = localStorage.getItem('idara_token');
-        
-        const response = await fetch(`/api/supabase/auto-real-estate/${idToDelete}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('Error deleting product:', response.status, errorText);
-          showToast("Failed to delete product", "error");
-          return;
-        }
-        
-        // Refresh inventory after delete
-        await fetchInventory();
-        
-        showToast(t.deleteSuccess, "info");
-        return;
-      }
-      
-      // Regular users use Supabase directly
-      if (!supabase) {
-        showToast("Supabase not configured", "error");
+      // All users (including Super Admin) use the same Neon API endpoint
+      // This ensures complete tenant isolation
+      if (!token) {
+        showToast("Authentication error. Please log in again.", "error");
         return;
       }
 
-      // Use Supabase session from AuthContext if available, otherwise try to get it
-      let session = supabaseSession;
-      if (!session) {
-        const { data: { session: fetchedSession }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) {
-          console.error('Supabase session error:', sessionError);
-          showToast("Authentication error. Please log in again.", "error");
-          return;
-        }
-        session = fetchedSession;
-      }
-      
-      if (!session || !session.user) {
-        console.warn('[AutoRealEstate] No Supabase session found - user may be authenticated via backend. Cannot perform RLS-protected operation.');
-        showToast("Supabase authentication required for this operation. Please log in via Supabase.", "error");
-        return;
-      }
-
-      const authUserId = session.user.id;
-
-      const { error: deleteError } = await supabase
-        .from('auto_real_estate')
-        .delete()
-        .eq('id', idToDelete)
-        .eq('user_id', authUserId);
-
-      if (deleteError) throw deleteError;
+      await api<{ success: boolean }>(`/api/auto-real-estate/${idToDelete}`, {
+        method: "DELETE",
+        token,
+      });
       
       // Manually update local state for immediate UI refresh
       setInventory(prev => prev.filter(item => item.id !== idToDelete));
@@ -1691,14 +1380,14 @@ export default function AutoRealEstateModule() {
                         <div className="md:col-span-2">
                           <label className="block text-xs font-semibold text-slate-400 mb-1">تاريخ وساعة الدخول</label>
                           <div className="flex gap-2">
-                            <input type="date" value={cForm.startDate} onChange={e => setCForm({...cForm, startDate: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200" />
+                            <input type="date" value={cForm.startDate ? cForm.startDate.split('T')[0] : ""} onChange={e => setCForm({...cForm, startDate: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200" />
                             <input type="time" value={cForm.startTime} onChange={e => setCForm({...cForm, startTime: e.target.value})} className="w-24 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200" />
                           </div>
                         </div>
                         <div className="md:col-span-2">
                           <label className="block text-xs font-semibold text-slate-400 mb-1">تاريخ وساعة الخروج</label>
                           <div className="flex gap-2">
-                            <input type="date" value={cForm.endDate} onChange={e => setCForm({...cForm, endDate: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200" />
+                            <input type="date" value={cForm.endDate ? cForm.endDate.split('T')[0] : ""} onChange={e => setCForm({...cForm, endDate: e.target.value})} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200" />
                             <input type="time" value={cForm.endTime} onChange={e => setCForm({...cForm, endTime: e.target.value})} className="w-24 bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-slate-200" />
                           </div>
                         </div>

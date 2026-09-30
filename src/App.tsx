@@ -16,6 +16,7 @@ import { Login } from "@/pages/Login";
 import { Register } from "@/pages/Register";
 import { AuthCallback } from "@/pages/AuthCallback";
 import { DashboardHome } from "@/pages/DashboardHome";
+import { SignContractPage } from "@/pages/SignContract";
 import { useGlobalKeyboardNavigation } from "./hooks/NavigationItem";
 
 const Pay = lazy(() => import("@/pages/Pay").then((m) => ({ default: m.Pay })));
@@ -94,6 +95,9 @@ const LegalEditor = lazy(() =>
 );
 const LawyerPortalModule = lazy(() =>
   import("@/pages/modules/LawyerPortalModule").then((m) => ({ default: m.LawyerPortalModule }))
+);
+const ContractsModule = lazy(() =>
+  import("@/modules/ContractsModule").then((m) => ({ default: m.ContractsModule }))
 );
 const AutoRealEstateModule = lazy(() =>
   import("@/pages/modules/AutoRealEstateModule").then((m) => ({ default: m.default }))
@@ -183,6 +187,7 @@ function AppRoutes() {
       <Route path="/explore" element={<StoreDirectory />} />
       <Route path="/m/:storeSlug" element={<StoreFront />} />
       <Route path="/order-status/:orderId" element={<OrderStatus />} />
+      <Route path="/sign-contract/:id" element={<SignContractPage />} />
       <Route path="/m/:storeSlug/shipping-policy" element={<StoreShippingPolicy />} />
       <Route path="/m/:storeSlug/return-policy" element={<StoreReturnPolicy />} />
       <Route path="/m/:storeSlug/terms" element={<StoreTerms />} />
@@ -244,6 +249,8 @@ function AppRoutes() {
         <Route path="lawyer" element={<LawyerPortalModule />} />
         <Route path="auto-real-estate" element={<AutoRealEstateModule />} />
         <Route path="delivery-hub" element={<DeliveryHubModule />} />
+        <Route path="contracts" element={<ContractsModule />} />
+        <Route path="contracts/:id" element={<ContractsModule />} />
         <Route 
           path="ai-design-studio" 
           element={

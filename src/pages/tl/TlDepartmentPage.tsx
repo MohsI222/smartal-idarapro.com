@@ -104,6 +104,8 @@ export function TlDepartmentPage() {
   const [tab, setTab] = useState<"ops" | "msg">("ops");
   const [vehicleLogs, setVehicleLogs] = useState<TlVehicleLog[]>([]);
   const [opsLogs, setOpsLogs] = useState<TlOpsLog[]>([]);
+  const [selectedOps, setSelectedOps] = useState<Set<string>>(new Set());
+  const [selectedVehicles, setSelectedVehicles] = useState<Set<string>>(new Set());
   const [messages, setMessages] = useState<TlMessage[]>([]);
   const [recipients, setRecipients] = useState<{ id: string; full_name: string }[]>([]);
   const [customRecipients] = useState<{ id: string; full_name: string }[]>([
@@ -231,7 +233,7 @@ export function TlDepartmentPage() {
     setLoading(true);
     try {
       const w = await tlWorkers(token, slug);
-      setWorkers(Array.isArray(w.workers) ? w.workers : []);
+      setWorkers(Array.isArray(w) ? w : []);
       if (isVehicle) {
         const v = await tlVehicles(token, slug);
         setVehicleLogs(Array.isArray(v.logs) ? v.logs : []);
@@ -285,29 +287,44 @@ export function TlDepartmentPage() {
   }, [ctxWorker, workers, slug]);
 
   const loadMessages = useCallback(async () => {
-    if (!token || !effectiveSender) return;
+    if (!effectiveSender) return;
     try {
-      const m = await tlMessages(token, effectiveSender.id);
-      setMessages(Array.isArray(m.messages) ? m.messages : []);
-      const rec = await tlMessageRecipients(token, effectiveSender.id);
-      // Combine API recipients with custom recipients
-      const allRecipients = [
-        ...(Array.isArray(rec.recipients) ? rec.recipients : []),
-        ...customRecipients,
-      ];
-      setRecipients(allRecipients);
-      if (!msgTo && allRecipients[0]) setMsgTo(allRecipients[0].id);
+      // For magic links, use standalone endpoint
+      if (magicParam) {
+        const response = await fetch(`/api/tl/standalone-recipients?token=${magicParam}`);
+        const data = await response.json();
+        if (data.success && data.recipients) {
+          const allRecipients = [
+            ...(Array.isArray(data.recipients) ? data.recipients : []),
+            ...customRecipients,
+          ];
+          setRecipients(allRecipients);
+          if (!msgTo && allRecipients[0]) setMsgTo(allRecipients[0].id);
+        }
+      } else {
+        // Normal authenticated flow
+        if (!token) return;
+        const m = await tlMessages(token, effectiveSender.id);
+        setMessages(Array.isArray(m.messages) ? m.messages : []);
+        const rec = await tlMessageRecipients(token, effectiveSender.id);
+        // Combine API recipients with custom recipients
+        const allRecipients = [
+          ...(Array.isArray(rec.recipients) ? rec.recipients : []),
+          ...customRecipients,
+        ];
+        setRecipients(allRecipients);
+        if (!msgTo && allRecipients[0]) setMsgTo(allRecipients[0].id);
+      }
     } catch {
       toast.error(t("tl.msgErr"));
     }
-  }, [token, effectiveSender, customRecipients, t]);
+  }, [token, effectiveSender, customRecipients, t, magicParam]);
 
   useEffect(() => {
     if (tab === "msg" && effectiveSender) void loadMessages();
   }, [tab, effectiveSender, loadMessages]);
 
   const saveVehicle = async () => {
-    if (!token || !slug) return;
     setVFieldErr(null);
     if (!vForm.vehicle_id.trim()) {
       setVFieldErr("vehicle_id");
@@ -321,23 +338,54 @@ export function TlDepartmentPage() {
     const exit_at = tlCombineTodayWithTime(vForm.exit_time);
     setSaving(true);
     try {
-      await tlCreateVehicle(token, {
-        department: slug,
-        vehicle_id: vForm.vehicle_id,
-        driver_name: vForm.driver_name,
-        driver_phone: vForm.driver_phone,
-        driver_id_doc: vForm.driver_id_doc,
-        vehicle_kind: vForm.vehicle_kind,
-        expected_entry_at,
-        entry_at,
-        exit_at,
-        passenger_count: vForm.passenger_count ? Number(vForm.passenger_count) : null,
-        seat_count: vForm.seat_count ? Number(vForm.seat_count) : null,
-        cargo_count: vForm.cargo_count ? Number(vForm.cargo_count) : null,
-        box_count: vForm.box_count ? Number(vForm.box_count) : null,
-        marked_success: vForm.marked_success,
-        notes: vForm.notes || null,
-      });
+      // For magic links, use standalone endpoint
+      if (magicParam) {
+        const response = await fetch("/api/tl/standalone-vehicles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token: magicParam,
+            department: slug,
+            vehicle_id: vForm.vehicle_id,
+            driver_name: vForm.driver_name,
+            driver_phone: vForm.driver_phone,
+            driver_id_doc: vForm.driver_id_doc,
+            vehicle_kind: vForm.vehicle_kind,
+            expected_entry_at,
+            entry_at,
+            exit_at,
+            passenger_count: vForm.passenger_count ? Number(vForm.passenger_count) : null,
+            seat_count: vForm.seat_count ? Number(vForm.seat_count) : null,
+            cargo_count: vForm.cargo_count ? Number(vForm.cargo_count) : null,
+            box_count: vForm.box_count ? Number(vForm.box_count) : null,
+            marked_success: vForm.marked_success,
+            notes: vForm.notes || null,
+            worker_id: ctxWorker?.id,
+          }),
+        });
+        if (!response.ok || !(await response.json()).success) {
+          throw new Error("Failed to save");
+        }
+      } else {
+        if (!token || !slug) return;
+        await tlCreateVehicle(token, {
+          department: slug,
+          vehicle_id: vForm.vehicle_id,
+          driver_name: vForm.driver_name,
+          driver_phone: vForm.driver_phone,
+          driver_id_doc: vForm.driver_id_doc,
+          vehicle_kind: vForm.vehicle_kind,
+          expected_entry_at,
+          entry_at,
+          exit_at,
+          passenger_count: vForm.passenger_count ? Number(vForm.passenger_count) : null,
+          seat_count: vForm.seat_count ? Number(vForm.seat_count) : null,
+          cargo_count: vForm.cargo_count ? Number(vForm.cargo_count) : null,
+          box_count: vForm.box_count ? Number(vForm.box_count) : null,
+          marked_success: vForm.marked_success,
+          notes: vForm.notes || null,
+        });
+      }
       toast.success(t("tl.saved"));
       setVForm((p) => ({
         ...p,
@@ -364,9 +412,21 @@ export function TlDepartmentPage() {
   };
 
   const toggleVehicleSuccess = async (row: TlVehicleLog) => {
-    if (!token) return;
     try {
-      await tlPatchVehicle(token, row.id, { marked_success: !row.marked_success });
+      // For magic links, use standalone endpoint
+      if (magicParam) {
+        const response = await fetch(`/api/tl/standalone-vehicles/${row.id}/success?token=${magicParam}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ marked_success: !row.marked_success }),
+        });
+        if (!response.ok) {
+          throw new Error("Failed to toggle success");
+        }
+      } else {
+        if (!token) return;
+        await tlPatchVehicle(token, row.id, { marked_success: !row.marked_success });
+      }
       void loadData();
     } catch {
       toast.error(t("tl.saveErr"));
@@ -374,9 +434,19 @@ export function TlDepartmentPage() {
   };
 
   const deleteVehicle = async (id: string) => {
-    if (!token) return;
     try {
-      await tlDeleteVehicle(token, id);
+      // For magic links, use standalone endpoint
+      if (magicParam) {
+        const response = await fetch(`/api/tl/standalone-vehicles/${id}?token=${magicParam}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to delete");
+        }
+      } else {
+        if (!token) return;
+        await tlDeleteVehicle(token, id);
+      }
       void loadData();
     } catch {
       toast.error(t("tl.saveErr"));
@@ -384,7 +454,6 @@ export function TlDepartmentPage() {
   };
 
   const saveOps = async () => {
-    if (!token || !slug) return;
     setOpsFieldErr(null);
     if (!oForm.worker_id) {
       setOpsFieldErr("worker_id");
@@ -395,14 +464,37 @@ export function TlDepartmentPage() {
     const log_time = tlCombineTodayWithTime(oForm.log_time) ?? tlDefaultExpectedEntryLocal();
     setSaving(true);
     try {
-      await tlCreateOps(token, {
-        department: slug,
-        worker_id: oForm.worker_id,
-        log_time,
-        quantity: Number(oForm.quantity),
-        delay_reason: oForm.delay_reason,
-        target_pct: Number(oForm.target_pct),
-      });
+      // For magic links, use standalone endpoint
+      if (magicParam) {
+        const response = await fetch("/api/tl/standalone-ops", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token: magicParam,
+            department: slug,
+            worker_id: oForm.worker_id,
+            log_time,
+            quantity: Number(oForm.quantity),
+            delay_reason: oForm.delay_reason,
+            target_pct: Number(oForm.target_pct),
+          }),
+        });
+        const data = await response.json();
+        if (!data.success) {
+          throw new Error(data.error || "Save failed");
+        }
+      } else {
+        // Normal authenticated flow
+        if (!token || !slug) return;
+        await tlCreateOps(token, {
+          department: slug,
+          worker_id: oForm.worker_id,
+          log_time,
+          quantity: Number(oForm.quantity),
+          delay_reason: oForm.delay_reason,
+          target_pct: Number(oForm.target_pct),
+        });
+      }
       toast.success(t("tl.saved"));
       setOForm((p) => ({
         ...p,
@@ -420,9 +512,142 @@ export function TlDepartmentPage() {
   };
 
   const deleteOps = async (id: string) => {
+    // For magic links, use standalone endpoint
+    if (magicParam) {
+      try {
+        const response = await fetch(`/api/tl/standalone-ops/${id}?token=${magicParam}`, {
+          method: "DELETE",
+        });
+        const data = await response.json();
+        if (!data.ok) {
+          throw new Error(data.error || "Delete failed");
+        }
+        toast.success(t("tl.saved"));
+        void loadData();
+      } catch {
+        toast.error(t("tl.saveErr"));
+      }
+      return;
+    }
+
+    // Normal authenticated flow
     if (!token) return;
     try {
       await tlDeleteOps(token, id);
+      void loadData();
+    } catch {
+      toast.error(t("tl.saveErr"));
+    }
+  };
+
+  const deleteSelectedOps = async () => {
+    if (selectedOps.size === 0) {
+      toast.error("الرجاء اختيار عملية واحدة على الأقل");
+      return;
+    }
+
+    // For magic links, use standalone endpoint
+    if (magicParam) {
+      try {
+        const response = await fetch("/api/tl/standalone-ops/bulk", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token: magicParam,
+            ids: Array.from(selectedOps),
+          }),
+        });
+        const data = await response.json();
+        if (!data.ok) {
+          throw new Error(data.error || "Bulk delete failed");
+        }
+        toast.success(`تم حذف ${selectedOps.size} عملية`);
+        setSelectedOps(new Set());
+        void loadData();
+      } catch {
+        toast.error(t("tl.saveErr"));
+      }
+      return;
+    }
+
+    // Normal authenticated flow
+    if (!token) return;
+    try {
+      for (const id of selectedOps) {
+        await tlDeleteOps(token, id);
+      }
+      toast.success(`تم حذف ${selectedOps.size} عملية`);
+      setSelectedOps(new Set());
+      void loadData();
+    } catch {
+      toast.error(t("tl.saveErr"));
+    }
+  };
+
+  const toggleSelectOp = (id: string) => {
+    setSelectedOps((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedOps.size === opsLogs.length) {
+      setSelectedOps(new Set());
+    } else {
+      setSelectedOps(new Set(opsLogs.map((r) => r.id)));
+    }
+  };
+
+  const toggleSelectVehicle = (id: string) => {
+    setSelectedVehicles((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllVehicles = () => {
+    if (selectedVehicles.size === vehicleLogs.length) {
+      setSelectedVehicles(new Set());
+    } else {
+      setSelectedVehicles(new Set(vehicleLogs.map((r) => r.id)));
+    }
+  };
+
+  const deleteSelectedVehicles = async () => {
+    if (selectedVehicles.size === 0) return;
+    try {
+      // For magic links, use standalone bulk delete endpoint
+      if (magicParam) {
+        const response = await fetch("/api/tl/standalone-vehicles/bulk", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            token: magicParam,
+            ids: Array.from(selectedVehicles),
+          }),
+        });
+        if (!response.ok) {
+          throw new Error("Failed to delete");
+        }
+      } else {
+        if (!token) return;
+        for (const id of selectedVehicles) {
+          await tlDeleteVehicle(token, id);
+        }
+      }
+      setSelectedVehicles(new Set());
+      toast.success(t("tl.deleted"));
       void loadData();
     } catch {
       toast.error(t("tl.saveErr"));
@@ -1016,10 +1241,39 @@ export function TlDepartmentPage() {
               </Button>
             </div>
 
+            {selectedVehicles.size > 0 && (
+              <div className="flex items-center gap-2 mb-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => void deleteSelectedVehicles()}
+                >
+                  {t("tl.deleteSelected")} ({selectedVehicles.size})
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelectedVehicles(new Set())}
+                >
+                  {t("tl.cancel")}
+                </Button>
+              </div>
+            )}
+
             <div className="overflow-x-auto rounded-xl border border-white/10" lang="en" dir="ltr">
               <table className="w-full text-xs md:text-sm border-collapse min-w-[800px] font-mono tabular-nums">
                 <thead>
                   <tr className="bg-white/5 text-slate-400 text-left">
+                    <th className="p-2 w-10">
+                      <input
+                        type="checkbox"
+                        checked={selectedVehicles.size === vehicleLogs.length && vehicleLogs.length > 0}
+                        onChange={() => void toggleSelectAllVehicles()}
+                        className="cursor-pointer"
+                      />
+                    </th>
                     <th className="p-2">{t("tl.vVehicleId")}</th>
                     <th className="p-2">{t("tl.vDriver")}</th>
                     <th className="p-2">{t("tl.vPhone")}</th>
@@ -1034,6 +1288,14 @@ export function TlDepartmentPage() {
                 <tbody>
                   {vehicleLogs.map((r) => (
                     <tr key={r.id} className="border-t border-white/5">
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedVehicles.has(r.id)}
+                          onChange={() => void toggleSelectVehicle(r.id)}
+                          className="cursor-pointer"
+                        />
+                      </td>
                       <td className="p-2">{ensureLatinDigitsInString(String(r.vehicle_id))}</td>
                       <td className="p-2 font-sans">{r.driver_name}</td>
                       <td className="p-2">{ensureLatinDigitsInString(String(r.driver_phone))}</td>
@@ -1159,6 +1421,17 @@ export function TlDepartmentPage() {
             </section>
 
             <div className="flex flex-wrap gap-2">
+              {selectedOps.size > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  className="gap-1"
+                  onClick={() => void deleteSelectedOps()}
+                >
+                  حذف {selectedOps.size}
+                </Button>
+              )}
               <Button
                 type="button"
                 size="sm"
@@ -1175,7 +1448,6 @@ export function TlDepartmentPage() {
                 variant="outline"
                 className="gap-1"
                 onClick={() => void (async () => {
-                  if (!token || !slug) return;
                   try {
                     await exportCurrentGridExcel({
                       isVehicle: false,
@@ -1199,9 +1471,8 @@ export function TlDepartmentPage() {
                 variant="outline"
                 className="gap-1"
                 onClick={() => void (async () => {
-                  if (!token || !slug) return;
                   try {
-                    const inc = await tlIncidents(token);
+                    const inc = token ? await tlIncidents(token) : { incidents: [] };
                     await exportCurrentGridPdf({
                       direction: isRtl ? "rtl" : "ltr",
                       lang: locale,
@@ -1228,6 +1499,14 @@ export function TlDepartmentPage() {
               <table className="w-full text-xs md:text-sm border-collapse min-w-[640px] font-mono tabular-nums">
                 <thead>
                   <tr className="bg-white/5 text-slate-400 text-left">
+                    <th className="p-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={selectedOps.size === opsLogs.length && opsLogs.length > 0}
+                        onChange={() => void toggleSelectAll()}
+                        className="cursor-pointer"
+                      />
+                    </th>
                     <th className="p-2 font-sans">{t("tl.opsWorker")}</th>
                     <th className="p-2 font-sans">{t("tl.opsTime")}</th>
                     <th className="p-2 font-sans">{t("tl.opsQty")}</th>
@@ -1239,6 +1518,14 @@ export function TlDepartmentPage() {
                 <tbody>
                   {opsLogs.map((r) => (
                     <tr key={r.id} className="border-t border-white/5">
+                      <td className="p-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedOps.has(r.id)}
+                          onChange={() => void toggleSelectOp(r.id)}
+                          className="cursor-pointer"
+                        />
+                      </td>
                       <td className="p-2 font-sans">{r.worker_full_name}</td>
                       <td className="p-2 whitespace-nowrap">{ensureLatinDigitsInString(r.log_time)}</td>
                       <td className="p-2">{formatTlLatinNum(r.quantity)}</td>

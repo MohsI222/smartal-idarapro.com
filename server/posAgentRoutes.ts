@@ -2,6 +2,50 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { db } from "./db.js";
 
+// Helper function to update Supabase for real-time sync
+async function updateSupabaseStock(productId: string, stockChange: number, userId: string) {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.log("[POS Agent] Supabase not configured, skipping sync");
+      return;
+    }
+
+    // Get current stock from Neon (the source of truth)
+    const product = await db.prepare(
+      `SELECT stock_pieces FROM inventory_products WHERE id = ? AND user_id = ?`
+    ).get(productId, userId) as { stock_pieces: number } | undefined;
+
+    if (!product) {
+      console.log("[POS Agent] Product not found in Neon, skipping sync");
+      return;
+    }
+
+    const newStock = product.stock_pieces;
+
+    // Update Supabase with the exact stock from Neon
+    const updateResponse = await fetch(`${supabaseUrl}/rest/v1/inventory_products?id=eq.${productId}`, {
+      method: "PATCH",
+      headers: {
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ stock_pieces: newStock }),
+    });
+
+    if (!updateResponse.ok) {
+      console.error("[POS Agent] Failed to update Supabase:", updateResponse.status);
+    } else {
+      console.log("[POS Agent] Successfully synced stock to Supabase:", { productId, newStock });
+    }
+  } catch (error) {
+    console.error("[POS Agent] Error syncing to Supabase:", error);
+  }
+}
+
 const router = express.Router();
 
 // Generate a secure random token
@@ -407,6 +451,9 @@ router.post("/sales", async (req, res) => {
          SET stock_pieces = stock_pieces - ?
          WHERE id = ? AND user_id = ?`
       ).run(line.quantity, line.product_id, tokenData.user_id);
+      
+      // Sync to Supabase for real-time updates
+      await updateSupabaseStock(line.product_id, -line.quantity, tokenData.user_id);
     }
 
     // Get the created sale
@@ -834,6 +881,9 @@ router.post("/standalone-sales", async (req, res) => {
       ).run(line.quantity, line.product_id, tokenData.user_id);
       
       console.log("[POS Agent] Stock update result:", { productId: line.product_id, quantity: line.quantity, changes: updateResult.changes });
+      
+      // Sync to Supabase for real-time updates
+      await updateSupabaseStock(line.product_id, -line.quantity, tokenData.user_id);
     }
 
     // Get the created sale
@@ -1200,6 +1250,9 @@ router.post("/standalone-returns", async (req, res) => {
       ).run(line.quantity, line.product_id, tokenData.user_id);
       
       console.log("[POS Agent] Return stock update result:", { productId: line.product_id, quantity: line.quantity, changes: updateResult.changes });
+      
+      // Sync to Supabase for real-time updates
+      await updateSupabaseStock(line.product_id, line.quantity, tokenData.user_id);
     }
 
     res.json({

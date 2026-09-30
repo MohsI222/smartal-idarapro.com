@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 export interface UserPermissions {
@@ -11,6 +11,7 @@ export interface UserPermissions {
   can_access_transport_logistics: boolean;
   can_access_wedding_invitations: boolean;
   can_access_auto_real_estate: boolean;
+  can_access_contracts: boolean;
   can_access_legal: boolean;
   can_access_ai: boolean;
   can_access_settings: boolean;
@@ -34,11 +35,11 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
   const [permissions, setPermissions] = useState<UserPermissions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const SUPER_ADMIN_EMAIL = 'lahcenm534@gmail.com';
 
   const fetchPermissions = async () => {
-    if (!userId || !supabase) {
+    if (!userId || !token) {
       setLoading(false);
       return;
     }
@@ -55,6 +56,7 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
         can_access_transport_logistics: true,
         can_access_wedding_invitations: true,
         can_access_auto_real_estate: true,
+        can_access_contracts: true,
         can_access_legal: true,
         can_access_ai: true,
         can_access_settings: true,
@@ -73,19 +75,8 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
       console.log('[Permissions] Fetching permissions for user:', userId);
 
       // First, get the employee_id from hr_employees
-      const { data: employeeData, error: employeeError } = await supabase
-        .from('hr_employees')
-        .select('id')
-        .eq('user_id', userId)
-        .limit(1)
-        .maybeSingle();
-
-      if (employeeError) {
-        console.error('[Permissions] Error fetching employee record:', employeeError);
-        // Don't block the app if employee fetch fails, just log and continue
-        setLoading(false);
-        return;
-      }
+      const employeesResponse = await api<{ employees: any[] }>('/hr/employees', { token });
+      const employeeData = employeesResponse.employees.find((e: any) => e.user_id === userId);
 
       if (!employeeData) {
         console.log('[Permissions] No employee record found for user:', userId);
@@ -98,78 +89,45 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
       console.log('[Permissions] Found employee ID:', employeeId);
 
       // Now fetch permissions using employee_id
-      const { data, error: fetchError } = await supabase
-        .from('permissions')
-        .select('*')
-        .eq('employee_id', employeeId)
-        .maybeSingle();
+      const response = await api<{ permissions: UserPermissions | null }>(`/hr/permissions/${employeeId}`, { token });
 
-      if (fetchError) {
-        console.warn('[Permissions] Error fetching permissions:', fetchError);
-        // If no permissions record exists, create default permissions
-        if (fetchError.code === 'PGRST116') {
-          console.log('[Permissions] No permissions record found, creating default permissions');
-          try {
-            const { data: newPermissions, error: insertError } = await supabase
-              .from('permissions')
-              .insert({
-                employee_id: employeeId,
-                can_access_inventory: true,
-                can_access_hr: true,
-                can_access_delivery: true,
-                can_access_transport_logistics: true,
-                can_access_wedding_invitations: true,
-                can_access_auto_real_estate: true,
-                can_access_legal: true,
-                can_access_ai: true,
-                can_access_settings: true,
-                is_admin: false,
-              })
-              .select()
-              .single();
+      if (response.permissions) {
+        console.log('[Permissions] Permissions fetched:', response.permissions);
+        setPermissions(response.permissions);
+      } else {
+        // Create default permissions if none exist
+        console.log('[Permissions] No permissions record found, creating default permissions');
+        try {
+          const newPermissions: UserPermissions = {
+            id: crypto.randomUUID(),
+            employee_id: employeeId,
+            can_access_inventory: true,
+            can_access_hr: true,
+            can_access_delivery: true,
+            can_access_transport_logistics: true,
+            can_access_wedding_invitations: true,
+            can_access_auto_real_estate: true,
+            can_access_contracts: true,
+            can_access_legal: true,
+            can_access_ai: true,
+            can_access_settings: true,
+            is_admin: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
 
-            if (insertError) {
-              console.error('[Permissions] Error creating default permissions:', insertError);
-              // Don't throw, just log and continue
-            } else {
-              console.log('[Permissions] Default permissions created successfully');
-              setPermissions(newPermissions);
-            }
-          } catch (insertErr) {
-            console.error('[Permissions] Silent error in insert operation:', insertErr);
-            // Silent catch - don't block the app
-          }
-        } else {
-          // Handle other permission errors gracefully
-          console.warn('[Permissions] Non-PGRST116 error:', fetchError.code, fetchError.message);
-          // Check if it's a permission/RLS error - might indicate the user doesn't have access
-          if (fetchError.code === '42501' || fetchError.message?.includes('permission')) {
-            console.warn('[Permissions] RLS permission denied - user may not have access to permissions table');
-            // Set default permissions for the user to avoid blocking the app
-            setPermissions({
-              id: '',
-              employee_id: employeeId,
-              can_access_inventory: true,
-              can_access_hr: true,
-              can_access_delivery: true,
-              can_access_transport_logistics: true,
-              can_access_wedding_invitations: true,
-              can_access_auto_real_estate: true,
-              can_access_legal: true,
-              can_access_ai: true,
-              can_access_settings: true,
-              is_admin: false,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            });
-          }
+          await api('/hr/permissions', {
+            method: 'POST',
+            token,
+            body: JSON.stringify(newPermissions)
+          });
+
+          console.log('[Permissions] Default permissions created successfully');
+          setPermissions(newPermissions);
+        } catch (insertErr) {
+          console.error('[Permissions] Error creating default permissions:', insertErr);
           // Don't throw, just log and continue
         }
-      } else if (data) {
-        console.log('[Permissions] Permissions loaded successfully');
-        setPermissions(data);
-      } else {
-        console.log('[Permissions] No permissions data returned, but no error');
       }
     } catch (err) {
       console.error('[Permissions] Unexpected error in fetchPermissions:', err);
@@ -195,12 +153,6 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
     // Super admin always has admin privileges
     if (user?.email === SUPER_ADMIN_EMAIL) {
       console.log('[Permissions] User is super admin:', user.email);
-      return true;
-    }
-    
-    // Check if user has admin role from auth.users
-    if (user?.user_metadata?.role === 'admin') {
-      console.log('[Permissions] User has admin role:', user.email);
       return true;
     }
     

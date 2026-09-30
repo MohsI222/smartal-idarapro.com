@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Shield, Loader2, Search, Crown, UserPlus, Lock, Unlock, Save } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
+import { api } from '@/lib/api';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,6 +45,7 @@ const SECTIONS: Section[] = [
   { key: 'can_access_inventory', label: 'المخزون / Inventory', icon: '📦', description: 'نظام إدارة المخزون ونقاط البيع' },
   { key: 'can_access_hr', label: 'الموارد البشرية / HR', icon: '👥', description: 'إدارة الموظفين والرواتب' },
   { key: 'can_access_delivery', label: 'التوصيل / Delivery', icon: '🚚', description: 'مركز التوصيل والطلبات' },
+  { key: 'can_access_contracts', label: 'العقود والتوقيع / Contracts', icon: '📝', description: 'العقود والتوقيع الإلكتروني' },
   { key: 'can_access_transport_logistics', label: 'النقل واللوجيستيك / Logistics', icon: '🚛', description: 'إدارة النقل واللوجيستيك' },
   { key: 'can_access_wedding_invitations', label: 'دعوات الأعراس / Weddings', icon: '🎉', description: 'إدارة دعوات الأعراس والمناسبات' },
   { key: 'can_access_legal', label: 'القانوني / Legal', icon: '⚖️', description: 'المستندات القانونية والعقود' },
@@ -59,57 +60,47 @@ export function PermissionsManagerList({ isAdmin }: PermissionsManagerListProps)
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, token } = useAuth();
 
   const fetchPermissions = async (employeeId: string) => {
     try {
       console.log('[PermissionsManagerList] Fetching permissions for employee_id:', employeeId);
       setLoading(true);
       
-      if (!supabase) {
-        throw new Error('Supabase client not initialized');
+      if (!token) {
+        throw new Error('Authentication token not available');
       }
 
-      const { data, error: fetchError } = await supabase
-        .from('permissions')
-        .select('*')
-        .eq('employee_id', employeeId)
-        .single();
-
-      if (fetchError) {
-        console.log('[PermissionsManagerList] Fetch error:', fetchError.code, fetchError.message);
-        if (fetchError.code === 'PGRST116') {
-          // Create default permissions if none exist
-          console.log('[PermissionsManagerList] Creating default permissions...');
-          const { data: newPermissions, error: insertError } = await supabase
-            .from('permissions')
-            .insert({
-              employee_id: employeeId,
-              can_access_inventory: true,
-              can_access_hr: true,
-              can_access_delivery: true,
-              can_access_transport_logistics: true,
-              can_access_wedding_invitations: true,
-              can_access_legal: true,
-              can_access_ai: true,
-              can_access_settings: true,
-              is_admin: false,
-            })
-            .select()
-            .single();
-
-          if (insertError) {
-            console.error('[PermissionsManagerList] Insert error:', insertError);
-            throw insertError;
-          }
-          console.log('[PermissionsManagerList] Default permissions created:', newPermissions);
-          setPermissions(newPermissions);
-        } else {
-          throw fetchError;
-        }
+      const response = await api<{ permissions: UserPermissions | null }>(`/hr/permissions/${employeeId}`, { token });
+      
+      if (response.permissions) {
+        console.log('[PermissionsManagerList] Permissions fetched:', response.permissions);
+        setPermissions(response.permissions);
       } else {
-        console.log('[PermissionsManagerList] Permissions fetched:', data);
-        setPermissions(data);
+        // Create default permissions if none exist
+        console.log('[PermissionsManagerList] Creating default permissions...');
+        const newPermissions: UserPermissions = {
+          employee_id: employeeId,
+          can_access_inventory: true,
+          can_access_hr: true,
+          can_access_delivery: true,
+          can_access_contracts: true,
+          can_access_transport_logistics: true,
+          can_access_wedding_invitations: true,
+          can_access_legal: true,
+          can_access_ai: true,
+          can_access_settings: true,
+          is_admin: false,
+        };
+        
+        await api('/hr/permissions', {
+          method: 'POST',
+          token,
+          body: JSON.stringify(newPermissions)
+        });
+        
+        console.log('[PermissionsManagerList] Default permissions created');
+        setPermissions(newPermissions);
       }
     } catch (err) {
       console.error('[PermissionsManagerList] Error:', err);
@@ -128,20 +119,20 @@ export function PermissionsManagerList({ isAdmin }: PermissionsManagerListProps)
   };
 
   const handleToggle = async (field: keyof UserPermissions) => {
-    if (!permissions || !selectedEmployee || !supabase) return;
+    if (!permissions || !selectedEmployee || !token) return;
 
     const newValue = !permissions[field];
     setPermissions({ ...permissions, [field]: newValue });
 
-    // Save immediately to Supabase
+    // Save immediately to backend
     try {
       setSaving(true);
-      const { error: updateError } = await supabase
-        .from('permissions')
-        .update({ [field]: newValue })
-        .eq('employee_id', selectedEmployee.id);
+      await api(`/hr/permissions/${selectedEmployee.id}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ [field]: newValue })
+      });
 
-      if (updateError) throw updateError;
       console.log('[Permissions] Saved:', field, newValue);
     } catch (err) {
       console.error('[Permissions] Error saving:', err);

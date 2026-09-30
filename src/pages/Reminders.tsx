@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Bell, Lock } from "lucide-react";
+import { Bell, Lock, Trash2, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ export function Reminders() {
   const { t } = useI18n();
   const allowed = isAdmin || (isApproved && approvedModules.includes("reminders"));
   const [rows, setRows] = useState<Row[]>([]);
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [form, setForm] = useState({
     channel: "email",
     target: "",
@@ -51,6 +52,57 @@ export function Reminders() {
     await load();
   };
 
+  const deleteReminder = async (id: string) => {
+    if (!token) return;
+    if (!window.confirm(t("common.confirmDelete"))) return;
+    try {
+      await api(`/reminders/${id}`, {
+        method: "DELETE",
+        token,
+      });
+      await load();
+    } catch (error) {
+      console.error("Error deleting reminder:", error);
+    }
+  };
+
+  const bulkDeleteReminders = async () => {
+    if (!token) return;
+    if (selectedRows.size === 0) return;
+    if (!window.confirm(t("common.confirmDeleteBulk"))) return;
+    try {
+      await api("/reminders/bulk-delete", {
+        method: "DELETE",
+        token,
+        body: JSON.stringify({ ids: Array.from(selectedRows) }),
+      });
+      setSelectedRows(new Set());
+      await load();
+    } catch (error) {
+      console.error("Error bulk deleting reminders:", error);
+    }
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedRows.size === rows.length) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(new Set(rows.map((r) => r.id)));
+    }
+  };
+
   if (!allowed) {
     return (
       <div className="rounded-2xl border border-orange-500/30 p-8 text-center space-y-4 max-w-lg mx-auto">
@@ -66,12 +118,20 @@ export function Reminders() {
 
   return (
     <div className="space-y-8 max-w-4xl">
-      <div className="flex items-center gap-3">
-        <Bell className="size-8 text-orange-400" />
-        <div>
-          <h1 className="text-2xl font-bold">{t("reminders.title")}</h1>
-          <p className="text-slate-400 text-sm">{t("reminders.subtitle")}</p>
+      <div className="flex items-center gap-3 justify-between">
+        <div className="flex items-center gap-3">
+          <Bell className="size-8 text-orange-400" />
+          <div>
+            <h1 className="text-2xl font-bold">{t("reminders.title")}</h1>
+            <p className="text-slate-400 text-sm">{t("reminders.subtitle")}</p>
+          </div>
         </div>
+        {selectedRows.size > 0 && (
+          <Button variant="destructive" size="sm" onClick={() => void bulkDeleteReminders()}>
+            <Trash2 className="size-4" />
+            {t("common.deleteSelected")} ({selectedRows.size})
+          </Button>
+        )}
       </div>
 
       <Card className="border-slate-800">
@@ -128,19 +188,46 @@ export function Reminders() {
         <table className="w-full text-sm">
           <thead className="bg-slate-900/80">
             <tr>
+              <th className="p-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={selectedRows.size === rows.length && rows.length > 0}
+                  onChange={toggleSelectAll}
+                  className="cursor-pointer"
+                />
+              </th>
               <th className="p-3 text-right">{t("reminders.tableChannel")}</th>
               <th className="p-3 text-right">{t("reminders.tableTarget")}</th>
               <th className="p-3 text-right">{t("reminders.tableMessage")}</th>
               <th className="p-3 text-right">{t("reminders.tableWhen")}</th>
+              <th className="p-3 w-10"></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-slate-800">
+                <td className="p-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedRows.has(r.id)}
+                    onChange={() => toggleSelectRow(r.id)}
+                    className="cursor-pointer"
+                  />
+                </td>
                 <td className="p-3">{r.channel}</td>
                 <td className="p-3">{r.target}</td>
                 <td className="p-3">{r.message}</td>
                 <td className="p-3">{r.due_at}</td>
+                <td className="p-3">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                    onClick={() => void deleteReminder(r.id)}
+                  >
+                    <Trash className="size-4" />
+                  </Button>
+                </td>
               </tr>
             ))}
           </tbody>

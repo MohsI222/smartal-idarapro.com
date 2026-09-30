@@ -4,7 +4,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -13,22 +12,7 @@ import { PUBLIC_SUPER_ADMIN_EMAIL } from "@/constants/publicSuperAdmin";
 import { isPrimaryAdminClient } from "@/lib/adminClient";
 import { api, ApiError, getDeviceFingerprint } from "@/lib/api";
 import { setTrialWatermarkExport } from "@/lib/exportPolicy";
-import { getAuthCallbackUrl } from "@/lib/authSiteUrl";
-import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 
-function mapSupabaseAuthError(msg: string): string {
-  const m = msg.toLowerCase();
-  if (m.includes("invalid login") || m.includes("invalid_credentials")) {
-    return "بريد أو كلمة مرور خاطئة";
-  }
-  if (m.includes("already registered") || m.includes("user already")) {
-    return "هذا البريد مسجّل مسبقاً — استخدم تسجيل الدخول";
-  }
-  if (m.includes("password")) {
-    return "كلمة المرور لا تستوفي الشروط";
-  }
-  return msg;
-}
 
 function mapApiError(err: unknown): string {
   if (!(err instanceof Error)) return "خطأ غير معروف";
@@ -70,24 +54,6 @@ function mapApiError(err: unknown): string {
     return "خادم التطبيق غير متاح حالياً — تحقق من إعدادات النشر أو تواصل مع الدعم.";
   }
   return m;
-}
-
-async function exchangeSupabaseSessionForIdara(
-  accessToken: string,
-  opts?: { referralCode?: string; startTrial?: boolean }
-) {
-  const fp = getDeviceFingerprint();
-  return api<{ token: string; user: User; whatsappNotifyUrl?: string }>("/auth/supabase-oauth", {
-    method: "POST",
-    body: JSON.stringify({
-      access_token: accessToken,
-      deviceFingerprint: fp,
-      deviceLabel: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : "",
-      referralCode: opts?.referralCode,
-      ref: opts?.referralCode,
-      startTrial: opts?.startTrial,
-    }),
-  });
 }
 
 export type User = {
@@ -153,8 +119,6 @@ type AuthContextValue = {
   subscriptionCountdown: { days: number; hours: number; minutes: number } | null;
   accountLocked: boolean;
   trialActive: boolean;
-  /** Supabase auth session for direct database access */
-  supabaseSession: any;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -169,7 +133,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [maxDevices, setMaxDevices] = useState(3);
   const [loading, setLoading] = useState(true);
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const [supabaseSession, setSupabaseSession] = useState<any>(null);
 
   // Check localStorage on mount only once for session isolation
   useEffect(() => {
@@ -195,11 +158,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(id);
   }, []);
 
-  const tryAdminBootstrap = useCallback(async () => {
-    // Disabled for security - no auto-login in production
-    return;
-  }, []);
-
   const refresh = useCallback(async () => {
     const effectiveToken = token ?? localStorage.getItem(TOKEN_KEY);
     if (!effectiveToken) {
@@ -217,7 +175,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setMaxDevices(me.maxDevices);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
-        bootstrapTriedRef.current = false;
         setToken(null);
         localStorage.removeItem(TOKEN_KEY);
         setUser(null);
@@ -227,40 +184,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     }
   }, [token]);
-
-  // Track Supabase auth state changes
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return;
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('[AuthContext] Supabase auth state changed:', event, session?.user?.email);
-        setSupabaseSession(session);
-        
-        // If Supabase session exists but we don't have an Idara token, exchange it
-        if (session?.access_token && !token) {
-          try {
-            const res = await exchangeSupabaseSessionForIdara(session.access_token);
-            localStorage.setItem(TOKEN_KEY, res.token);
-            setToken(res.token);
-            setUser(res.user);
-            await refresh();
-          } catch (e) {
-            console.error('[AuthContext] Failed to exchange Supabase session:', e);
-          }
-        }
-      }
-    );
-
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSupabaseSession(session);
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [token, refresh]);
 
   const adoptToken = useCallback((jwt: string) => {
     localStorage.setItem(TOKEN_KEY, jwt);
@@ -282,8 +205,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await refresh();
     };
 
-    const postLegacyLogin = () =>
-      api<{ token: string; user: User }>("/auth/login", {
+    try {
+      const res = await api<{ token: string; user: User }>("/auth/login", {
         method: "POST",
         body: JSON.stringify({
           email,
@@ -293,59 +216,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           deviceLabel,
         }),
       });
-
-    /** على localhost: جرّب الخادم المحلي أولاً (مستخدمون في Postgres) لتفادي «Failed to fetch» من Supabase فقط */
-    if (import.meta.env.DEV) {
-      try {
-        const res = await postLegacyLogin();
-        await persistSession(res);
-        return;
-      } catch (e) {
-        if (!(e instanceof ApiError && e.status === 401)) {
-          throw new Error(mapApiError(e));
-        }
-        if (!isSupabaseConfigured || !supabase) {
-          throw new Error(mapApiError(e));
-        }
-      }
-    }
-
-    if (isSupabaseConfigured && supabase) {
-      const sb = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
-      if (sb.data.session?.access_token) {
-        try {
-          const res = await exchangeSupabaseSessionForIdara(sb.data.session.access_token);
-          await persistSession(res);
-          return;
-        } catch (apiErr) {
-          throw new Error(mapApiError(apiErr));
-        }
-      }
-      if (sb.error) {
-        const m = sb.error.message?.toLowerCase() ?? "";
-        const maybeLegacy =
-          m.includes("invalid login") ||
-          m.includes("invalid_credentials") ||
-          m.includes("invalid email or password");
-        if (!maybeLegacy) {
-          throw new Error(mapSupabaseAuthError(sb.error.message));
-        }
-        if (import.meta.env.DEV) {
-          throw new Error("بريد أو كلمة مرور خاطئة");
-        }
-        /* إنتاج: حسابات قديمة في الخادم فقط — إعادة المحاولة عبر /auth/login */
-      } else {
-        throw new Error(
-          "لم يتم إنشاء جلسة. تحقق من تأكيد البريد الإلكتروني أو كلمة المرور."
-        );
-      }
-    }
-
-    try {
-      const res = await postLegacyLogin();
       await persistSession(res);
     } catch (apiErr) {
       throw new Error(mapApiError(apiErr));
@@ -358,37 +228,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     name: string,
     opts?: { referralCode?: string; startTrial?: boolean }
   ) => {
-    if (isSupabaseConfigured && supabase) {
-      const su = await supabase.auth.signUp({
-        email: email.trim(),
-        password,
-        options: {
-          data: { full_name: name.trim() },
-          emailRedirectTo: getAuthCallbackUrl(),
-        },
-      });
-      if (su.error) {
-        throw new Error(mapSupabaseAuthError(su.error.message));
-      }
-      const at = su.data.session?.access_token;
-      if (!at) {
-        return { needsEmailConfirmation: true };
-      }
-      try {
-        const res = await exchangeSupabaseSessionForIdara(at, {
-          referralCode: opts?.referralCode,
-          startTrial: opts?.startTrial,
-        });
-        localStorage.setItem(TOKEN_KEY, res.token);
-        setToken(res.token);
-        setUser(res.user);
-        await refresh();
-        return { whatsappNotifyUrl: res.whatsappNotifyUrl };
-      } catch (apiErr) {
-        throw new Error(mapApiError(apiErr));
-      }
-    }
-
     const fp = getDeviceFingerprint();
     try {
       const res = await api<{ token: string; user: User; whatsappNotifyUrl?: string }>("/auth/register", {
@@ -416,14 +255,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    if (supabase) {
-      void supabase.auth.signOut();
-    }
+    // Clear all local storage data
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('idara_token');
+    
+    // Clear all React state
     setToken(null);
     setUser(null);
     setSubscription(null);
     setDevices([]);
+    
+    // Clear any other cached data
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('cache_') || key.startsWith('query_') || key.startsWith('supabase_')) {
+        localStorage.removeItem(key);
+      }
+    });
   };
 
   const trialActive = useMemo(() => {
@@ -526,7 +373,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const base = [...TRIAL_MODULE_IDS];
       return visaAdminOk ? [...base, "visa"] : base;
     }
-    if (!isApproved || !subscription?.modules) return [];
+    // Regular users get all modules except visa (no subscription required)
+    if (!isApproved || !subscription?.modules) {
+      return visaAdminOk ? [...ALL_SAAS_MODULE_IDS.filter(m => m !== "visa"), "visa"] : ALL_SAAS_MODULE_IDS.filter(m => m !== "visa");
+    }
     try {
       const m = JSON.parse(subscription.modules) as string[];
       const list = Array.isArray(m) ? [...m] : [];
@@ -560,7 +410,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     subscriptionCountdown,
     accountLocked,
     trialActive,
-    supabaseSession,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useCallback } from "react";
-import { getSupabaseClient } from "@/lib/supabaseClient";
 
 type RealtimeEvent = "INSERT" | "UPDATE" | "DELETE";
 
@@ -16,119 +15,13 @@ interface RealtimeSubscriptionConfig {
  * Custom hook for managing Supabase Realtime subscriptions with automatic cleanup and auto-reconnect.
  * This hook ensures subscriptions are properly cleaned up when the component unmounts
  * to prevent memory leaks and performance issues.
+ *
+ * NOTE: Supabase Realtime has been removed. This hook is now a no-op.
+ * Use polling mechanisms instead for real-time updates.
  */
 export function useSupabaseRealtime(config: RealtimeSubscriptionConfig, enabled: boolean = true) {
-  const channelRef = useRef<any>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const supabase = getSupabaseClient();
-
-  const { table, filter, events = ["INSERT", "UPDATE", "DELETE"], onInsert, onUpdate, onDelete } = config;
-
-  // Memoize callbacks to prevent unnecessary re-subscriptions
-  const handleInsert = useCallback((payload: any) => {
-    if (onInsert) onInsert(payload);
-  }, [onInsert]);
-
-  const handleUpdate = useCallback((payload: any) => {
-    if (onUpdate) onUpdate(payload);
-  }, [onUpdate]);
-
-  const handleDelete = useCallback((payload: any) => {
-    if (onDelete) onDelete(payload);
-  }, [onDelete]);
-
-  useEffect(() => {
-    if (!enabled || !supabase) {
-      return;
-    }
-
-    // Clear any existing reconnect timeout
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-
-    // Create a unique channel name based on table and filter
-    const channelName = filter 
-      ? `realtime-${table}-${filter.replace(/[^a-zA-Z0-9]/g, '-')}`
-      : `realtime-${table}`;
-
-    const subscribe = () => {
-      const channel = supabase
-        .channel(channelName, {
-          config: {
-            broadcast: { self: true },
-          },
-        })
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table,
-            filter,
-          },
-          (payload) => {
-            const { eventType, new: newRecord, old: oldRecord } = payload;
-            
-            if (eventType === "INSERT" && events.includes("INSERT")) {
-              handleInsert(newRecord);
-            } else if (eventType === "UPDATE" && events.includes("UPDATE")) {
-              handleUpdate(newRecord);
-            } else if (eventType === "DELETE" && events.includes("DELETE")) {
-              handleDelete(oldRecord);
-            }
-          }
-        )
-        .subscribe((status, err) => {
-          if (status === "SUBSCRIBED") {
-            console.log(`[Realtime] Successfully subscribed to ${table}${filter ? ` with filter: ${filter}` : ''}`);
-          } else if (status === "CHANNEL_ERROR") {
-            console.error(`[Realtime] Error subscribing to ${table}:`, err);
-            // Auto-reconnect after 3 seconds on channel error
-            if (reconnectTimeoutRef.current) {
-              clearTimeout(reconnectTimeoutRef.current);
-            }
-            reconnectTimeoutRef.current = setTimeout(() => {
-              console.log(`[Realtime] Attempting to reconnect to ${table}...`);
-              subscribe();
-            }, 3000);
-          } else if (status === "TIMED_OUT") {
-            console.warn(`[Realtime] Subscription to ${table} timed out, attempting reconnect...`);
-            // Auto-reconnect after 2 seconds on timeout
-            if (reconnectTimeoutRef.current) {
-              clearTimeout(reconnectTimeoutRef.current);
-            }
-            reconnectTimeoutRef.current = setTimeout(() => {
-              console.log(`[Realtime] Attempting to reconnect to ${table}...`);
-              subscribe();
-            }, 2000);
-          } else if (status === "CLOSED") {
-            console.log(`[Realtime] Channel ${table} closed`);
-          }
-        });
-
-      channelRef.current = channel;
-    };
-
-    subscribe();
-
-    // Cleanup function to unsubscribe when component unmounts
-    return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-      
-      if (channelRef.current && supabase) {
-        console.log(`[Realtime] Cleaning up subscription to ${table}`);
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
-  }, [table, filter, events, enabled, handleInsert, handleUpdate, handleDelete, supabase]);
-
-  return channelRef;
+  // No-op - Supabase Realtime removed
+  return useRef<any>(null);
 }
 
 /**
@@ -251,7 +144,7 @@ export function useDeliveryProductsRealtime(
 
 /**
  * Hook for subscribing to hr_employees table changes
- * SECURITY: No filter to see all employees in the organization
+ * SECURITY: Filters by user_id to ensure data isolation - each user only sees their own employees
  */
 export function useHrEmployeesRealtime(
   userId: string,
@@ -263,7 +156,7 @@ export function useHrEmployeesRealtime(
   return useSupabaseRealtime(
     {
       table: "hr_employees",
-      filter: undefined, // No filter to see all employees
+      filter: userId ? `user_id=eq.${userId}` : undefined,
       events: ["INSERT", "UPDATE", "DELETE"],
       onInsert,
       onUpdate,
@@ -275,7 +168,8 @@ export function useHrEmployeesRealtime(
 
 /**
  * Hook for subscribing to hr_employees table changes without user_id filter
- * This is used for admin views where all employees need to be visible
+ * SECURITY WARNING: This should ONLY be used by Super Admin (lahcenm534@gmail.com)
+ * Regular users should never use this hook as it would expose all employees across all tenants
  */
 export function useHrEmployeesRealtimeAll(
   onInsert?: (employee: any) => void,
@@ -286,7 +180,7 @@ export function useHrEmployeesRealtimeAll(
   return useSupabaseRealtime(
     {
       table: "hr_employees",
-      filter: undefined, // No filter to see all employees
+      filter: undefined, // No filter - Super Admin only
       events: ["INSERT", "UPDATE", "DELETE"],
       onInsert,
       onUpdate,

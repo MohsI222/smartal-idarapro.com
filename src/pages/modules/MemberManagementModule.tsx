@@ -866,7 +866,7 @@ export function MemberManagementModule() {
                     type="date"
                     lang="en"
                     dir="ltr"
-                    value={editingMember.regDate}
+                    value={editingMember.regDate ? editingMember.regDate.split('T')[0] : ""}
                     onChange={(e) =>
                       setEditingMember({ ...editingMember, regDate: e.target.value })
                     }
@@ -879,7 +879,7 @@ export function MemberManagementModule() {
                     type="date"
                     lang="en"
                     dir="ltr"
-                    value={editingMember.endDate}
+                    value={editingMember.endDate ? editingMember.endDate.split('T')[0] : ""}
                     onChange={(e) =>
                       setEditingMember({ ...editingMember, endDate: e.target.value })
                     }

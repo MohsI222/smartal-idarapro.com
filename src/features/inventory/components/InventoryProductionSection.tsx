@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Download, FileSpreadsheet, FileText, MessageSquare, Paperclip, Plus, Search, Send, Trash2, X } from "lucide-react";
-import type { HrStaffRow, LogisticsQueueItem, ProductionRequestRow } from "@/lib/supabaseClient";
+import type { HrStaffRow, LogisticsQueueItem, ProductionRequestRow } from "@/lib/types";
 import type { TlMessage, TlWorker } from "@/lib/tlApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";

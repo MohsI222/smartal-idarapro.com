@@ -1,4 +1,4 @@
-import type { InventoryItem } from "@/lib/supabaseClient";
+import type { InventoryItem } from "@/lib/types";
 import { IMPORT_FALLBACK_INDEX, IMPORT_HEADER_ALIASES, RETAIL_TYPES, UNIT_KINDS } from "./constants";
 import type {
   InventoryImportKey,
@@ -151,7 +151,7 @@ export function parseInventoryLooseTextRows(raw: string, defaultRetailType: stri
   return parsed;
 }
 
-export function inventoryRowFromSupabase(item: InventoryItem): InventorySourceRow {
+export function inventoryRowFromLegacy(item: InventoryItem): InventorySourceRow {
   const name = String(item.name ?? item.sku ?? item.reference ?? item.id).trim() || item.id;
   return {
     id: item.id,
@@ -160,7 +160,7 @@ export function inventoryRowFromSupabase(item: InventoryItem): InventorySourceRo
     sku: String(item.sku ?? "").trim(),
     barcode: String(item.barcode ?? "").trim(),
     reference: String(item.reference ?? "").trim(),
-    source: "supabase",
+    source: "legacy",
   };
 }
 

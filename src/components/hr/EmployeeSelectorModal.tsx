@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Search, Loader2, RefreshCw } from 'lucide-react';
-import { supabase } from '@/lib/supabaseClient';
+import { api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 
 interface HrEmployee {
   id: string;
@@ -29,28 +30,22 @@ export function EmployeeSelectorModal({
   const [employees, setEmployees] = useState<HrEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const { token } = useAuth();
 
   const fetchEmployees = async () => {
     try {
-      console.log('[EmployeeSelectorModal] Fetching employees from hr_employees...');
+      console.log('[EmployeeSelectorModal] Fetching employees from backend API...');
       setLoading(true);
       
-      if (!supabase) {
-        throw new Error('Supabase client not initialized');
+      if (!token) {
+        throw new Error('Authentication token not available');
       }
       
-      const { data: employeesData, error: fetchError } = await supabase
-        .from('hr_employees')
-        .select('id, user_id, name, employee_id, work_number')
-        .order('created_at', { ascending: false });
+      const response = await api<{ employees: any[] }>('/hr/employees', { token });
+      const employeesData = response.employees || [];
 
-      if (fetchError) {
-        console.error('[EmployeeSelectorModal] Fetch error:', fetchError);
-        throw fetchError;
-      }
-
-      console.log('[EmployeeSelectorModal] Fetched employees:', employeesData?.length || 0);
-      const employeesList: HrEmployee[] = (employeesData || []).map((emp: any) => ({
+      console.log('[EmployeeSelectorModal] Fetched employees:', employeesData.length);
+      const employeesList: HrEmployee[] = employeesData.map((emp: any) => ({
         id: emp.id,
         user_id: emp.user_id,
         name: emp.name,

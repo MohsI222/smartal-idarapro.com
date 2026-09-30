@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { supabase, fetchInventory, reserveMaterial, fetchProductsAwaitingQA, confirmProductQA, enqueueLogistics, fetchProductionRequests, createProductionRequest, fetchLogisticsQueue, fetchHrStaff, assignLogisticsItem } from "@/lib/supabaseClient";
+import { api } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import type { InventoryItem, ProductionRequestRow, LogisticsQueueItem, HrStaffRow } from "@/lib/types";
 
 export default function CompanySectorPanel() {
   const [tab, setTab] = useState<"production" | "maintenance" | "quality">("production");
@@ -17,54 +18,52 @@ export default function CompanySectorPanel() {
 
   useEffect(() => {
     const refresh = async () => {
-      fetchInventory().then(setInventory).catch(() => setInventory([]));
-      fetchProductsAwaitingQA().then(setProducts).catch(() => setProducts([]));
-      fetchProductionRequests().then(setProductionRequests).catch(() => setProductionRequests([]));
-      fetchLogisticsQueue().then(setLogisticsQueue).catch(() => setLogisticsQueue([]));
-      fetchHrStaff().then(setHrStaff).catch(() => setHrStaff([]));
+      try {
+        const invRes = await api.get("/inventory");
+        setInventory(invRes.data || []);
+      } catch { setInventory([]); }
+      try {
+        const prodRes = await api.get("/inventory/products-awaiting-qa");
+        setProducts(prodRes.data || []);
+      } catch { setProducts([]); }
+      try {
+        const reqRes = await api.get("/production-requests");
+        setProductionRequests(reqRes.data || []);
+      } catch { setProductionRequests([]); }
+      try {
+        const logRes = await api.get("/logistics-queue");
+        setLogisticsQueue(logRes.data || []);
+      } catch { setLogisticsQueue([]); }
+      try {
+        const hrRes = await api.get("/hr/employees");
+        setHrStaff(hrRes.data || []);
+      } catch { setHrStaff([]); }
     };
 
     refresh();
 
-    const inventoryChannel = supabase?.channel("inventory-changes").on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "inventory" },
-      async () => {
-        setInventory(await fetchInventory());
-      }
-    );
-    const productChannel = supabase?.channel("products-changes").on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "products" },
-      async () => {
-        setProducts(await fetchProductsAwaitingQA());
-      }
-    );
-    const requestChannel = supabase?.channel("production-requests").on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "production_requests" },
-      async () => {
-        setProductionRequests(await fetchProductionRequests());
-      }
-    );
-    const logisticsChannel = supabase?.channel("logistics-queue").on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "logistics_queue" },
-      async () => {
-        setLogisticsQueue(await fetchLogisticsQueue());
-      }
-    );
-
-    inventoryChannel?.subscribe();
-    productChannel?.subscribe();
-    requestChannel?.subscribe();
-    logisticsChannel?.subscribe();
+    // Polling for data updates
+    const interval = setInterval(async () => {
+      try {
+        const invRes = await api.get("/inventory");
+        setInventory(invRes.data || []);
+      } catch {}
+      try {
+        const prodRes = await api.get("/inventory/products-awaiting-qa");
+        setProducts(prodRes.data || []);
+      } catch {}
+      try {
+        const reqRes = await api.get("/production-requests");
+        setProductionRequests(reqRes.data || []);
+      } catch {}
+      try {
+        const logRes = await api.get("/logistics-queue");
+        setLogisticsQueue(logRes.data || []);
+      } catch {}
+    }, 30000);
 
     return () => {
-      inventoryChannel?.unsubscribe();
-      productChannel?.unsubscribe();
-      requestChannel?.unsubscribe();
-      logisticsChannel?.unsubscribe();
+      clearInterval(interval);
     };
   }, []);
 

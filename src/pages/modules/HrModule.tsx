@@ -31,8 +31,6 @@ import {
   createEmptyHrEmployeeDraft,
 } from "@/features/hr/employee-helpers";
 import type { HrEmployeeDraft } from "@/features/hr/types";
-import { useHrEmployeesRealtime } from "@/hooks/useSupabaseRealtime";
-import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
 
 type HrEmployee = {
   id: string;
@@ -142,19 +140,11 @@ function HrModule() {
   const load = useCallback(async () => {
     if (!allowed) return;
     try {
-      // Fetch employees - use Express API for Super Admin, Supabase for regular users
+      // Fetch employees - use Express API for all users
       let employeesData: HrEmployee[] = [];
       
-      if (isAdmin && token) {
-        // Super Admin: use Express API endpoint to bypass RLS
-        try {
-          const m = await api<HrEmployee[]>("/super-admin/hr-employees", { token });
-          employeesData = Array.isArray(m) ? m : [];
-        } catch (e) {
-          console.error("[hr] Super Admin fetch error:", e);
-        }
-      } else if (token && allowed) {
-        // Regular user: use Neon API
+      if (token && allowed) {
+        // All users (including Super Admin): use regular endpoint with tenant isolation
         try {
           const m = await api<{ employees: HrEmployee[] }>("/hr/employees", { token });
           employeesData = Array.isArray(m.employees) ? m.employees : [];
@@ -192,26 +182,16 @@ function HrModule() {
     void load();
   }, [load]);
 
-  // Realtime subscription for hr_employees table
-  useHrEmployeesRealtime(
-    user?.id || "",
-    useCallback((newEmployee: any) => {
-      setEmployees((prev) => {
-        const exists = prev.some((e) => e.id === newEmployee.id);
-        if (exists) {
-          return prev.map((e) => (e.id === newEmployee.id ? newEmployee : e));
-        }
-        return [newEmployee, ...prev];
-      });
-    }, []),
-    useCallback((updatedEmployee: any) => {
-      setEmployees((prev) => prev.map((e) => (e.id === updatedEmployee.id ? updatedEmployee : e)));
-    }, []),
-    useCallback((deletedEmployee: any) => {
-      setEmployees((prev) => prev.filter((e) => e.id !== deletedEmployee.id));
-    }, []),
-    isSupabaseConfigured && allowed
-  );
+  // Polling for employee data updates (replaces Supabase Realtime)
+  useEffect(() => {
+    if (!allowed || !user?.id) return;
+    
+    const interval = setInterval(async () => {
+      await load();
+    }, 30000); // Poll every 30 seconds
+    
+    return () => clearInterval(interval);
+  }, [allowed, user?.id, load]);
 
   useEffect(() => {
     const d: Record<string, HrEmployee> = {};
@@ -227,23 +207,8 @@ function HrModule() {
 
   const loadAbsenceRecords = useCallback(async () => {
     try {
-      if (isAdmin && token) {
-        // Super Admin: use Express API endpoint to bypass RLS
-        const response = await api("/super-admin/hr-absence-records", {
-          method: "GET",
-          token,
-        });
-        const formattedRecords = (response as any[]).map((record: any) => ({
-          id: record.id,
-          employeeId: record.employee_id,
-          fromDate: record.from_date,
-          toDate: record.to_date,
-          reason: record.reason,
-          returnDate: record.return_date,
-        }));
-        setAbsenceRecords(formattedRecords);
-      } else if (token && allowed) {
-        // Regular user: use Neon API
+      if (token && allowed) {
+        // All users (including Super Admin): use regular endpoint with tenant isolation
         try {
           const m = await api<{ records: any[] }>("/hr/absence-records", { token });
           const formattedRecords = (m.records || []).map((record: any) => ({
@@ -256,7 +221,6 @@ function HrModule() {
           }));
           setAbsenceRecords(formattedRecords);
         } catch (e) {
-          console.error("[hr] Absence records fetch error:", e);
           setAbsenceRecords([]);
         }
       } else {
@@ -266,7 +230,7 @@ function HrModule() {
       console.error('Failed to load absence records:', error);
       setAbsenceRecords([]);
     }
-  }, [isAdmin, token, isSupabaseConfigured, user?.id, supabase]);
+  }, [token, allowed]);
 
   useEffect(() => {
     loadAbsenceRecords();
@@ -283,17 +247,6 @@ function HrModule() {
           token,
           body: JSON.stringify(employeePayload(row)),
         });
-      } else if (supabase) {
-        // Regular user: use Supabase
-        const { error: supabaseError } = await supabase
-          .from('hr_employees')
-          .update(employeePayload(row))
-          .eq('id', id);
-        
-        if (supabaseError) {
-          console.error("Failed to update employee in Supabase:", supabaseError);
-          throw supabaseError;
-        }
       } else if (token && allowed) {
         // Regular user: use Neon API
         await api(`/hr/employees/${id}`, {
@@ -380,8 +333,6 @@ function HrModule() {
   }, [employees]);
 
   const addEmployee = async () => {
-    console.log("addEmployee called", { form, supabase: !!supabase });
-    
     if (!form.name) {
       alert(locale.startsWith("ar") ? "يرجى ملء الاسم على الأقل" : "Please fill in at least the name");
       return;
@@ -563,7 +514,7 @@ function HrModule() {
   };
 
   const saveImportedEmployees = async () => {
-    if (!supabase || importDrafts.length === 0) return;
+    if (!token || importDrafts.length === 0) return;
     
     try {
       setIsImporting(true);
@@ -722,22 +673,8 @@ function HrModule() {
     }
     
     try {
-      if (isAdmin && token) {
-        // Super Admin: use Express API endpoint to bypass RLS
-        await api("/super-admin/hr-absence-records", {
-          method: "POST",
-          token,
-          body: JSON.stringify({
-            employee_id: absenceForm.employeeId,
-            from_date: absenceForm.fromDate,
-            to_date: absenceForm.toDate,
-            reason: absenceForm.reason,
-            return_date: absenceForm.returnDate || null,
-            user_id: user?.id,
-          }),
-        });
-      } else if (token) {
-        // Regular user: use Neon API
+      if (token) {
+        // All users (including Super Admin): use regular endpoint with tenant isolation
         await api("/hr/absence-records", {
           method: "POST",
           token,
@@ -751,7 +688,6 @@ function HrModule() {
           }),
         });
       } else {
-        alert(locale.startsWith("ar") ? "Authentication error" : "Authentication error");
         return;
       }
       
@@ -776,25 +712,14 @@ function HrModule() {
     }
     
     try {
-      if (isAdmin && token) {
-        // Super Admin: use Express API endpoint to bypass RLS
-        await api(`/super-admin/hr-absence-records/${recordId}`, {
+      if (token && allowed) {
+        // All users (including Super Admin): use regular endpoint with tenant isolation
+        await api(`/hr/absence-records/${recordId}`, {
           method: "DELETE",
           token,
         });
-      } else if (supabase) {
-        // Regular user: use Supabase
-        const { error: supabaseError } = await supabase
-          .from('hr_absence_records')
-          .delete()
-          .eq('id', recordId);
-        
-        if (supabaseError) {
-          alert(locale.startsWith("ar") ? "فشل حذف السجل: " + supabaseError.message : "Failed to delete record: " + supabaseError.message);
-          return;
-        }
       } else {
-        alert(locale.startsWith("ar") ? "Supabase غير متصل" : "Supabase not connected");
+        alert(locale.startsWith("ar") ? "غير مصرح" : "Not authorized");
         return;
       }
       
@@ -1208,19 +1133,19 @@ function HrModule() {
               <Field
                 label={t("hr.labelContractEndOptional")}
                 type="date"
-                value={form.contract_end ?? ""}
+                value={form.contract_end ? form.contract_end.split('T')[0] : ""}
                 onChange={(v) => setForm((f) => ({ ...f, contract_end: v || null }))}
               />
               <Field
                 label={t("hr.enterprise.hireDate")}
                 type="date"
-                value={form.start_date ?? ""}
+                value={form.start_date ? form.start_date.split('T')[0] : ""}
                 onChange={(v) => setForm((f) => ({ ...f, start_date: v }))}
               />
               <Field
                 label={t("hr.labelBirthDate")}
                 type="date"
-                value={form.birth_date ?? ""}
+                value={form.birth_date ? form.birth_date.split('T')[0] : ""}
                 onChange={(v) => setForm((f) => ({ ...f, birth_date: v }))}
               />
               <Field

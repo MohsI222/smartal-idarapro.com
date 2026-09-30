@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, FileSpreadsheet, Gavel, Lock, Plus } from "lucide-react";
+import { Download, FileSpreadsheet, Gavel, Lock, Plus, Trash2, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,11 +23,12 @@ type CaseRow = {
 
 function LawModule() {
   const { t, locale, isRtl } = useI18n();
-  const { token, isApproved, approvedModules, isAdmin } = useAuth();
+  const { token, isApproved, approvedModules, isAdmin, user } = useAuth();
   const allowed = isAdmin || (isApproved && approvedModules.includes("law"));
   const [cases, setCases] = useState<CaseRow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, CaseRow>>({});
   const [form, setForm] = useState({ title: "", client_name: "", deadline: todayIsoLocal() });
+  const [selectedCases, setSelectedCases] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     if (!token || !allowed) return;
@@ -114,6 +115,57 @@ function LawModule() {
     await load();
   };
 
+  const deleteCase = async (id: string) => {
+    if (!token) return;
+    if (!window.confirm(t("common.confirmDelete"))) return;
+    try {
+      await api(`/law/cases/${id}`, {
+        method: "DELETE",
+        token,
+      });
+      await load();
+    } catch (error) {
+      console.error("Error deleting case:", error);
+    }
+  };
+
+  const bulkDeleteCases = async () => {
+    if (!token) return;
+    if (selectedCases.size === 0) return;
+    if (!window.confirm(t("common.confirmDeleteBulk"))) return;
+    try {
+      await api("/law/cases/bulk-delete", {
+        method: "DELETE",
+        token,
+        body: JSON.stringify({ ids: Array.from(selectedCases) }),
+      });
+      setSelectedCases(new Set());
+      await load();
+    } catch (error) {
+      console.error("Error bulk deleting cases:", error);
+    }
+  };
+
+  const toggleSelectCase = (id: string) => {
+    setSelectedCases((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedCases.size === cases.length) {
+      setSelectedCases(new Set());
+    } else {
+      setSelectedCases(new Set(cases.map((c) => c.id)));
+    }
+  };
+
   const exportPdf = async () => {
     const dir = isRtl ? "rtl" : "ltr";
     const headers = [
@@ -173,6 +225,12 @@ function LawModule() {
             <Download className="size-4" />
             {t("pdf.export")}
           </Button>
+          {selectedCases.size > 0 && (
+            <Button variant="destructive" size="sm" onClick={() => void bulkDeleteCases()}>
+              <Trash2 className="size-4" />
+              {t("common.deleteSelected")} ({selectedCases.size})
+            </Button>
+          )}
           <Button variant="outline" size="sm" data-nav-index="2" data-nav-group="law-export" asChild>
             <Link to="/app/reminders">{t("nav.reminders")}</Link>
           </Button>
@@ -211,7 +269,7 @@ function LawModule() {
               type="date"
               lang="en"
               dir="ltr"
-              value={form.deadline}
+              value={form.deadline ? form.deadline.split('T')[0] : ""}
               data-nav-index="5" data-nav-group="law-add-case"
               onChange={(e) => setForm((f) => ({ ...f, deadline: e.target.value }))}
             />
@@ -224,11 +282,20 @@ function LawModule() {
         <table className="w-full text-sm">
           <thead className="bg-slate-900/80">
             <tr>
+              <th className="p-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={selectedCases.size === cases.length && cases.length > 0}
+                  onChange={toggleSelectAll}
+                  className="cursor-pointer"
+                />
+              </th>
               <th className="p-3 text-right min-w-[120px]">{t("tbl.caseTitle")}</th>
               <th className="p-3 text-right min-w-[120px]">{t("tbl.client")}</th>
               <th className="p-3 text-right min-w-[110px]">{t("tbl.deadline")}</th>
               <th className="p-3 text-right min-w-[100px]">{t("tbl.status")}</th>
               <th className="p-3 w-24">{t("common.saveRow")}</th>
+              <th className="p-3 w-10"></th>
             </tr>
           </thead>
           <tbody>
@@ -236,6 +303,14 @@ function LawModule() {
               const d = drafts[c.id] ?? c;
               return (
                 <tr key={c.id} className="border-t border-slate-800">
+                  <td className="p-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedCases.has(c.id)}
+                      onChange={() => toggleSelectCase(c.id)}
+                      className="cursor-pointer"
+                    />
+                  </td>
                   <td className="p-2">
                     <Input
                       className="h-9 bg-slate-900/50 border-slate-700"
@@ -304,6 +379,16 @@ function LawModule() {
                       onClick={() => void saveRow(c.id)}
                     >
                       {t("common.saveRow")}
+                    </Button>
+                  </td>
+                  <td className="p-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="w-full text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                      onClick={() => void deleteCase(c.id)}
+                    >
+                      <Trash className="size-4" />
                     </Button>
                   </td>
                 </tr>

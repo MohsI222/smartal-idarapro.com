@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { supabase } from '@/lib/supabaseClient';
+import { api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import type { UserPermissions } from '@/context/PermissionsContext';
 
 interface PermissionsManagerProps {
@@ -19,50 +20,44 @@ export function PermissionsManager({ userId, userName, isAdmin = false, onSave }
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { token } = useAuth();
 
   const fetchPermissions = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      if (!supabase) {
-        throw new Error('Supabase client not initialized');
+      if (!token) {
+        throw new Error('Authentication token not available');
       }
 
-      const { data, error: fetchError } = await supabase
-        .from('permissions')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
-
-      if (fetchError) {
-        if (fetchError.code === 'PGRST116') {
-          // Create default permissions if none exist
-          const { data: newPermissions, error: insertError } = await supabase
-            .from('permissions')
-            .insert({
-              user_id: userId,
-              can_access_inventory: true,
-              can_access_hr: true,
-              can_access_delivery: true,
-              can_access_transport_logistics: true,
-              can_access_wedding_invitations: true,
-              can_access_auto_real_estate: true,
-              can_access_legal: true,
-              can_access_ai: true,
-              can_access_settings: true,
-              is_admin: false,
-            })
-            .select()
-            .single();
-
-          if (insertError) throw insertError;
-          setPermissions(newPermissions);
-        } else {
-          throw fetchError;
-        }
+      const response = await api<{ permissions: UserPermissions | null }>(`/hr/permissions/user/${userId}`, { token });
+      
+      if (response.permissions) {
+        setPermissions(response.permissions);
       } else {
-        setPermissions(data);
+        // Create default permissions if none exist
+        const newPermissions: UserPermissions = {
+          user_id: userId,
+          can_access_inventory: true,
+          can_access_hr: true,
+          can_access_delivery: true,
+          can_access_transport_logistics: true,
+          can_access_wedding_invitations: true,
+          can_access_auto_real_estate: true,
+          can_access_legal: true,
+          can_access_ai: true,
+          can_access_settings: true,
+          is_admin: false,
+        };
+        
+        await api('/hr/permissions', {
+          method: 'POST',
+          token,
+          body: JSON.stringify(newPermissions)
+        });
+        
+        setPermissions(newPermissions);
       }
     } catch (err) {
       console.error('[PermissionsManager] Error:', err);
@@ -77,15 +72,16 @@ export function PermissionsManager({ userId, userName, isAdmin = false, onSave }
   }, [userId]);
 
   const handleSave = async () => {
-    if (!permissions || !supabase) return;
+    if (!permissions || !token) return;
 
     try {
       setSaving(true);
       setError(null);
 
-      const { error: updateError } = await supabase
-        .from('permissions')
-        .update({
+      await api(`/hr/permissions/user/${userId}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({
           can_access_inventory: permissions.can_access_inventory,
           can_access_hr: permissions.can_access_hr,
           can_access_delivery: permissions.can_access_delivery,
@@ -97,9 +93,7 @@ export function PermissionsManager({ userId, userName, isAdmin = false, onSave }
           can_access_settings: permissions.can_access_settings,
           is_admin: permissions.is_admin,
         })
-        .eq('user_id', userId);
-
-      if (updateError) throw updateError;
+      });
 
       onSave?.();
     } catch (err) {
@@ -139,6 +133,7 @@ export function PermissionsManager({ userId, userName, isAdmin = false, onSave }
     { key: 'can_access_inventory' as const, label: 'Inventory/POS', icon: '📦' },
     { key: 'can_access_hr' as const, label: 'HR Module', icon: '👥' },
     { key: 'can_access_delivery' as const, label: 'Delivery Hub', icon: '🚚' },
+    { key: 'can_access_contracts' as const, label: 'Contracts & E-Signature', icon: '📝' },
     { key: 'can_access_transport_logistics' as const, label: 'Transport Logistics', icon: '🚛' },
     { key: 'can_access_auto_real_estate' as const, label: 'Auto & Real Estate', icon: '🏠' },
     { key: 'can_access_wedding_invitations' as const, label: 'Wedding Invitations', icon: '🎉' },

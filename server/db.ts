@@ -169,6 +169,50 @@ export async function initDatabase(): Promise<void> {
             console.warn("[db] Could not add custom_domain field:", alterErr instanceof Error ? alterErr.message : alterErr);
           }
 
+          // Add categories field to delivery_hub_stores if it doesn't exist
+          try {
+            await initPool.query(`
+              ALTER TABLE public.delivery_hub_stores
+              ADD COLUMN IF NOT EXISTS categories TEXT
+            `);
+            console.log("[db] Added categories field to delivery_hub_stores");
+          } catch (alterErr) {
+            console.warn("[db] Could not add categories field:", alterErr instanceof Error ? alterErr.message : alterErr);
+          }
+
+          // Add can_access_contracts to permissions table if it doesn't exist
+          try {
+            await initPool.query(`
+              ALTER TABLE public.permissions
+              ADD COLUMN IF NOT EXISTS can_access_contracts BOOLEAN DEFAULT false
+            `);
+            console.log("[db] Added can_access_contracts field to permissions");
+          } catch (alterErr) {
+            console.warn("[db] Could not add can_access_contracts field:", alterErr instanceof Error ? alterErr.message : alterErr);
+          }
+
+          // Add logo_url column to contract_templates table if it doesn't exist
+          try {
+            await initPool.query(`
+              ALTER TABLE public.contract_templates
+              ADD COLUMN IF NOT EXISTS logo_url TEXT
+            `);
+            console.log("[db] Added logo_url field to contract_templates");
+          } catch (alterErr) {
+            console.warn("[db] Could not add logo_url field to contract_templates:", alterErr instanceof Error ? alterErr.message : alterErr);
+          }
+
+          // Add logo_url column to contracts table if it doesn't exist
+          try {
+            await initPool.query(`
+              ALTER TABLE public.contracts
+              ADD COLUMN IF NOT EXISTS logo_url TEXT
+            `);
+            console.log("[db] Added logo_url field to contracts");
+          } catch (alterErr) {
+            console.warn("[db] Could not add logo_url field to contracts:", alterErr instanceof Error ? alterErr.message : alterErr);
+          }
+
           // Create delivery_hub_owners table if it doesn't exist
           try {
             await initPool.query(`
@@ -207,7 +251,7 @@ export async function initDatabase(): Promise<void> {
                   'أسرع توصيل بأفضل جودة 🚀',
                   'neon-modern',
                   'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=60',
-                  true
+                  1
                 )
                 ON CONFLICT (slug) DO NOTHING
                 RETURNING id
@@ -268,10 +312,41 @@ export async function initDatabase(): Promise<void> {
             console.warn("[db] Could not create updated_at trigger for inventory_products:", triggerErr instanceof Error ? triggerErr.message : triggerErr);
           }
 
+          // Create shift_reports table if it doesn't exist
+          try {
+            const createShiftReportsTableSql = `
+              CREATE TABLE IF NOT EXISTS public.shift_reports (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                shift_date DATE NOT NULL,
+                shift_group TEXT NOT NULL,
+                start_time TIMESTAMPTZ,
+                end_time TIMESTAMPTZ,
+                shift_description TEXT,
+                customer_name TEXT,
+                customer_number TEXT,
+                week TEXT,
+                operations_log JSONB DEFAULT '[]'::jsonb,
+                sales_count INTEGER DEFAULT 0,
+                stock_add_count INTEGER DEFAULT 0,
+                stock_edit_count INTEGER DEFAULT 0,
+                total_operations INTEGER DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+              CREATE INDEX IF NOT EXISTS idx_shift_reports_user_date ON public.shift_reports(user_id, shift_date);
+              CREATE INDEX IF NOT EXISTS idx_shift_reports_date_group ON public.shift_reports(shift_date, shift_group);
+            `;
+            await initPool.query(createShiftReportsTableSql);
+            console.log("[db] Created shift_reports table");
+          } catch (shiftReportsErr) {
+            console.warn("[db] Could not create shift_reports table:", shiftReportsErr instanceof Error ? shiftReportsErr.message : shiftReportsErr);
+          }
+
           // Create demo products for demo store if they don't exist
           if (demoStoreId) {
             try {
-              await initPool.query(`
+              const insertDemoProductsSql = `
                 INSERT INTO public.delivery_hub_products (id, store_id, title, category, description, price, original_price, image_url, in_stock, sort_order, stock_quantity, low_stock_threshold)
                 VALUES 
                   (
@@ -317,7 +392,8 @@ export async function initDatabase(): Promise<void> {
                     10
                   )
                 ON CONFLICT (id) DO NOTHING
-              `, [demoStoreId]);
+              `;
+              await initPool.query(insertDemoProductsSql, [demoStoreId]);
               console.log("[db] Created demo products");
             } catch (demoProductsErr) {
               console.warn("[db] Could not create demo products:", demoProductsErr instanceof Error ? demoProductsErr.message : demoProductsErr);

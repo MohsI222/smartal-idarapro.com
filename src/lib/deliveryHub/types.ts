@@ -36,6 +36,7 @@ export type Store = {
   tiktok_url: string | null;
   youtube_url: string | null;
   custom_domain: string | null;
+  categories: string | null; // JSON array of custom categories (e.g., '["سيارات جديدة", "سيارات مستعملة", "قطع غيار"]')
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -63,11 +64,11 @@ export type Product = {
 export type OrderItem = {
   id: string;
   order_id: string;
-  product_id: string | null;
-  title: string;
-  price: number;
+  product_id: string;
+  product_name: string;
   quantity: number;
-  created_at: string;
+  unit_price: number;
+  line_total: number;
 };
 
 export type Order = {
@@ -76,12 +77,10 @@ export type Order = {
   store_slug?: string;
   customer_name: string;
   customer_phone: string;
-  address: string | null;
+  customer_address: string;
   notes: string | null;
-  lat: number | null;
-  lng: number | null;
   status: OrderStatus;
-  total: number;
+  total_amount: number;
   created_at: string;
   updated_at: string;
   order_items?: OrderItem[];

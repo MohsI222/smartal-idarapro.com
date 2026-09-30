@@ -75,8 +75,7 @@ export async function customDomainMiddleware(
       .prepare(`
         SELECT id, slug, name 
         FROM public.delivery_hub_stores 
-        WHERE custom_domain = ? 
-        AND is_active = true
+        WHERE custom_domain = ?
       `)
       .get(normalizedHost) as { id: string; slug: string; name: string } | undefined;
 

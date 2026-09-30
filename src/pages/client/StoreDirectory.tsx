@@ -8,7 +8,6 @@ import {
   Clock,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase as sharedSupabase } from "@/lib/supabaseClient";
 
 interface Store {
   id: string;
@@ -43,23 +42,13 @@ export function StoreDirectory() {
 
   const fetchStores = async () => {
     try {
-      if (!sharedSupabase) {
-        throw new Error("supabase_not_configured");
-      }
-
-      const { data, error } = await sharedSupabase
-        .from('stores')
-        .select('*')
-        .eq('is_active', true)
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-      setStores(data || []);
+      const response = await fetch('/api/delivery-hub/stores/public');
+      if (!response.ok) throw new Error('Failed to fetch stores');
+      const data = await response.json();
+      setStores(data.stores || []);
     } catch (error) {
       console.error('Error fetching stores:', error);
-      toast.error(error instanceof Error && error.message === 'supabase_not_configured'
-        ? 'ربط Supabase غير مهيأ لهذا القسم'
-        : 'حدث خطأ أثناء تحميل المتاجر');
+      toast.error('حدث خطأ أثناء تحميل المتاجر');
     } finally {
       setLoading(false);
     }

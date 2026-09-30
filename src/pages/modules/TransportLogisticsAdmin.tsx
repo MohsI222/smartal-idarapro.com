@@ -11,6 +11,8 @@ import {
   TL_DEPT_SLUGS,
   tlCreateWorker,
   tlDeleteIncident,
+  tlDeleteOps,
+  tlDeleteVehicle,
   tlDeleteWorker,
   tlIncidents,
   tlOps,
@@ -36,6 +38,8 @@ export function TransportLogisticsAdmin() {
   const [incidents, setIncidents] = useState<TlIncident[]>([]);
   const [deptVehicles, setDeptVehicles] = useState<Record<string, TlVehicleLog[]>>({});
   const [deptOps, setDeptOps] = useState<Record<string, TlOpsLog[]>>({});
+  const [selectedVehicles, setSelectedVehicles] = useState<Set<string>>(new Set());
+  const [selectedOps, setSelectedOps] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [form, setForm] = useState({
@@ -135,6 +139,11 @@ export function TransportLogisticsAdmin() {
 
   useEffect(() => {
     void reload();
+    // Auto-refresh every 30 seconds
+    const interval = setInterval(() => {
+      void reload();
+    }, 30000);
+    return () => clearInterval(interval);
   }, [reload]);
 
   /** رابط يمر عبر تسجيل الدخول ثم يوجّه للقسم مع الرمز السحري — صالح للأجهزة الجديدة */
@@ -257,6 +266,102 @@ export function TransportLogisticsAdmin() {
     if (!token) return;
     try {
       await tlDeleteIncident(token, id);
+      void reload();
+    } catch {
+      toast.error(t("tl.saveErr"));
+    }
+  };
+
+  const deleteVehicleLog = async (id: string) => {
+    if (!token) return;
+    if (!confirm(t("tl.confirmDelete"))) return;
+    try {
+      await tlDeleteVehicle(token, id);
+      toast.success(t("tl.deleted"));
+      void reload();
+    } catch {
+      toast.error(t("tl.saveErr"));
+    }
+  };
+
+  const deleteOpsLog = async (id: string) => {
+    if (!token) return;
+    if (!confirm(t("tl.confirmDelete"))) return;
+    try {
+      await tlDeleteOps(token, id);
+      toast.success(t("tl.deleted"));
+      void reload();
+    } catch {
+      toast.error(t("tl.saveErr"));
+    }
+  };
+
+  const toggleSelectVehicle = (id: string) => {
+    setSelectedVehicles((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllVehicles = (dept: string) => {
+    const logs = deptVehicles[dept] ?? [];
+    if (selectedVehicles.size === logs.length && logs.every((r) => selectedVehicles.has(r.id))) {
+      setSelectedVehicles(new Set());
+    } else {
+      setSelectedVehicles(new Set(logs.map((r) => r.id)));
+    }
+  };
+
+  const deleteSelectedVehicles = async () => {
+    if (selectedVehicles.size === 0) return;
+    if (!confirm(t("tl.confirmDelete"))) return;
+    try {
+      for (const id of selectedVehicles) {
+        await tlDeleteVehicle(token, id);
+      }
+      setSelectedVehicles(new Set());
+      toast.success(`تم حذف ${selectedVehicles.size} سجل`);
+      void reload();
+    } catch {
+      toast.error(t("tl.saveErr"));
+    }
+  };
+
+  const toggleSelectOp = (id: string) => {
+    setSelectedOps((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllOps = (dept: string) => {
+    const logs = deptOps[dept] ?? [];
+    if (selectedOps.size === logs.length && logs.every((r) => selectedOps.has(r.id))) {
+      setSelectedOps(new Set());
+    } else {
+      setSelectedOps(new Set(logs.map((r) => r.id)));
+    }
+  };
+
+  const deleteSelectedOps = async () => {
+    if (selectedOps.size === 0) return;
+    if (!confirm(t("tl.confirmDelete"))) return;
+    try {
+      for (const id of selectedOps) {
+        await tlDeleteOps(token, id);
+      }
+      setSelectedOps(new Set());
+      toast.success(`تم حذف ${selectedOps.size} عملية`);
       void reload();
     } catch {
       toast.error(t("tl.saveErr"));
@@ -557,10 +662,24 @@ export function TransportLogisticsAdmin() {
                   )}
                 </div>
                 {isVeh ? (
-                  <div className="overflow-x-auto rounded-lg border border-white/10" lang="en" dir="ltr">
+                  <>
+                    {selectedVehicles.size > 0 && (
+                      <div className="flex items-center gap-2 mb-3">
+                        <Button type="button" size="sm" variant="destructive" onClick={() => void deleteSelectedVehicles()}>
+                          {t("tl.deleteSelected")} ({selectedVehicles.size})
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedVehicles(new Set())}>
+                          {t("tl.cancel")}
+                        </Button>
+                      </div>
+                    )}
+                    <div className="overflow-x-auto rounded-lg border border-white/10" lang="en" dir="ltr">
                     <table className="w-full text-xs md:text-sm border-collapse min-w-[720px] font-mono tabular-nums">
                       <thead>
                         <tr className="bg-white/5 text-slate-400 text-left">
+                          <th className="p-2 w-10">
+                            <input type="checkbox" checked={vRows.length > 0 && vRows.every((r) => selectedVehicles.has(r.id))} onChange={() => void toggleSelectAllVehicles(d)} className="cursor-pointer" />
+                          </th>
                           <th className="p-2">{t("tl.pdf.colVehicle")}</th>
                           <th className="p-2">{t("tl.pdf.colDriver")}</th>
                           <th className="p-2">{t("tl.pdf.colPhone")}</th>
@@ -568,18 +687,22 @@ export function TransportLogisticsAdmin() {
                           <th className="p-2">{t("tl.pdf.colEntry")}</th>
                           <th className="p-2">{t("tl.pdf.colStatus")}</th>
                           <th className="p-2">{t("tl.pdf.colDelay")}</th>
+                          <th className="p-2" />
                         </tr>
                       </thead>
                       <tbody>
                         {vRows.length === 0 ? (
                           <tr>
-                            <td className="p-3 text-slate-500 font-sans" colSpan={7}>
+                            <td className="p-3 text-slate-500 font-sans" colSpan={9}>
                               {normalisedQuery ? t("tl.searchNoResults") : t("tl.reportNoRows")}
                             </td>
                           </tr>
                         ) : (
                           (vRows || []).map((r) => (
                             <tr key={r.id} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+                              <td className="p-2">
+                                <input type="checkbox" checked={selectedVehicles.has(r.id)} onChange={() => void toggleSelectVehicle(r.id)} className="cursor-pointer" />
+                              </td>
                               <td className="p-2 font-bold text-[#FF8C00]">{ensureLatinDigitsInString(String(r.vehicle_id))}</td>
                               <td className="p-2 font-sans">{r.driver_name}</td>
                               <td className="p-2">{ensureLatinDigitsInString(String(r.driver_phone))}</td>
@@ -589,45 +712,85 @@ export function TransportLogisticsAdmin() {
                               </td>
                               <td className="p-2 font-sans">{r.alert_level}</td>
                               <td className="p-2">{ensureLatinDigitsInString(String(r.delay_minutes))}</td>
+                              <td className="p-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => void deleteVehicleLog(r.id)}
+                                >
+                                  <Trash2 className="size-4 text-red-400" />
+                                </Button>
+                              </td>
                             </tr>
                           ))
                         )}
                       </tbody>
                     </table>
                   </div>
+                  </>
                 ) : (
-                  <div className="overflow-x-auto rounded-lg border border-white/10" lang="en" dir="ltr">
+                  <>
+                    {selectedOps.size > 0 && (
+                      <div className="flex items-center gap-2 mb-3">
+                        <Button type="button" size="sm" variant="destructive" onClick={() => void deleteSelectedOps()}>
+                          {t("tl.deleteSelected")} ({selectedOps.size})
+                        </Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedOps(new Set())}>
+                          {t("tl.cancel")}
+                        </Button>
+                      </div>
+                    )}
+                    <div className="overflow-x-auto rounded-lg border border-white/10" lang="en" dir="ltr">
                     <table className="w-full text-xs md:text-sm border-collapse min-w-[640px] font-mono tabular-nums">
                       <thead>
                         <tr className="bg-white/5 text-slate-400 text-left">
+                          <th className="p-2 w-10">
+                            <input type="checkbox" checked={oRows.length > 0 && oRows.every((r) => selectedOps.has(r.id))} onChange={() => void toggleSelectAllOps(d)} className="cursor-pointer" />
+                          </th>
                           <th className="p-2">{t("tl.pdf.colEmployee")}</th>
                           <th className="p-2">{t("tl.pdf.colTime")}</th>
                           <th className="p-2">{t("tl.pdf.colQty")}</th>
                           <th className="p-2">{t("tl.pdf.colTarget")}</th>
                           <th className="p-2">{t("tl.pdf.colDelayReason")}</th>
+                          <th className="p-2" />
                         </tr>
                       </thead>
                       <tbody>
                         {oRows.length === 0 ? (
                           <tr>
-                            <td className="p-3 text-slate-500 font-sans" colSpan={5}>
+                            <td className="p-3 text-slate-500 font-sans" colSpan={7}>
                               {normalisedQuery ? t("tl.searchNoResults") : t("tl.reportNoRows")}
                             </td>
                           </tr>
                         ) : (
                           (oRows || []).map((r) => (
                             <tr key={r.id} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+                              <td className="p-2">
+                                <input type="checkbox" checked={selectedOps.has(r.id)} onChange={() => void toggleSelectOp(r.id)} className="cursor-pointer" />
+                              </td>
                               <td className="p-2 font-sans font-bold text-cyan-200">{r.worker_full_name ?? r.worker_id}</td>
                               <td className="p-2 whitespace-nowrap">{ensureLatinDigitsInString(r.log_time)}</td>
                               <td className="p-2">{formatTlLatinNum(r.quantity)}</td>
                               <td className="p-2">{formatTlLatinNum(r.target_pct)}%</td>
                               <td className="p-2 font-sans max-w-[220px] truncate">{r.delay_reason}</td>
+                              <td className="p-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => void deleteOpsLog(r.id)}
+                                >
+                                  <Trash2 className="size-4 text-red-400" />
+                                </Button>
+                              </td>
                             </tr>
                           ))
                         )}
                       </tbody>
                     </table>
                   </div>
+                  </>
                 )}
               </div>
             );
