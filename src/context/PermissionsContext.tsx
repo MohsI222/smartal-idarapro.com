@@ -35,11 +35,19 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
   const [permissions, setPermissions] = useState<UserPermissions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasDefaultPermissions, setHasDefaultPermissions] = useState(false);
   const { user, token } = useAuth();
   const SUPER_ADMIN_EMAIL = 'lahcenm534@gmail.com';
 
   const fetchPermissions = async () => {
     if (!userId || !token) {
+      setLoading(false);
+      return;
+    }
+
+    // Skip fetching if we already set default permissions
+    if (hasDefaultPermissions) {
+      console.log('[Permissions] Already set default permissions, skipping fetch');
       setLoading(false);
       return;
     }
@@ -80,10 +88,10 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
 
       if (!employeeData) {
         console.log('[Permissions] No employee record found for user:', userId);
-        // Grant default permissions even without employee record
+        // Set default permissions in memory permanently for users without employee records
         const defaultPermissions: UserPermissions = {
           id: crypto.randomUUID(),
-          employee_id: userId, // Use user_id as employee_id if no employee record
+          employee_id: userId,
           can_access_inventory: true,
           can_access_hr: true,
           can_access_delivery: true,
@@ -99,19 +107,8 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
           updated_at: new Date().toISOString(),
         };
         console.log('[Permissions] Setting default permissions for user without employee record:', defaultPermissions);
-        // Save to database first
-        try {
-          await api('/hr/permissions', {
-            method: 'POST',
-            token,
-            body: JSON.stringify(defaultPermissions)
-          });
-          console.log('[Permissions] Default permissions saved to database');
-        } catch (saveErr) {
-          console.error('[Permissions] Error saving default permissions to database:', saveErr);
-          // Still set in memory even if save fails
-        }
         setPermissions(defaultPermissions);
+        setHasDefaultPermissions(true);
         setLoading(false);
         return;
       }
@@ -177,6 +174,8 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
     if (!permissions) return true; // Default to allow if no permissions exist yet
     // Always allow access if user is admin
     if (permissions.is_admin) return true;
+    // If user doesn't have employee record (employee_id === user_id), grant all permissions
+    if (permissions.employee_id === user?.id) return true;
     return permissions[permission] === true;
   };
 
