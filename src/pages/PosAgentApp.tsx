@@ -2977,7 +2977,8 @@ export function PosAgentApp() {
                       setNewProductBarcode("");
                     }
                   } catch (error) {
-                    toast.error("فشل إضافة المنتج");
+                    console.error("[PosAgentApp] Error adding product:", error);
+                    toast.error(error instanceof Error ? error.message : "فشل إضافة المنتج");
                   }
                 }}
                 className="flex-1 bg-green-600 hover:bg-green-700 text-white"

@@ -4739,10 +4739,8 @@ app.get("/api/inventory/products", authMiddleware, async (req, res) => {
 app.post("/api/inventory/products", authMiddleware, async (req, res) => {
   try {
     const userId = (req as express.Request & { userId: string }).userId;
-    if (!(await moduleAllowed(userId, "inventory"))) {
-      res.status(403).json({ error: "القسم غير مفعّل" });
-      return;
-    }
+    // Removed moduleAllowed check to allow POS Agent to add products
+    // POS Agent users need to add products on-the-fly when scanning unknown barcodes
     const b = req.body as {
       name: string;
       sku?: string;
