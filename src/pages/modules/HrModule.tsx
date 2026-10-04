@@ -343,31 +343,22 @@ function HrModule() {
       console.log("DEBUG - user.id type:", typeof user?.id);
       console.log("DEBUG - token available:", !!token);
 
-      // Build payload with only the fields that have real values
+      // Build payload with required fields and optional fields
       const cleanedPayload: Record<string, any> = {
         name: form.name,
+        // Provide default values for required fields if not provided
+        employee_id: form.employee_id || "EMP-" + Date.now(),
+        role: form.role || "موظف",
+        salary: form.salary || 0,
+        contract_type: form.contract_type || "غير محدد",
       };
 
-      // Only add employee_id if provided by user
-      if (form.employee_id && form.employee_id.trim() !== "") {
-        cleanedPayload.employee_id = form.employee_id;
-      }
-
-      // Only add other fields if they have real values
+      // Add other optional fields if they have real values
       if (form.national_id && form.national_id.trim() !== "") {
         cleanedPayload.national_id = form.national_id;
       }
       if (form.work_number && form.work_number.trim() !== "") {
         cleanedPayload.work_number = form.work_number;
-      }
-      if (form.role && form.role.trim() !== "") {
-        cleanedPayload.role = form.role;
-      }
-      if (form.salary && form.salary > 0) {
-        cleanedPayload.salary = form.salary;
-      }
-      if (form.contract_type && form.contract_type.trim() !== "") {
-        cleanedPayload.contract_type = form.contract_type;
       }
       if (form.contract_end) {
         cleanedPayload.contract_end = form.contract_end;

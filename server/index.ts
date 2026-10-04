@@ -2611,13 +2611,13 @@ app.post("/api/hr/employees", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const b = req.body as {
     name: string;
-    employee_id: string;
+    employee_id?: string;
     work_number?: string;
     national_id?: string;
-    role: string;
-    salary: number;
+    role?: string;
+    salary?: number;
     work_days?: number;
-    contract_type: string;
+    contract_type?: string;
     contract_end?: string | null;
     start_date?: string;
     birth_date?: string;
@@ -2628,34 +2628,45 @@ app.post("/api/hr/employees", authMiddleware, async (req, res) => {
     rib?: string;
     bank_name?: string;
   };
+  
+  if (!b.name) {
+    res.status(400).json({ error: "الاسم مطلوب" });
+    return;
+  }
+  
   const id = randomUUID();
-  await db.prepare(
-    `INSERT INTO hr_employees (
-      id, user_id, name, employee_id, work_number, national_id, role, salary, work_days, contract_type, contract_end,
-      start_date, birth_date, marital_status, uniform_color, city, address, rib, bank_name
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    userId,
-    b.name,
-    b.employee_id,
-    b.work_number ?? b.employee_id,
-    b.national_id ?? "",
-    b.role,
-    b.salary,
-    Number(b.work_days ?? 0) || 0,
-    b.contract_type,
-    b.contract_end ?? null,
-    b.start_date ?? "",
-    b.birth_date ?? "",
-    b.marital_status ?? "",
-    b.uniform_color ?? "",
-    b.city ?? "",
-    b.address ?? "",
-    b.rib ?? "",
-    b.bank_name ?? ""
-  );
-  res.json({ id });
+  try {
+    await db.prepare(
+      `INSERT INTO hr_employees (
+        id, user_id, name, employee_id, work_number, national_id, role, salary, work_days, contract_type, contract_end,
+        start_date, birth_date, marital_status, uniform_color, city, address, rib, bank_name
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      id,
+      userId,
+      b.name,
+      b.employee_id ?? null,
+      b.work_number ?? b.employee_id ?? null,
+      b.national_id ?? null,
+      b.role ?? null,
+      b.salary ?? null,
+      Number(b.work_days ?? 0) || 0,
+      b.contract_type ?? null,
+      b.contract_end ?? null,
+      b.start_date ?? null,
+      b.birth_date ?? null,
+      b.marital_status ?? null,
+      b.uniform_color ?? null,
+      b.city ?? null,
+      b.address ?? null,
+      b.rib ?? null,
+      b.bank_name ?? null
+    );
+    res.json({ id });
+  } catch (error) {
+    console.error("[HR] Error creating employee:", error);
+    res.status(500).json({ error: "فشل حفظ الموظف" });
+  }
 });
 
 app.patch("/api/hr/employees/:id", authMiddleware, async (req, res) => {
