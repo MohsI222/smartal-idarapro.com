@@ -80,7 +80,26 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
 
       if (!employeeData) {
         console.log('[Permissions] No employee record found for user:', userId);
-        // Don't block the app if no employee record exists
+        // Grant default permissions even without employee record
+        const defaultPermissions: UserPermissions = {
+          id: crypto.randomUUID(),
+          employee_id: userId, // Use user_id as employee_id if no employee record
+          can_access_inventory: true,
+          can_access_hr: true,
+          can_access_delivery: true,
+          can_access_transport_logistics: true,
+          can_access_wedding_invitations: true,
+          can_access_auto_real_estate: true,
+          can_access_contracts: true,
+          can_access_legal: true,
+          can_access_ai: true,
+          can_access_settings: true,
+          is_admin: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        console.log('[Permissions] Setting default permissions for user without employee record:', defaultPermissions);
+        setPermissions(defaultPermissions);
         setLoading(false);
         return;
       }
