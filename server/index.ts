@@ -282,27 +282,33 @@ app.use(vercelApiUrlRestore);
 applySecurityMiddleware(app);
 app.use(cors(createProductionCorsOptions()));
 
-// Ensure database is initialized before handling requests (especially on Vercel)
-let dbReadyPromise: Promise<void> | null = null;
-app.use(async (req, res, next) => {
-  if (!dbReadyPromise) {
-    dbReadyPromise = initDatabase().catch((err) => {
-      console.error("[server] Database initialization failed:", err);
-      dbReadyPromise = null; // Allow retry on failure
-      throw err;
-    });
-  }
-  try {
-    await dbReadyPromise;
-    next();
-  } catch (err) {
-    console.error("[server] Database not ready:", err);
-    res.status(503).json({ error: "Database initialization failed" });
-  }
-});
-
 // Custom domain middleware for Delivery Hub stores
 app.use(customDomainMiddleware);
+
+// Ensure database is initialized before handling requests (especially on Vercel)
+let dbReadyPromise: Promise<void> | null = null;
+
+async function ensureDbReady(): Promise<void> {
+  if (!dbReadyPromise) {
+    dbReadyPromise = (async () => {
+      await initDatabase();
+      await ensureSuperAdmin();
+    })().catch((e) => {
+      dbReadyPromise = null;
+      throw e;
+    });
+  }
+  await dbReadyPromise;
+}
+
+app.use(async (_req, _res, next) => {
+  try {
+    await ensureDbReady();
+    next();
+  } catch (e) {
+    next(e);
+  }
+});
 
 // Serve uploaded files statically
 const uploadsDir = getUploadDir();
@@ -348,35 +354,11 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, service: "smart-al-idara-pro" });
 });
 
-let dbReadyPromise: Promise<void> | null = null;
-
-async function ensureDbReady(): Promise<void> {
-  if (!dbReadyPromise) {
-    dbReadyPromise = (async () => {
-      await initDatabase();
-      await ensureSuperAdmin();
-    })().catch((e) => {
-      dbReadyPromise = null;
-      throw e;
-    });
-  }
-  await dbReadyPromise;
-}
-
 app.get("/api/health/db", async (_req, res, next) => {
   try {
     await ensureDbReady();
     await db.prepare("SELECT 1 AS o").get();
     res.json({ ok: true, db: true });
-  } catch (e) {
-    next(e);
-  }
-});
-
-app.use(async (_req, _res, next) => {
-  try {
-    await ensureDbReady();
-    next();
   } catch (e) {
     next(e);
   }
