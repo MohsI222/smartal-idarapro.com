@@ -337,28 +337,22 @@ function HrModule() {
       alert(locale.startsWith("ar") ? "يرجى ملء الاسم على الأقل" : "Please fill in at least the name");
       return;
     }
-    
+
     try {
       console.log("DEBUG - user.id:", user?.id);
       console.log("DEBUG - user.id type:", typeof user?.id);
-      
+      console.log("DEBUG - token available:", !!token);
+
       // Build payload with only the fields that have real values
       const cleanedPayload: Record<string, any> = {
         name: form.name,
       };
-      
-      // Add user_id only if available (optional in database)
-      if (user?.id) {
-        cleanedPayload.user_id = user.id;
-      }
-      
-      console.log("DEBUG - cleanedPayload:", cleanedPayload);
-      
+
       // Only add employee_id if provided by user
       if (form.employee_id && form.employee_id.trim() !== "") {
         cleanedPayload.employee_id = form.employee_id;
       }
-      
+
       // Only add other fields if they have real values
       if (form.national_id && form.national_id.trim() !== "") {
         cleanedPayload.national_id = form.national_id;
@@ -402,12 +396,11 @@ function HrModule() {
       if (form.bank_name && form.bank_name.trim() !== "") {
         cleanedPayload.bank_name = form.bank_name;
       }
-      
+
       console.log("Inserting employee payload:", cleanedPayload);
 
       if (isAdmin && token) {
         // Super Admin: use Express API endpoint to bypass RLS
-        // Must include user_id for super admin endpoint
         const superAdminPayload = {
           ...cleanedPayload,
           user_id: user?.id,
@@ -428,7 +421,7 @@ function HrModule() {
         alert(locale.startsWith("ar") ? "Authentication error" : "Authentication error");
         return;
       }
-      
+
       setForm(createEmptyHrEmployeeDraft());
       await load();
       alert(locale.startsWith("ar") ? "تم حفظ الموظف بنجاح" : "Employee saved successfully");
