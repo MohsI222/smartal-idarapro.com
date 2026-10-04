@@ -2947,9 +2947,9 @@ export function PosAgentApp() {
                     return;
                   }
                   try {
-                    const response = await api("/inventory/products", {
+                    // Use standalone endpoint with token query parameter for POS Agent
+                    const response = await api<{ success: boolean; product?: any; error?: string }>(`/pos-agent/standalone-products?token=${token}`, {
                       method: "POST",
-                      token,
                       body: JSON.stringify({
                         name: productFormData.name,
                         sku: newProductBarcode,
@@ -2959,12 +2959,15 @@ export function PosAgentApp() {
                         pieces_per_carton: 1
                       })
                     });
-                    if (response) {
+                    if (response && response.success) {
                       toast.success("تم إضافة المنتج بنجاح");
                       setShowAddProductDialog(false);
-                      // Reload products
-                      const freshProducts = await api<any[]>("/inventory/products", { token });
-                      setProducts(freshProducts);
+                      // Reload products using the same endpoint
+                      const freshProductsResponse = await api<{ success: boolean; products: Product[] }>(`/inventory/standalone-products?token=${token}`);
+                      if (freshProductsResponse && freshProductsResponse.success) {
+                        setProducts(freshProductsResponse.products);
+                        setFilteredProducts(freshProductsResponse.products);
+                      }
                       setProductFormData({
                         name: "",
                         sku: "",
@@ -2975,10 +2978,22 @@ export function PosAgentApp() {
                         image_url: ""
                       });
                       setNewProductBarcode("");
+                    } else {
+                      const errorMsg = response?.error || "فشل إضافة المنتج";
+                      if (errorMsg.includes("expired") || errorMsg.includes("session")) {
+                        toast.error("الجلسة منتهية - يرجى تسجيل الدخول مجدداً");
+                      } else {
+                        toast.error(errorMsg);
+                      }
                     }
                   } catch (error) {
                     console.error("[PosAgentApp] Error adding product:", error);
-                    toast.error(error instanceof Error ? error.message : "فشل إضافة المنتج");
+                    const errorMessage = error instanceof Error ? error.message : "فشل إضافة المنتج";
+                    if (errorMessage.includes("401") || errorMessage.includes("403") || errorMessage.includes("expired")) {
+                      toast.error("الجلسة منتهية - يرجى تسجيل الدخول مجدداً");
+                    } else {
+                      toast.error(errorMessage);
+                    }
                   }
                 }}
                 className="flex-1 bg-green-600 hover:bg-green-700 text-white"
