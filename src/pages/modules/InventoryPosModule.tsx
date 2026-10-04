@@ -1091,16 +1091,7 @@ export function InventoryPosModule() {
       }
       console.log("[submitQuickDraft] Using user ID from AuthContext:", authUserId);
 
-      // Deduct stock from inventory_products table
-      for (const line of draftLines) {
-        console.log("submitQuickDraft - Deducting stock for product:", line.product_id, "qty:", line.qty_pieces);
-        await api(`/inventory/products/${line.product_id}/stock`, {
-          method: "PATCH",
-          token,
-          body: JSON.stringify({ stock_change: -line.qty_pieces }),
-        });
-      }
-
+      // Stock deduction is handled by sale-batch endpoint - no need to deduct manually
       console.log("submitQuickDraft - Calling sale-batch API");
       if (!token) {
         console.error("[submitQuickDraft] No token available");
