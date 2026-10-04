@@ -1252,7 +1252,7 @@ router.post("/standalone-returns", async (req, res) => {
       console.log("[POS Agent] Return stock update result:", { productId: line.product_id, quantity: line.quantity, changes: updateResult.changes });
       
       // Sync to Supabase for real-time updates
-      await updateSupabaseStock(line.product_id, line.quantity, tokenData.user_id);
+      await updateSupabaseStock(line.product_id, line.quantity, (tokenData as any).user_id);
     }
 
     res.json({

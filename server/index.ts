@@ -783,7 +783,7 @@ app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
               'apikey': process.env.SUPABASE_ANON_KEY || ''
             }
           });
-          const supabaseUser = await supabaseUserResponse.json();
+          await supabaseUserResponse.json();
 
           // Update Neon password hash with Supabase user data
           if (user) {
@@ -919,7 +919,7 @@ app.post("/api/auth/reset-password", async (req, res) => {
     res.status(400).json({ error: "بيانات ناقصة" });
     return;
   }
-  const user = db.prepare("SELECT id FROM users WHERE email = ?").get(email) as { id: string } | undefined;
+  const user = await db.prepare("SELECT id FROM users WHERE email = ?").get(email) as { id: string } | undefined;
   if (!user) {
     res.status(404).json({ error: "المستخدم غير موجود" });
     return;
@@ -1577,7 +1577,7 @@ app.delete("/api/shift-reports/delete-all-dangerous", authMiddleware, async (_re
 app.post("/api/shift-reports", authMiddleware, async (req, res) => {
   try {
     const userId = (req as express.Request & { userId: string }).userId;
-    const { shift_date, shift_group, customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations, start_time, import_count, export_count, delete_count } = req.body;
+    const { shift_date, shift_group, customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations, start_time } = req.body;
     
     if (!shift_date || !shift_group) {
       res.status(400).json({ error: "Missing required fields: shift_date, shift_group" });
