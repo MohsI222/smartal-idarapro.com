@@ -729,13 +729,13 @@ app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
   };
   const emailSafe = sanitizeEmail(email ?? "");
   console.log("[Login] Attempt for email:", emailSafe);
-  
+
   if (!emailSafe || !password) {
     console.log("[Login] Missing email or password");
     res.status(400).json({ error: "بيانات ناقصة" });
     return;
   }
-  
+
   const user = await db
     .prepare("SELECT * FROM users WHERE email = ?")
     .get(emailSafe) as
@@ -748,18 +748,72 @@ app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
         whatsapp?: string | null;
       }
     | undefined;
-    
+
   console.log("[Login] User found:", !!user);
   if (user) {
     console.log("[Login] Password hash format:", user.password_hash.substring(0, 30) + "...");
     const passwordValid = verifyPassword(password, user.password_hash);
     console.log("[Login] Password valid:", passwordValid);
   }
-  
+
+  // Fallback: Try Supabase Auth if Neon password verification fails
   if (!user || !verifyPassword(password, user.password_hash)) {
-    console.log("[Login] Authentication failed");
-    res.status(401).json({ error: "بريد أو كلمة مرور خاطئة" });
-    return;
+    console.log("[Login] Neon authentication failed, trying Supabase Auth fallback");
+    try {
+      const supabaseAuthResult = await fetch(`${process.env.SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.SUPABASE_ANON_KEY || '',
+          'Authorization': `Bearer ${process.env.SUPABASE_ANON_KEY || ''}`
+        },
+        body: JSON.stringify({
+          email: emailSafe,
+          password: password
+        })
+      });
+
+      if (supabaseAuthResult.ok) {
+        const supabaseData = await supabaseAuthResult.json();
+        if (supabaseData.access_token) {
+          console.log("[Login] Supabase Auth successful, fetching user from Supabase");
+          const supabaseUserResponse = await fetch(`${process.env.SUPABASE_URL}/auth/v1/user`, {
+            headers: {
+              'Authorization': `Bearer ${supabaseData.access_token}`,
+              'apikey': process.env.SUPABASE_ANON_KEY || ''
+            }
+          });
+          const supabaseUser = await supabaseUserResponse.json();
+
+          // Update Neon password hash with Supabase user data
+          if (user) {
+            console.log("[Login] Updating Neon password hash for user:", user.id);
+            const newHash = hashPassword(password);
+            await db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newHash, user.id);
+            console.log("[Login] Password hash updated in Neon");
+          } else {
+            console.log("[Login] User not found in Neon, cannot update password");
+            res.status(401).json({ error: "بريد أو كلمة مرور خاطئة" });
+            return;
+          }
+
+          // Continue with login (password is now valid after update)
+          console.log("[Login] Authentication successful via Supabase fallback");
+        } else {
+          console.log("[Login] Supabase Auth failed: invalid credentials");
+          res.status(401).json({ error: "بريد أو كلمة مرور خاطئة" });
+          return;
+        }
+      } else {
+        console.log("[Login] Supabase Auth failed");
+        res.status(401).json({ error: "بريد أو كلمة مرور خاطئة" });
+        return;
+      }
+    } catch (error) {
+      console.error("[Login] Supabase Auth fallback error:", error);
+      res.status(401).json({ error: "بريد أو كلمة مرور خاطئة" });
+      return;
+    }
   }
 
   // Auto-create employee and permissions records if they don't exist
