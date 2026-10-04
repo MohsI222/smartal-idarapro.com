@@ -925,7 +925,7 @@ app.post("/api/auth/reset-password", async (req, res) => {
     return;
   }
   const newHash = hashPassword(newPassword);
-  db.prepare("UPDATE users SET password_hash = ? WHERE email = ?").run(newHash, email);
+  await db.prepare("UPDATE users SET password_hash = ? WHERE email = ?").run(newHash, email);
   res.json({ success: true, message: "تم إعادة تعيين كلمة المرور" });
 });
 
