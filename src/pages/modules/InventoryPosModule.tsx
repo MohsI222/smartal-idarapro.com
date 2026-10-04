@@ -463,6 +463,7 @@ export function InventoryPosModule() {
   const [manualShiftStartTime, setManualShiftStartTime] = useState<string>("");
   const [manualShiftEndTime, setManualShiftEndTime] = useState<string>("");
   const [selectedShiftReport, setSelectedShiftReport] = useState<any>(null);
+  const [selectedOperations, setSelectedOperations] = useState<Set<number>>(new Set());
   const [shiftWeek, setShiftWeek] = useState<number>(1);
   const [shiftCustomerName, setShiftCustomerName] = useState<string>("");
   const [shiftCustomerPhone, setShiftCustomerPhone] = useState<string>("");
@@ -1570,6 +1571,69 @@ export function InventoryPosModule() {
       console.error("Error Details - handleDeleteProduct:", JSON.stringify(err, null, 2));
       toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
     }
+  };
+
+  const handleDeleteOperation = async (operationIndex: number) => {
+    if (!selectedShiftReport) return;
+    if (!window.confirm(locale.startsWith("ar") ? 'هل أنت متأكد من حذف هذه العملية؟' : 'Are you sure you want to delete this operation?')) return;
+
+    try {
+      const updatedOperations = [...selectedShiftReport.operations_log];
+      updatedOperations.splice(operationIndex, 1);
+
+      await api(`/shift-reports/${selectedShiftReport.id}`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify({
+          operations_log: updatedOperations,
+          total_operations: updatedOperations.length,
+        }),
+      });
+
+      setSelectedShiftReport({ ...selectedShiftReport, operations_log: updatedOperations, total_operations: updatedOperations.length });
+      toast.success(locale.startsWith("ar") ? 'تم حذف العملية بنجاح' : 'Operation deleted successfully');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    }
+  };
+
+  const handleDeleteSelectedOperations = async () => {
+    if (!selectedShiftReport) return;
+    if (selectedOperations.size === 0) {
+      toast.info(locale.startsWith("ar") ? 'الرجاء اختيار عمليات للحذف' : 'Please select operations to delete');
+      return;
+    }
+
+    if (!window.confirm(locale.startsWith("ar") ? `هل أنت متأكد من حذف ${selectedOperations.size} عملية؟` : `Are you sure you want to delete ${selectedOperations.size} operations?`)) return;
+
+    try {
+      const updatedOperations = selectedShiftReport.operations_log.filter((_: any, idx: number) => !selectedOperations.has(idx));
+
+      await api(`/shift-reports/${selectedShiftReport.id}`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify({
+          operations_log: updatedOperations,
+          total_operations: updatedOperations.length,
+        }),
+      });
+
+      setSelectedShiftReport({ ...selectedShiftReport, operations_log: updatedOperations, total_operations: updatedOperations.length });
+      setSelectedOperations(new Set());
+      toast.success(locale.startsWith("ar") ? 'تم حذف العمليات المحددة بنجاح' : 'Selected operations deleted successfully');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
+    }
+  };
+
+  const handleSelectAllOperations = () => {
+    if (!selectedShiftReport) return;
+    const allIndices = new Set(selectedShiftReport.operations_log.map((_: any, idx: number) => idx));
+    setSelectedOperations(allIndices);
+  };
+
+  const handleClearOperationSelection = () => {
+    setSelectedOperations(new Set());
   };
 
   const handleEditProductChange = (productId: string, patch: Partial<Product>) => {
@@ -4133,11 +4197,45 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
 
               {/* جدول العمليات */}
               <div className="mt-6 bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-slate-700 rounded-lg p-4">
-                <h4 className="text-sm font-bold text-white mb-4">{locale.startsWith("ar") ? "تفاصيل العمليات" : "Operations Details"}</h4>
+                <div className="flex justify-between items-center mb-4">
+                  <h4 className="text-sm font-bold text-white">{locale.startsWith("ar") ? "تفاصيل العمليات" : "Operations Details"}</h4>
+                  {selectedShiftReport?.operations_log && selectedShiftReport.operations_log.length > 0 && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSelectAllOperations}
+                        className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded"
+                      >
+                        {locale.startsWith("ar") ? "تحديد الكل" : "Select All"}
+                      </button>
+                      <button
+                        onClick={handleClearOperationSelection}
+                        className="text-xs bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded"
+                      >
+                        {locale.startsWith("ar") ? "إلغاء التحديد" : "Clear Selection"}
+                      </button>
+                      {selectedOperations.size > 0 && (
+                        <button
+                          onClick={handleDeleteSelectedOperations}
+                          className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded"
+                        >
+                          {locale.startsWith("ar") ? `حذف المحدد (${selectedOperations.size})` : `Delete Selected (${selectedOperations.size})`}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-700">
+                        <th className="text-center py-2 px-3 text-xs text-slate-400 font-bold w-10">
+                          <input
+                            type="checkbox"
+                            checked={selectedShiftReport?.operations_log && selectedOperations.size === selectedShiftReport.operations_log.length && selectedShiftReport.operations_log.length > 0}
+                            onChange={(e) => e.target.checked ? handleSelectAllOperations() : handleClearOperationSelection()}
+                            className="w-4 h-4"
+                          />
+                        </th>
                         <th className="text-right py-2 px-3 text-xs text-slate-400 font-bold">{locale.startsWith("ar") ? "التاريخ" : "Date"}</th>
                         <th className="text-right py-2 px-3 text-xs text-slate-400 font-bold">{locale.startsWith("ar") ? "الوقت" : "Time"}</th>
                         <th className="text-right py-2 px-3 text-xs text-slate-400 font-bold">{locale.startsWith("ar") ? "المستخدم" : "User"}</th>
@@ -4145,12 +4243,29 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                         <th className="text-right py-2 px-3 text-xs text-slate-400 font-bold">{locale.startsWith("ar") ? "اسم المنتج" : "Product Name"}</th>
                         <th className="text-right py-2 px-3 text-xs text-slate-400 font-bold">{locale.startsWith("ar") ? "رقم المنتج" : "SKU/Barcode"}</th>
                         <th className="text-right py-2 px-3 text-xs text-slate-400 font-bold">{locale.startsWith("ar") ? "التفاصيل" : "Details"}</th>
+                        <th className="text-center py-2 px-3 text-xs text-slate-400 font-bold w-16">{locale.startsWith("ar") ? "حذف" : "Delete"}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {selectedShiftReport?.operations_log && selectedShiftReport.operations_log.length > 0 ? (
                         selectedShiftReport.operations_log.map((log: any, idx: number) => (
                           <tr key={`${log.date}-${log.time}-${log.user}-${idx}`} className="border-b border-slate-800 hover:bg-slate-800/50">
+                            <td className="py-2 px-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={selectedOperations.has(idx)}
+                                onChange={(e) => {
+                                  const newSelected = new Set(selectedOperations);
+                                  if (e.target.checked) {
+                                    newSelected.add(idx);
+                                  } else {
+                                    newSelected.delete(idx);
+                                  }
+                                  setSelectedOperations(newSelected);
+                                }}
+                                className="w-4 h-4"
+                              />
+                            </td>
                             <td className="py-2 px-3 text-white">{log.date}</td>
                             <td className="py-2 px-3 text-white">{log.time}</td>
                             <td className="py-2 px-3 text-white">{log.user}</td>
@@ -4158,11 +4273,19 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                             <td className="py-2 px-3 text-white">{log.product_name || '-'}</td>
                             <td className="py-2 px-3 text-white">{log.product_sku || '-'}</td>
                             <td className="py-2 px-3 text-white">{log.details}</td>
+                            <td className="py-2 px-3 text-center">
+                              <button
+                                onClick={() => handleDeleteOperation(idx)}
+                                className="text-red-400 hover:text-red-300 text-xs"
+                              >
+                                {locale.startsWith("ar") ? "حذف" : "Delete"}
+                              </button>
+                            </td>
                           </tr>
                         ))
                       ) : (
                         <tr>
-                          <td colSpan={7} className="text-center py-8 text-slate-500">
+                          <td colSpan={9} className="text-center py-8 text-slate-500">
                             {selectedShiftReport ? (locale.startsWith("ar") ? "لا توجد عمليات" : "No operations") : (locale.startsWith("ar") ? "ابدأ النوبة أولاً" : "Start a shift first")}
                           </td>
                         </tr>
