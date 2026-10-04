@@ -1015,6 +1015,8 @@ export function InventoryPosModule() {
         token,
         body: JSON.stringify(payload),
       });
+      // Immediately refresh to show product in POS Agent
+      await refreshInventoryTables();
       const fresh = await api<ProductsResponse>("/inventory/products", { token });
       startTransition(() => {
         setProducts(fresh.products);
@@ -1137,7 +1139,10 @@ export function InventoryPosModule() {
       });
       
       console.log("submitQuickDraft - Sale API response:", saleResponse);
-      
+
+      // Immediately refresh to show stock changes in POS Agent
+      await refreshInventoryTables();
+
       // Store draft lines for undo functionality
       const previousDraftLines = [...draftLines];
       setPreviousDraftLines(previousDraftLines);
@@ -1222,13 +1227,14 @@ export function InventoryPosModule() {
   };
 
   // Polling for inventory updates (replaces Supabase Realtime)
+  // Reduced to 1 second for near real-time sync with POS Agent
   useEffect(() => {
     if (!user?.id) return;
-    
+
     const interval = setInterval(async () => {
       await refreshInventoryTables();
-    }, 30000); // Poll every 30 seconds
-    
+    }, 1000); // Poll every 1 second for near real-time sync
+
     return () => clearInterval(interval);
   }, [user?.id, refreshInventoryTables]);
 

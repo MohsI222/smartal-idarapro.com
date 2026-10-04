@@ -290,6 +290,7 @@ export function PosAgentApp() {
   }, [currentView]);
 
   // Polling for inventory sync - using Neon as source of truth instead of Supabase Realtime
+  // Reduced to 1 second for near real-time sync
   useEffect(() => {
     if (!token) return;
 
@@ -304,7 +305,7 @@ export function PosAgentApp() {
       } catch (error) {
         console.error("[PosAgentApp] Error polling products:", error);
       }
-    }, 3000); // Poll every 3 seconds
+    }, 1000); // Poll every 1 second for near real-time sync
 
     return () => clearInterval(interval);
   }, [token]);
@@ -2962,11 +2963,12 @@ export function PosAgentApp() {
                     if (response && response.success) {
                       toast.success("تم إضافة المنتج بنجاح");
                       setShowAddProductDialog(false);
-                      // Reload products using the same endpoint
+                      // Immediately reload products using the same endpoint
                       const freshProductsResponse = await api<{ success: boolean; products: Product[] }>(`/inventory/standalone-products?token=${token}`);
                       if (freshProductsResponse && freshProductsResponse.success) {
                         setProducts(freshProductsResponse.products);
                         setFilteredProducts(freshProductsResponse.products);
+                        console.log("[PosAgentApp] Products reloaded after creation:", freshProductsResponse.products.length);
                       }
                       setProductFormData({
                         name: "",
