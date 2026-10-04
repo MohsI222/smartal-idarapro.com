@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "./db.js";
 
 // Helper function to update Supabase for real-time sync
-async function updateSupabaseStock(productId: string, stockChange: number, userId: string) {
+async function updateSupabaseStock(productId: string, _stockChange: number, userId: string) {
   try {
     const supabaseUrl = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "";
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.VITE_SUPABASE_ANON_KEY ?? "";
@@ -372,7 +372,7 @@ router.post("/session", async (req, res) => {
       `SELECT id, employee_id, full_name as name, role_title as role, department
        FROM tl_workers
        WHERE employee_id = ? AND user_id = ?`
-    ).get(employee_id, tokenData.user_id);
+    ).get(employee_id, (tokenData as any).user_id);
 
     console.log("[POS Agent] Employee found:", employee);
 
@@ -435,7 +435,7 @@ router.post("/sales", async (req, res) => {
     await db.prepare(
       `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, sale_date)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-    ).run(saleId, tokenData.user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash");
+    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash");
 
     // Insert sale lines and update inventory
     for (const line of lines) {
@@ -450,10 +450,10 @@ router.post("/sales", async (req, res) => {
         `UPDATE inventory_products
          SET stock_pieces = stock_pieces - ?
          WHERE id = ? AND user_id = ?`
-      ).run(line.quantity, line.product_id, tokenData.user_id);
+      ).run(line.quantity, line.product_id, (tokenData as any).user_id);
       
       // Sync to Supabase for real-time updates
-      await updateSupabaseStock(line.product_id, -line.quantity, tokenData.user_id);
+      await updateSupabaseStock(line.product_id, -line.quantity, (tokenData as any).user_id);
     }
 
     // Get the created sale
@@ -571,7 +571,7 @@ router.post("/attendance/clock-in", async (req, res) => {
     await db.prepare(
       `INSERT INTO pos_agent_attendance (id, user_id, employee_id, clock_in_time)
        VALUES (?, ?, ?, NOW())`
-    ).run(attendanceId, tokenData.user_id, employee_id);
+    ).run(attendanceId, (tokenData as any).user_id, employee_id);
 
     const attendance = await db.prepare(
       `SELECT * FROM pos_agent_attendance WHERE id = ?`
@@ -732,7 +732,7 @@ router.get("/standalone-employees", async (req, res) => {
        FROM tl_workers
        WHERE user_id = ? AND (department = 'transport' OR department = 'logistics')
        ORDER BY full_name ASC`
-    ).all(tokenData.user_id);
+    ).all((tokenData as any).user_id);
 
     res.json({ success: true, employees: employees || [] });
   } catch (error) {
@@ -863,7 +863,7 @@ router.post("/standalone-sales", async (req, res) => {
     await db.prepare(
       `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, sale_date)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-    ).run(saleId, tokenData.user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash");
+    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash");
 
     // Insert sale lines and update inventory
     for (const line of lines) {
@@ -878,12 +878,12 @@ router.post("/standalone-sales", async (req, res) => {
         `UPDATE inventory_products
          SET stock_pieces = stock_pieces - ?
          WHERE id = ? AND user_id = ?`
-      ).run(line.quantity, line.product_id, tokenData.user_id);
+      ).run(line.quantity, line.product_id, (tokenData as any).user_id);
       
       console.log("[POS Agent] Stock update result:", { productId: line.product_id, quantity: line.quantity, changes: updateResult.changes });
       
       // Sync to Supabase for real-time updates
-      await updateSupabaseStock(line.product_id, -line.quantity, tokenData.user_id);
+      await updateSupabaseStock(line.product_id, -line.quantity, (tokenData as any).user_id);
     }
 
     // Get the created sale
@@ -995,7 +995,7 @@ router.post("/standalone-attendance/clock-in", async (req, res) => {
     await db.prepare(
       `INSERT INTO pos_agent_attendance (id, user_id, employee_id, clock_in_time)
        VALUES (?, ?, ?, NOW())`
-    ).run(attendanceId, tokenData.user_id, employee_id);
+    ).run(attendanceId, (tokenData as any).user_id, employee_id);
 
     const attendance = await db.prepare(
       `SELECT * FROM pos_agent_attendance WHERE id = ?`
@@ -1232,7 +1232,7 @@ router.post("/standalone-returns", async (req, res) => {
     await db.prepare(
       `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, sale_date)
        VALUES (?, ?, ?, 'استرجاع', ?, 0, ?, 'return', NOW())`
-    ).run(returnId, tokenData.user_id, employee_id, -Math.abs(total_amount || 0), -Math.abs(total_amount || 0));
+    ).run(returnId, (tokenData as any).user_id, employee_id, -Math.abs(total_amount || 0), -Math.abs(total_amount || 0));
 
     // Insert return lines and update inventory (add stock back)
     for (const line of lines) {
@@ -1247,7 +1247,7 @@ router.post("/standalone-returns", async (req, res) => {
         `UPDATE inventory_products
          SET stock_pieces = stock_pieces + ?
          WHERE id = ? AND user_id = ?`
-      ).run(line.quantity, line.product_id, tokenData.user_id);
+      ).run(line.quantity, line.product_id, (tokenData as any).user_id);
       
       console.log("[POS Agent] Return stock update result:", { productId: line.product_id, quantity: line.quantity, changes: updateResult.changes });
       

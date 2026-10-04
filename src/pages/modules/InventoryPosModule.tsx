@@ -565,22 +565,22 @@ export function InventoryPosModule() {
       ]);
       startTransition(() => {
         // Ensure products are fetched from database directly
-        const products = productsData.status === "fulfilled" 
-          ? (Array.isArray(productsData.value) ? productsData.value : (Array.isArray(productsData.value?.products) ? productsData.value.products : [])) 
+        const products = productsData.status === "fulfilled"
+          ? (Array.isArray(productsData.value) ? productsData.value : (Array.isArray(productsData.value?.products) ? productsData.value.products : []))
           : [];
         setProducts(products as Product[]);
-        setInvoices(inv.status === "fulfilled" ? inv.value.invoices : []);
+        setInvoices(inv.status === "fulfilled" ? inv.value?.invoices || [] : []);
         if (supInv.status === "fulfilled") setInventoryItems(Array.isArray(supInv.value?.products) ? supInv.value.products : []);
-        if (prodRequests.status === "fulfilled") setProductionRequests(prodRequests.value);
-        if (prodLogistics.status === "fulfilled") setLogisticsQueue(prodLogistics.value);
-        if (supHr.status === "fulfilled") setHrStaff(supHr.value);
+        if (prodRequests.status === "fulfilled") setProductionRequests(prodRequests.value || []);
+        if (prodLogistics.status === "fulfilled") setLogisticsQueue(prodLogistics.value || []);
+        if (supHr.status === "fulfilled") setHrStaff(supHr.value || []);
         if (tlStaff.status === "fulfilled") {
           const workers = Array.isArray(tlStaff.value) ? tlStaff.value : [];
           setTlWorkerList(workers);
           setSelectedProductionWorkerId((prev) => prev || (workers.length > 0 ? workers[0].id : ""));
           setSelectedLogisticsAssignee((prev) => prev || (workers.length > 0 ? workers[0].id : ""));
         }
-        if (br.status === "fulfilled" && br.value.branding) {
+        if (br.status === "fulfilled" && br.value?.branding) {
           const act = br.value.branding.activityType || "retail";
           setBrandingPrefs({
             activityType: act,
@@ -1599,6 +1599,7 @@ export function InventoryPosModule() {
       setSelectedShiftReport({ ...selectedShiftReport, operations_log: updatedOperations, total_operations: updatedOperations.length });
       toast.success(locale.startsWith("ar") ? 'تم حذف العملية بنجاح' : 'Operation deleted successfully');
     } catch (err) {
+      console.error("[handleDeleteOperation] Error:", err);
       toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
     }
   };
@@ -1628,13 +1629,14 @@ export function InventoryPosModule() {
       setSelectedOperations(new Set());
       toast.success(locale.startsWith("ar") ? 'تم حذف العمليات المحددة بنجاح' : 'Selected operations deleted successfully');
     } catch (err) {
+      console.error("[handleDeleteSelectedOperations] Error:", err);
       toast.error(err instanceof Error ? err.message : t("pay.errGeneric"));
     }
   };
 
   const handleSelectAllOperations = () => {
     if (!selectedShiftReport) return;
-    const allIndices = new Set(selectedShiftReport.operations_log.map((_: any, idx: number) => idx));
+    const allIndices = new Set<number>(selectedShiftReport.operations_log.map((_: any, idx: number) => idx));
     setSelectedOperations(allIndices);
   };
 

@@ -1562,7 +1562,7 @@ app.delete("/api/shift-reports/clear-all", authMiddleware, async (req, res) => {
 });
 
 // Temporary endpoint to delete ALL shift reports regardless of user (for testing only - DANGEROUS!)
-app.delete("/api/shift-reports/delete-all-dangerous", authMiddleware, async (req, res) => {
+app.delete("/api/shift-reports/delete-all-dangerous", authMiddleware, async (_req, res) => {
   try {
     console.log("[Server /api/shift-reports/delete-all-dangerous] DELETING ALL SHIFT REPORTS - DANGEROUS!");
     const result = await db.prepare(`DELETE FROM shift_reports`).run();
@@ -1595,9 +1595,6 @@ app.post("/api/shift-reports", authMiddleware, async (req, res) => {
     const stockAddCount = stock_add_count !== null && stock_add_count !== undefined && !isNaN(Number(stock_add_count)) ? Number(stock_add_count) : 0;
     const stockEditCount = stock_edit_count !== null && stock_edit_count !== undefined && !isNaN(Number(stock_edit_count)) ? Number(stock_edit_count) : 0;
     const totalOperations = total_operations !== null && total_operations !== undefined && !isNaN(Number(total_operations)) ? Number(total_operations) : 0;
-    const importCount = import_count !== null && import_count !== undefined && !isNaN(Number(import_count)) ? Number(import_count) : 0;
-    const exportCount = export_count !== null && export_count !== undefined && !isNaN(Number(export_count)) ? Number(export_count) : 0;
-    const deleteCount = delete_count !== null && delete_count !== undefined && !isNaN(Number(delete_count)) ? Number(delete_count) : 0;
     const startTime = start_time !== null && start_time !== undefined && start_time !== "" ? String(start_time) : new Date().toISOString();
     
     await db.prepare(
@@ -1616,8 +1613,8 @@ app.put("/api/shift-reports/:id", authMiddleware, async (req, res) => {
   try {
     const userId = (req as express.Request & { userId: string }).userId;
     const { id } = req.params;
-    const { customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations, import_count, export_count, delete_count } = req.body;
-    
+    const { customer_name, customer_number, week, operations_log, sales_count, stock_add_count, stock_edit_count, total_operations } = req.body;
+
     // Verify the report belongs to the user
     const report = await db.prepare(`SELECT user_id FROM shift_reports WHERE id = ?`).get(id);
     if (!report || (report as any).user_id !== userId) {
@@ -2781,7 +2778,6 @@ app.get("/api/hr/permissions/:employeeId", authMiddleware, async (req, res) => {
 });
 
 app.post("/api/hr/permissions", authMiddleware, async (req, res) => {
-  const userId = (req as express.Request & { userId: string }).userId;
   const {
     employee_id,
     can_access_inventory,
