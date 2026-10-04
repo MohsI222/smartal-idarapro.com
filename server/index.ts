@@ -282,6 +282,25 @@ app.use(vercelApiUrlRestore);
 applySecurityMiddleware(app);
 app.use(cors(createProductionCorsOptions()));
 
+// Ensure database is initialized before handling requests (especially on Vercel)
+let dbReadyPromise: Promise<void> | null = null;
+app.use(async (req, res, next) => {
+  if (!dbReadyPromise) {
+    dbReadyPromise = initDatabase().catch((err) => {
+      console.error("[server] Database initialization failed:", err);
+      dbReadyPromise = null; // Allow retry on failure
+      throw err;
+    });
+  }
+  try {
+    await dbReadyPromise;
+    next();
+  } catch (err) {
+    console.error("[server] Database not ready:", err);
+    res.status(503).json({ error: "Database initialization failed" });
+  }
+});
+
 // Custom domain middleware for Delivery Hub stores
 app.use(customDomainMiddleware);
 
