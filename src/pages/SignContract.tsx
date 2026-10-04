@@ -10,12 +10,10 @@ import { CheckCircle, FileText, AlertCircle, Download } from "lucide-react";
 import { SignatureCanvas } from "@/components/SignatureCanvas";
 import { fetchPublicContract, submitSignature } from "@/lib/contracts/api";
 import html2pdf from 'html2pdf.js';
-import { useI18n } from "@/i18n/I18nProvider";
 
 export function SignContractPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { t, locale } = useI18n();
   const [contract, setContract] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,47 +31,6 @@ export function SignContractPage() {
       loadContract(id);
     }
   }, [id]);
-
-  // Helper function to format contract content with proper paragraphs
-  const formatContractContent = (content: string, removeLogo: boolean = false): string => {
-    if (!content) return '';
-    
-    let formattedContent = content;
-    
-    // Remove logo images from content if specified (to avoid duplication)
-    if (removeLogo) {
-      formattedContent = formattedContent.replace(/<img[^>]*alt=["']شعار["'][^>]*>/gi, '');
-      formattedContent = formattedContent.replace(/<img[^>]*src=["'][^"']*["'][^>]*alt=["']شعار["'][^>]*>/gi, '');
-      // Also remove any image tags with شعار in src
-      formattedContent = formattedContent.replace(/<img[^>]*src=["'][^"']*شعار[^"']*["'][^>]*>/gi, '');
-    }
-    
-    // Check if content has complex HTML formatting (paragraphs, headings, etc.)
-    const hasComplexHTML = /<(p|h[1-6]|div|section|article)[^>]*>/i.test(formattedContent);
-    
-    if (hasComplexHTML) {
-      // Content already has proper formatting, return as-is (after logo removal)
-      return formattedContent;
-    }
-    
-    // Content is plain text or simple HTML - format it properly
-    // First, strip any remaining HTML tags to get plain text
-    const textArea = document.createElement('textarea');
-    textArea.innerHTML = formattedContent;
-    const plainText = textArea.value;
-    
-    // Split by double newlines to create paragraphs
-    const paragraphs = plainText.split(/\n\n+/);
-    
-    // Wrap each paragraph in <p> tags
-    return paragraphs
-      .map(para => {
-        // Convert single newlines to <br> within paragraphs
-        const formattedPara = para.replace(/\n/g, '<br>');
-        return `<p style="margin-bottom: 20px; line-height: 1.8; text-align: justify;">${formattedPara}</p>`;
-      })
-      .join('');
-  };
 
   async function loadContract(contractId: string) {
     try {
@@ -265,9 +222,6 @@ export function SignContractPage() {
         line-height: 1.8;
       `;
       
-      // Use formatted content instead of raw content (remove logo to avoid duplication)
-      contentClone.innerHTML = formatContractContent(contract.content, true);
-      
       // Convert all oklch colors to compatible formats
       convertElementColors(contentClone);
 
@@ -316,17 +270,14 @@ export function SignContractPage() {
         return item;
       };
 
-      // Use locale for date formatting
-      const dateLocale = locale === 'ar-MA' || locale === 'ar-SA' ? 'ar-MA' : locale === 'fr' ? 'fr-FR' : locale === 'es' ? 'es-ES' : 'en-US';
-
       if (contract.start_date) {
-        metadata.appendChild(addMetadataItem(t("contracts.details.starts"), new Date(contract.start_date).toLocaleDateString(dateLocale)));
+        metadata.appendChild(addMetadataItem('تاريخ البدء', new Date(contract.start_date).toLocaleDateString('ar-MA')));
       }
       if (contract.end_date) {
-        metadata.appendChild(addMetadataItem(t("contracts.details.ends"), new Date(contract.end_date).toLocaleDateString(dateLocale)));
+        metadata.appendChild(addMetadataItem('تاريخ الانتهاء', new Date(contract.end_date).toLocaleDateString('ar-MA')));
       }
       if (contract.expires_at) {
-        metadata.appendChild(addMetadataItem(t("contracts.details.expires"), new Date(contract.expires_at).toLocaleDateString(dateLocale)));
+        metadata.appendChild(addMetadataItem('تاريخ انتهاء الصلاحية', new Date(contract.expires_at).toLocaleDateString('ar-MA')));
       }
 
       container.appendChild(metadata);
@@ -343,7 +294,7 @@ export function SignContractPage() {
         `;
 
         const sigTitle = document.createElement('h2');
-        sigTitle.textContent = t("contracts.signatures.title");
+        sigTitle.textContent = 'التوقيع';
         sigTitle.style.cssText = `
           color: #667eea;
           font-size: 24px;
@@ -365,22 +316,22 @@ export function SignContractPage() {
         sigInfo.innerHTML = `
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 12px;">${t("contracts.signatures.signerName")}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 12px;">اسم الموقع</div>
               <div style="color: #333; font-size: 14px; font-weight: 500;">${formData.signer_name}</div>
             </div>
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 12px;">${t("contracts.signatures.signerEmail")}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 12px;">البريد الإلكتروني</div>
               <div style="color: #333; font-size: 14px; font-weight: 500;">${formData.signer_email}</div>
             </div>
             ${formData.signer_phone ? `
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 12px;">${t("contracts.signatures.signerPhone")}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 12px;">رقم الهاتف</div>
               <div style="color: #333; font-size: 14px; font-weight: 500;">${formData.signer_phone}</div>
             </div>
             ` : ''}
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 12px;">${t("contracts.signatures.signedAt")}</div>
-              <div style="color: #333; font-size: 14px; font-weight: 500;">${new Date().toLocaleString(dateLocale)}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 12px;">تاريخ التوقيع</div>
+              <div style="color: #333; font-size: 14px; font-weight: 500;">${new Date().toLocaleString('ar-MA')}</div>
             </div>
           </div>
         `;
@@ -417,9 +368,9 @@ export function SignContractPage() {
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
       `;
       footer.innerHTML = `
-        <div style="color: #667eea; font-weight: bold; margin-bottom: 5px;">${t("contracts.smartContracts")}</div>
-        <div>${t("contracts.createdElectronically")} ${new Date().toLocaleDateString(dateLocale)}</div>
-        <div style="margin-top: 5px;">Ref: ${contract.id} | ${new Date().toLocaleDateString(dateLocale)}</div>
+        <div style="color: #667eea; font-weight: bold; margin-bottom: 5px;">إدارة العقود الذكية</div>
+        <div>تم إنشاء هذا العقد إلكترونياً بتاريخ ${new Date().toLocaleDateString('ar-MA')}</div>
+        <div style="margin-top: 5px;">Ref: ${contract.id} | ${new Date().toLocaleDateString('ar-MA')}</div>
       `;
       container.appendChild(footer);
 
@@ -515,7 +466,7 @@ export function SignContractPage() {
             <div
               id="contract-content"
               className="prose prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: formatContractContent(contract.content) }}
+              dangerouslySetInnerHTML={{ __html: contract.content }}
             />
           </CardContent>
           <div className="contracts-print-hide">
@@ -525,7 +476,7 @@ export function SignContractPage() {
               className="w-full"
             >
               <Download className="h-4 w-4 ml-2" />
-              {t("contracts.exportPdf")}
+              تصدير PDF
             </Button>
           </div>
         </Card>
@@ -535,10 +486,10 @@ export function SignContractPage() {
             <CardContent className="py-12">
               <div className="flex flex-col items-center gap-4 text-center">
                 <CheckCircle className="h-16 w-16 text-green-500" />
-                <h2 className="text-2xl font-bold text-green-500">{t("contracts.signed.title")}</h2>
-                <p className="text-slate-400">{t("contracts.signed.message")}</p>
+                <h2 className="text-2xl font-bold text-green-500">تم التوقيع بنجاح</h2>
+                <p className="text-slate-400">شكراً لك، تم حفظ توقيعك على هذا العقد</p>
                 <Button onClick={() => navigate("/")} className="mt-4">
-                  {t("contracts.signed.goHome")}
+                  العودة للرئيسية
                 </Button>
               </div>
             </CardContent>
@@ -546,38 +497,38 @@ export function SignContractPage() {
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>{t("contracts.signing.title")}</CardTitle>
-              <CardDescription>{t("contracts.signing.subtitle")}</CardDescription>
+              <CardTitle>معلومات الموقع</CardTitle>
+              <CardDescription>يرجى ملء المعلومات والتوقيع أدناه</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>{t("contracts.signing.name")}</Label>
+                <Label>الاسم الكامل *</Label>
                 <Input
                   value={formData.signer_name}
                   onChange={(e) => setFormData({ ...formData, signer_name: e.target.value })}
-                  placeholder={t("contracts.signing.name")}
+                  placeholder="أدخل اسمك الكامل"
                 />
               </div>
               <div>
-                <Label>{t("contracts.signing.email")}</Label>
+                <Label>البريد الإلكتروني *</Label>
                 <Input
                   type="email"
                   value={formData.signer_email}
                   onChange={(e) => setFormData({ ...formData, signer_email: e.target.value })}
-                  placeholder={t("contracts.signing.email")}
+                  placeholder="example@email.com"
                 />
               </div>
               <div>
-                <Label>{t("contracts.signing.phone")}</Label>
+                <Label>رقم الهاتف</Label>
                 <Input
                   type="tel"
                   value={formData.signer_phone}
                   onChange={(e) => setFormData({ ...formData, signer_phone: e.target.value })}
-                  placeholder={t("contracts.signing.phone")}
+                  placeholder="06XXXXXXXX"
                 />
               </div>
               <div style={{ display: 'block', visibility: 'visible' }}>
-                <Label style={{ display: 'block', visibility: 'visible', color: '#000' }}>{t("contracts.signing.signature")}</Label>
+                <Label style={{ display: 'block', visibility: 'visible', color: '#000' }}>التوقيع الإلكتروني *</Label>
                 <div style={{ display: 'block', visibility: 'visible', marginTop: '8px' }}>
                   <SignatureCanvas
                     onSave={(data) => setSignatureData(data)}
@@ -587,7 +538,7 @@ export function SignContractPage() {
                 </div>
               </div>
               <Button onClick={handleSubmit} className="w-full" size="lg">
-                {t("contracts.signing.confirm")}
+                تأكيد التوقيع
               </Button>
             </CardContent>
           </Card>

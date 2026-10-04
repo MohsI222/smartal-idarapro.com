@@ -958,6 +958,40 @@ app.post("/api/auth/admin-bootstrap", authAdminBootstrapLimiter, async (req, res
   });
 });
 
+/**
+ * إعادة تعيين كلمة مرور لحساب معين (للمستخدمين الذين لا يستطيعون تسجيل الدخول بعد الترحيل)
+ * يتطلب ADMIN_BOOTSTRAP_KEY
+ */
+app.post("/api/auth/reset-password-for-user", async (req, res) => {
+  const expected = process.env.ADMIN_BOOTSTRAP_KEY?.trim();
+  if (!expected || expected.length < 16) {
+    res.status(404).json({ error: "غير مفعّل" });
+    return;
+  }
+  const sent = (req.headers["x-admin-bootstrap"] as string | undefined)?.trim();
+  if (sent !== expected) {
+    res.status(403).json({ error: "مرفوض" });
+    return;
+  }
+
+  const { email, newPassword } = req.body as { email?: string; newPassword?: string };
+  if (!email || !newPassword) {
+    res.status(400).json({ error: "البريد الإلكتروني وكلمة المرور الجديدة مطلوبة" });
+    return;
+  }
+
+  const user = await db.prepare("SELECT id, email FROM users WHERE email = ?").get(email) as { id: string; email: string } | undefined;
+  if (!user) {
+    res.status(404).json({ error: "المستخدم غير موجود" });
+    return;
+  }
+
+  const newHash = hashPassword(newPassword);
+  await db.prepare("UPDATE users SET password_hash = ? WHERE email = ?").run(newHash, email);
+  console.log(`[Auth] Password reset for user: ${email}`);
+  res.json({ success: true, message: "تم إعادة تعيين كلمة المرور بنجاح" });
+});
+
 app.get("/api/me", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   const user = await db
