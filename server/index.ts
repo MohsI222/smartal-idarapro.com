@@ -762,6 +762,31 @@ app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
     return;
   }
 
+  // Auto-create employee and permissions records if they don't exist
+  try {
+    const existingEmployee = await db
+      .prepare("SELECT id FROM hr_employees WHERE user_id = ?")
+      .get(user.id) as { id: string } | undefined;
+
+    if (!existingEmployee) {
+      console.log("[Login] Creating employee record for user:", user.id);
+      const employeeId = randomUUID();
+      await db.prepare(
+        `INSERT INTO hr_employees (id, user_id, name, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`
+      ).run(employeeId, user.id, user.name);
+
+      // Create default permissions
+      const permissionsId = randomUUID();
+      await db.prepare(
+        `INSERT INTO permissions (id, employee_id, can_access_inventory, can_access_hr, can_access_delivery, can_access_transport_logistics, can_access_wedding_invitations, can_access_auto_real_estate, can_access_contracts, can_access_legal, can_access_ai, can_access_settings, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+      ).run(permissionsId, employeeId, true, true, true, true, true, true, true, true, true, true, false);
+      console.log("[Login] Employee and permissions records created successfully");
+    }
+  } catch (error) {
+    console.error("[Login] Error creating employee/permissions records:", error);
+    // Don't fail login if this fails, just log the error
+  }
+
   const bypassDeviceLimit =
     user.role === "superadmin" ||
     user.email === SUPER_ADMIN_EMAIL ||
@@ -814,6 +839,8 @@ app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
       whatsapp: user.whatsapp ?? null,
       account_locked: Boolean(uFull.account_locked),
       trial_balance: tb,
+      referral_code: (user as { referral_code?: string }).referral_code ?? null,
+      trial_ends_at: (user as { trial_ends_at?: string | null }).trial_ends_at ?? null,
     },
   });
 });
