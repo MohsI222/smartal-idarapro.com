@@ -531,6 +531,19 @@ app.post("/api/auth/register", authRegisterLimiter, async (req, res) => {
         `INSERT INTO devices (id, user_id, fingerprint, label, last_seen) VALUES (?, ?, ?, ?, NOW())`
       ).run(randomUUID(), id, deviceFingerprint, deviceLabel ?? null);
     }
+
+    // Create employee record for the new user
+    const employeeId = randomUUID();
+    await db.prepare(
+      `INSERT INTO hr_employees (id, user_id, name, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`
+    ).run(employeeId, id, nameSafe);
+
+    // Create default permissions for the new user
+    const permissionsId = randomUUID();
+    await db.prepare(
+      `INSERT INTO permissions (id, employee_id, can_access_inventory, can_access_hr, can_access_delivery, can_access_transport_logistics, can_access_wedding_invitations, can_access_auto_real_estate, can_access_contracts, can_access_legal, can_access_ai, can_access_settings, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+    ).run(permissionsId, employeeId, true, true, true, true, true, true, true, true, true, true, false);
+
     const token = signToken({ sub: id, role: "user" });
     const emailLower = emailSafe;
     const waMsg = [
@@ -623,6 +636,18 @@ app.post("/api/auth/supabase-oauth", authSupabaseOauthLimiter, async (req, res) 
         `INSERT INTO users (id, email, password_hash, name, role, referred_by, referral_code, trial_ends_at, trial_balance) VALUES (?, ?, ?, ?, 'user', ?, ?, ?, ?)`
       ).run(id, emailRaw, hashPassword(randomUUID()), name, referredBy, code, trialIso, DEFAULT_TRIAL_BALANCE);
       user = await db.prepare("SELECT * FROM users WHERE id = ?").get(id) as typeof user;
+
+      // Create employee record for the new user
+      const employeeId = randomUUID();
+      await db.prepare(
+        `INSERT INTO hr_employees (id, user_id, name, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`
+      ).run(employeeId, id, name);
+
+      // Create default permissions for the new user
+      const permissionsId = randomUUID();
+      await db.prepare(
+        `INSERT INTO permissions (id, employee_id, can_access_inventory, can_access_hr, can_access_delivery, can_access_transport_logistics, can_access_wedding_invitations, can_access_auto_real_estate, can_access_contracts, can_access_legal, can_access_ai, can_access_settings, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+      ).run(permissionsId, employeeId, true, true, true, true, true, true, true, true, true, true, false);
     } catch (e) {
       console.error("[supabase-oauth insert]", e);
       res.status(500).json({ error: "تعذر إنشاء الحساب" });
@@ -878,6 +903,62 @@ app.post("/api/auth/reset-password-for-user", async (req, res) => {
   await db.prepare("UPDATE users SET password_hash = ? WHERE email = ?").run(newHash, email);
   console.log(`[Auth] Password reset for user: ${email}`);
   res.json({ success: true, message: "تم إعادة تعيين كلمة المرور بنجاح" });
+});
+
+/**
+ * إنشاء employee record و permissions record للمستخدمين الحاليين الذين ليس لديهم
+ * يتطلب ADMIN_BOOTSTRAP_KEY
+ */
+app.post("/api/auth/fix-missing-employee-records", async (req, res) => {
+  const expected = process.env.ADMIN_BOOTSTRAP_KEY?.trim();
+  if (!expected || expected.length < 16) {
+    res.status(404).json({ error: "غير مفعّل" });
+    return;
+  }
+  const sent = (req.headers["x-admin-bootstrap"] as string | undefined)?.trim();
+  if (sent !== expected) {
+    res.status(403).json({ error: "مرفوض" });
+    return;
+  }
+
+  try {
+    // Get all users without employee records
+    const usersWithoutEmployee = await db.prepare(`
+      SELECT u.id, u.email, u.name
+      FROM users u
+      LEFT JOIN hr_employees e ON u.id = e.user_id
+      WHERE e.id IS NULL AND u.role != 'superadmin'
+    `).all() as { id: string; email: string; name: string }[];
+
+    console.log(`[Fix] Found ${usersWithoutEmployee.length} users without employee records`);
+
+    let fixedCount = 0;
+    for (const user of usersWithoutEmployee) {
+      // Create employee record
+      const employeeId = randomUUID();
+      await db.prepare(
+        `INSERT INTO hr_employees (id, user_id, name, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())`
+      ).run(employeeId, user.id, user.name);
+
+      // Create default permissions
+      const permissionsId = randomUUID();
+      await db.prepare(
+        `INSERT INTO permissions (id, employee_id, can_access_inventory, can_access_hr, can_access_delivery, can_access_transport_logistics, can_access_wedding_invitations, can_access_auto_real_estate, can_access_contracts, can_access_legal, can_access_ai, can_access_settings, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+      ).run(permissionsId, employeeId, true, true, true, true, true, true, true, true, true, true, false);
+
+      fixedCount++;
+      console.log(`[Fix] Created employee and permissions for user: ${user.email}`);
+    }
+
+    res.json({
+      success: true,
+      message: `تم إصلاح ${fixedCount} حساب`,
+      fixedCount
+    });
+  } catch (error) {
+    console.error("[Fix] Error fixing missing employee records:", error);
+    res.status(500).json({ error: "فشل في إصلاح الحسابات" });
+  }
 });
 
 /**

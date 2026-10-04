@@ -99,6 +99,18 @@ export function PermissionsProvider({ children, userId }: { children: ReactNode;
           updated_at: new Date().toISOString(),
         };
         console.log('[Permissions] Setting default permissions for user without employee record:', defaultPermissions);
+        // Save to database first
+        try {
+          await api('/hr/permissions', {
+            method: 'POST',
+            token,
+            body: JSON.stringify(defaultPermissions)
+          });
+          console.log('[Permissions] Default permissions saved to database');
+        } catch (saveErr) {
+          console.error('[Permissions] Error saving default permissions to database:', saveErr);
+          // Still set in memory even if save fails
+        }
         setPermissions(defaultPermissions);
         setLoading(false);
         return;
