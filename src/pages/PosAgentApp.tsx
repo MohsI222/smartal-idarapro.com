@@ -12,6 +12,8 @@ import { api } from "@/lib/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { BarcodeScannerHub } from "@/components/BarcodeScannerHub";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
+import { compressImageToBase64 } from "@/lib/imageUtils";
+import { uploadFile } from "@/lib/supabaseClient";
 import * as XLSX from 'xlsx';
 
 type Employee = {
@@ -495,8 +497,7 @@ export function PosAgentApp() {
 
   const handleImageUpload = async (file: File) => {
     const MAX_IMAGE_MB = 4;
-    const TARGET_IMAGE_SIZE_KB = 500;
-    const MAX_IMAGE_WIDTH = 1200;
+    const MAX_IMAGE_WIDTH = 800; // Reduced for better compression
 
     if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
       toast.error(`الملف كبير جداً — الحد الأقصى ${MAX_IMAGE_MB} ميجابايت`);
@@ -504,53 +505,24 @@ export function PosAgentApp() {
     }
 
     try {
-      // Compress image
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            let width = img.width;
-            let height = img.height;
+      // Compress image to target size (< 100KB)
+      const compressedBase64 = await compressImageToBase64(
+        file,
+        MAX_IMAGE_WIDTH,
+        MAX_IMAGE_WIDTH,
+        0.7 // Start with 70% quality
+      );
 
-            // Resize if too large
-            if (width > MAX_IMAGE_WIDTH) {
-              height = (height * MAX_IMAGE_WIDTH) / width;
-              width = MAX_IMAGE_WIDTH;
-            }
+      // Convert base64 to Blob for upload
+      const response = await fetch(compressedBase64);
+      const blob = await response.blob();
+      const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
 
-            canvas.width = width;
-            canvas.height = height;
+      // Upload to Supabase Storage
+      const fileName = `products/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+      const publicUrl = await uploadFile(compressedFile, fileName);
 
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-              reject(new Error('Failed to get canvas context'));
-              return;
-            }
-
-            ctx.drawImage(img, 0, 0, width, height);
-
-            // Try different quality levels to achieve target size
-            let quality = 0.9;
-            let dataUrl = canvas.toDataURL('image/jpeg', quality);
-
-            // Reduce quality if still too large
-            while (dataUrl.length > TARGET_IMAGE_SIZE_KB * 1024 && quality > 0.1) {
-              quality -= 0.1;
-              dataUrl = canvas.toDataURL('image/jpeg', quality);
-            }
-
-            resolve(dataUrl);
-          };
-          img.onerror = () => reject(new Error('Failed to load image'));
-          img.src = e.target?.result as string;
-        };
-        reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsDataURL(file);
-      });
-
-      setProductFormData(prev => ({ ...prev, image_url: dataUrl }));
+      setProductFormData(prev => ({ ...prev, image_url: publicUrl }));
       toast.success("تم رفع الصورة بنجاح");
     } catch (error) {
       console.error("[PosAgentApp] Error uploading image:", error);
@@ -907,31 +879,6 @@ export function PosAgentApp() {
       oscillator.stop(audioContext.currentTime + 0.2);
     } catch (e) {
       console.error("Error playing warning sound:", e);
-    }
-  };
-
-  const playSuccessSound = () => {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      
-      if (audioContext.state === 'suspended') {
-        audioContext.resume();
-      }
-      
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      oscillator.frequency.value = 800;
-      oscillator.type = 'sine';
-      gainNode.gain.value = 0.3;
-      
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.15);
-    } catch (e) {
-      console.error("Error playing success sound:", e);
     }
   };
 

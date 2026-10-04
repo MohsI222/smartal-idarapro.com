@@ -37,6 +37,7 @@ import { customDomainMiddleware } from "./customDomainMiddleware.js";
 import {
   resolveGeminiImageApiKey,
 } from "./aiImageGeneration.js";
+import { initializeSupabaseStorage } from "./supabaseStorage.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -6419,6 +6420,7 @@ if (!process.env.VERCEL) {
     try {
       await initDatabase();
       await migrateDeliveryHubStockFields();
+      await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
       app.listen(PORT, () => {
         console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
       });
