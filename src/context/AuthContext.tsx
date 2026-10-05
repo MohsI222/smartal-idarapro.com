@@ -167,21 +167,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    try {
-      const me = await api<MeResponse>("/me", { token: effectiveToken });
-      setUser(me.user);
-      setSubscription(me.subscription);
-      setDevices(me.devices);
-      setMaxDevices(me.maxDevices);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) {
-        setToken(null);
-        localStorage.removeItem(TOKEN_KEY);
-        setUser(null);
-        setSubscription(null);
+    
+    // Retry logic for transient errors
+    let retries = 0;
+    const maxRetries = 2;
+    
+    while (retries <= maxRetries) {
+      try {
+        const me = await api<MeResponse>("/me", { token: effectiveToken });
+        setUser(me.user);
+        setSubscription(me.subscription);
+        setDevices(me.devices);
+        setMaxDevices(me.maxDevices);
+        setLoading(false);
+        return; // Success, exit retry loop
+      } catch (e) {
+        // Only clear session on 401 Unauthorized (invalid/expired token)
+        if (e instanceof ApiError && e.status === 401) {
+          console.error("[AuthContext] Token invalid, clearing session");
+          setToken(null);
+          localStorage.removeItem(TOKEN_KEY);
+          setUser(null);
+          setSubscription(null);
+          setLoading(false);
+          return; // Exit on 401
+        }
+        
+        // For network errors (no status or 5xx), retry
+        if (retries < maxRetries) {
+          console.error(`[AuthContext] Refresh failed (attempt ${retries + 1}/${maxRetries + 1}), retrying...`, e);
+          retries++;
+          await new Promise(resolve => setTimeout(resolve, 1000 * retries)); // Exponential backoff
+          continue;
+        }
+        
+        // Max retries reached, keep session but log error
+        console.error("[AuthContext] Refresh failed after retries, keeping session:", e);
+        setLoading(false);
+        return;
       }
-    } finally {
-      setLoading(false);
     }
   }, [token]);
 
