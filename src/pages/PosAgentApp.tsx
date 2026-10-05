@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import { User, ShoppingCart, Clock, LogOut, Settings, BarChart3, Package, Search, Scan, Filter, X, Check, Home, Download, FileText, Camera, CameraOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -341,7 +341,12 @@ export function PosAgentApp() {
         if (response.success) {
           console.log("[PosAgentApp] Polling - Loaded products:", response.products.length);
           setProducts(response.products);
-          setFilteredProducts(response.products);
+          // Respect search query when updating filtered products
+          if (searchQuery.trim()) {
+            handleSearch(searchQuery);
+          } else {
+            setFilteredProducts(response.products);
+          }
         }
       } catch (error) {
         console.error("[PosAgentApp] Error polling products:", error);
@@ -349,7 +354,7 @@ export function PosAgentApp() {
     }, 1000); // Poll every 1 second for near real-time sync
 
     return () => clearInterval(interval);
-  }, [token]);
+  }, [token, searchQuery]);
 
   const loadEmployees = async () => {
     try {
@@ -431,7 +436,10 @@ export function PosAgentApp() {
         console.log("[PosAgentApp] Loaded products:", response.products.map(p => ({ id: p.id, name: p.name, sku: p.sku, stock: p.stock_pieces })));
         console.log("[PosAgentApp] Total products loaded:", response.products.length);
         setProducts(response.products);
-        setFilteredProducts(response.products);
+        // Re-apply search filter if there's an active search
+        if (searchQuery.trim()) {
+          handleSearch(searchQuery);
+        }
       } else {
         console.error("[PosAgentApp] Failed to load products:", response);
       }
@@ -634,19 +642,28 @@ export function PosAgentApp() {
     }
   };
 
-  const handleSearch = (query: string) => {
+  const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
 
     if (!query.trim()) {
-      setFilteredProducts(products);
+      // Show only visible products if filter is active
+      const productsToShow = visibleProductIds.size > 0 
+        ? products.filter(p => visibleProductIds.has(p.id))
+        : products;
+      setFilteredProducts(productsToShow);
       setSelectedProductIndex(-1); // No auto-selection
       return;
     }
 
     const lowerQuery = query.toLowerCase();
     
+    // Get the base products to search from (filtered by visibility if needed)
+    const baseProducts = visibleProductIds.size > 0 
+      ? products.filter(p => visibleProductIds.has(p.id))
+      : products;
+    
     // Filter and sort products - same logic as InventoryPosModule (Quick Sale)
-    const filtered = products
+    const filtered = baseProducts
       .filter(p => {
         const nameMatch = p.name && p.name.toLowerCase().includes(lowerQuery);
         const skuMatch = p.sku && p.sku.toLowerCase().includes(lowerQuery);
@@ -669,7 +686,7 @@ export function PosAgentApp() {
     setFilteredProducts(filtered);
     setSelectedProductIndex(-1); // No auto-selection
     setSelectedSuggestionIndex(0);
-  };
+  }, [products, visibleProductIds]);
 
   const toggleProductVisibility = (productId: string) => {
     setVisibleProductIds(prev => {
@@ -679,8 +696,27 @@ export function PosAgentApp() {
       } else {
         newSet.add(productId);
       }
-      // Update filtered products
-      setFilteredProducts(products.filter(p => newSet.has(p.id)));
+      // Update filtered products - respect search query if exists
+      if (searchQuery.trim()) {
+        const lowerQuery = searchQuery.toLowerCase();
+        const visible = products.filter(p => newSet.has(p.id));
+        const filtered = visible.filter(p => {
+          const nameMatch = p.name && p.name.toLowerCase().includes(lowerQuery);
+          const skuMatch = p.sku && p.sku.toLowerCase().includes(lowerQuery);
+          return nameMatch || skuMatch;
+        }).sort((a, b) => {
+          const aName = (a.name || "").toLowerCase();
+          const bName = (b.name || "").toLowerCase();
+          const aStarts = aName.startsWith(lowerQuery);
+          const bStarts = bName.startsWith(lowerQuery);
+          if (aStarts && !bStarts) return -1;
+          if (!aStarts && bStarts) return 1;
+          return aName.localeCompare(bName);
+        });
+        setFilteredProducts(filtered);
+      } else {
+        setFilteredProducts(products.filter(p => newSet.has(p.id)));
+      }
       return newSet;
     });
   };
