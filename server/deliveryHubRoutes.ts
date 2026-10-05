@@ -187,6 +187,10 @@ async function ensureStoreForOwner(ownerId: string) {
     // Remove from promises map after completion
     storeCreationPromises.delete(ownerId);
   }
+  })();
+
+  storeCreationPromises.set(ownerId, promise);
+  return promise;
 }
 
 export function registerDeliveryHubRoutes(app: express.Application, authMiddleware: express.RequestHandler) {

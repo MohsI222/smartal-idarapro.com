@@ -23,7 +23,8 @@ export function normalizeDatabaseConnectionString(raw: string): string {
     lower.includes("pooler.supabase");
   if (!looksSupabase) return u;
   if (/sslmode=/i.test(u)) return u;
-  return `${u}${u.includes("?") ? "&" : "?"}sslmode=require`;
+  // Use verify-full explicitly to avoid the warning
+  return `${u}${u.includes("?") ? "&" : "?"}sslmode=verify-full`;
 }
 
 function requireDatabaseUrl(): string {
