@@ -22,42 +22,69 @@ import { db } from "./db.js";
 
 type Req = express.Request & { userId: string };
 
+// Cache for owner IDs to prevent repeated database queries
+const ownerIdCache = new Map<string, string>();
+const ownerCreationPromises = new Map<string, Promise<string>>();
+
 async function getOrCreateOwnerId(userId: string): Promise<string> {
-  console.log("[getOrCreateOwnerId] Creating/Getting owner for user:", userId);
-  try {
-    const existing = await db.prepare(`SELECT owner_id FROM delivery_hub_owners WHERE app_user_id = ?`).get<{
-      owner_id: string;
-    }>(userId);
-    if (existing) {
-      console.log("[getOrCreateOwnerId] Found existing owner:", existing.owner_id);
-      return existing.owner_id;
-    }
-
-    console.log("[getOrCreateOwnerId] Creating new owner for user:", userId);
-    const ownerId = randomUUID();
-    try {
-      await db
-        .prepare(`INSERT INTO delivery_hub_owners (app_user_id, owner_id) VALUES (?, ?) ON CONFLICT (app_user_id) DO NOTHING`)
-        .run(userId, ownerId);
-      console.log("[getOrCreateOwnerId] Inserted owner record:", ownerId);
-    } catch (insertErr) {
-      console.error("[getOrCreateOwnerId] Insert error:", insertErr);
-      throw insertErr;
-    }
-
-    const row = await db.prepare(`SELECT owner_id FROM delivery_hub_owners WHERE app_user_id = ?`).get<{
-      owner_id: string;
-    }>(userId);
-    if (!row) {
-      console.error("[getOrCreateOwnerId] Failed to retrieve owner after insert");
-      throw new Error("تعذر إنشاء معرّف المالك لقسم رادار الطلبات والتوصيل");
-    }
-    console.log("[getOrCreateOwnerId] Successfully retrieved owner:", row.owner_id);
-    return row.owner_id;
-  } catch (error) {
-    console.error("[getOrCreateOwnerId] Error:", error);
-    throw new Error("فشل في تحميل المتجر: " + (error instanceof Error ? error.message : String(error)));
+  // Check cache first
+  const cached = ownerIdCache.get(userId);
+  if (cached) {
+    return cached;
   }
+
+  // Check if there's already an in-progress creation for this user
+  const existingPromise = ownerCreationPromises.get(userId);
+  if (existingPromise) {
+    return existingPromise;
+  }
+
+  // Create new promise and cache it
+  const promise = (async () => {
+    console.log("[getOrCreateOwnerId] Creating/Getting owner for user:", userId);
+    try {
+      const existing = await db.prepare(`SELECT owner_id FROM delivery_hub_owners WHERE app_user_id = ?`).get<{
+        owner_id: string;
+      }>(userId);
+      if (existing) {
+        console.log("[getOrCreateOwnerId] Found existing owner:", existing.owner_id);
+        ownerIdCache.set(userId, existing.owner_id);
+        return existing.owner_id;
+      }
+
+      console.log("[getOrCreateOwnerId] Creating new owner for user:", userId);
+      const ownerId = randomUUID();
+      try {
+        await db
+          .prepare(`INSERT INTO delivery_hub_owners (app_user_id, owner_id) VALUES (?, ?) ON CONFLICT (app_user_id) DO NOTHING`)
+          .run(userId, ownerId);
+        console.log("[getOrCreateOwnerId] Inserted owner record:", ownerId);
+      } catch (insertErr) {
+        console.error("[getOrCreateOwnerId] Insert error:", insertErr);
+        throw insertErr;
+      }
+
+      const row = await db.prepare(`SELECT owner_id FROM delivery_hub_owners WHERE app_user_id = ?`).get<{
+        owner_id: string;
+      }>(userId);
+      if (!row) {
+        console.error("[getOrCreateOwnerId] Failed to retrieve owner after insert");
+        throw new Error("تعذر إنشاء معرّف المالك لقسم رادار الطلبات والتوصيل");
+      }
+      console.log("[getOrCreateOwnerId] Successfully retrieved owner:", row.owner_id);
+      ownerIdCache.set(userId, row.owner_id);
+      return row.owner_id;
+    } catch (error) {
+      console.error("[getOrCreateOwnerId] Error:", error);
+      throw new Error("فشل في تحميل المتجر: " + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      // Remove from promises map after completion
+      ownerCreationPromises.delete(userId);
+    }
+  })();
+
+  ownerCreationPromises.set(userId, promise);
+  return promise;
 }
 
 const FALLBACK_IMAGES = {
@@ -67,39 +94,58 @@ const FALLBACK_IMAGES = {
   banner: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=60",
 };
 
+// Cache for stores to prevent repeated database queries
+const storeCache = new Map<string, any>();
+const storeCreationPromises = new Map<string, Promise<any>>();
+
 async function ensureStoreForOwner(ownerId: string) {
-  console.log("[ensureStoreForOwner] Checking for existing store for owner:", ownerId);
-  try {
-    const existing = await db
-      .prepare(`SELECT * FROM public.delivery_hub_stores WHERE user_id = ? ORDER BY created_at ASC LIMIT 1`)
-      .get(ownerId);
-    if (existing) {
-      console.log("[ensureStoreForOwner] Found existing store:", existing.id);
-      return existing;
-    }
+  // Check cache first
+  const cached = storeCache.get(ownerId);
+  if (cached) {
+    return cached;
+  }
 
-    console.log("[ensureStoreForOwner] Creating new store for owner:", ownerId);
-    let slug = "demo-store";
-    const taken = await db.prepare(`SELECT id FROM public.delivery_hub_stores WHERE slug = ?`).get(slug);
-    if (taken) slug = `demo-store-${Math.random().toString(36).slice(2, 6)}`;
+  // Check if there's already an in-progress creation for this owner
+  const existingPromise = storeCreationPromises.get(ownerId);
+  if (existingPromise) {
+    return existingPromise;
+  }
 
+  // Create new promise and cache it
+  const promise = (async () => {
+    console.log("[ensureStoreForOwner] Checking for existing store for owner:", ownerId);
     try {
-      const storeId = randomUUID();
-      await db.prepare(`
-        INSERT INTO public.delivery_hub_stores (
-          id, user_id, name, tagline, slug, phone, whatsapp, address, city, country,
-          banner_url, logo_url, facebook_url, instagram_url, tiktok_url, custom_domain,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        storeId,
-        ownerId,
-        "متجر تجريبي",
-        "متجر تجريبي لقسم رادار الطلبات والتوصيل",
-        slug,
-        "",
-        "",
-        "",
+      const existing = await db
+        .prepare(`SELECT * FROM public.delivery_hub_stores WHERE user_id = ? ORDER BY created_at ASC LIMIT 1`)
+        .get(ownerId);
+      if (existing) {
+        console.log("[ensureStoreForOwner] Found existing store:", existing.id);
+        storeCache.set(ownerId, existing);
+        return existing;
+      }
+
+      console.log("[ensureStoreForOwner] Creating new store for owner:", ownerId);
+      let slug = "demo-store";
+      const taken = await db.prepare(`SELECT id FROM public.delivery_hub_stores WHERE slug = ?`).get(slug);
+      if (taken) slug = `demo-store-${Math.random().toString(36).slice(2, 6)}`;
+
+      try {
+        const storeId = randomUUID();
+        await db.prepare(`
+          INSERT INTO public.delivery_hub_stores (
+            id, user_id, name, tagline, slug, phone, whatsapp, address, city, country,
+            banner_url, logo_url, facebook_url, instagram_url, tiktok_url, custom_domain,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          storeId,
+          ownerId,
+          "متجر تجريبي",
+          "متجر تجريبي لقسم رادار الطلبات والتوصيل",
+          slug,
+          "",
+          "",
+          "",
         "",
         "",
         FALLBACK_IMAGES.banner,
@@ -113,7 +159,10 @@ async function ensureStoreForOwner(ownerId: string) {
       );
       console.log("[ensureStoreForOwner] Created new store:", storeId);
       const newStore = await db.prepare(`SELECT * FROM public.delivery_hub_stores WHERE id = ?`).get(storeId);
-      if (newStore) return newStore;
+      if (newStore) {
+        storeCache.set(ownerId, newStore);
+        return newStore;
+      }
     } catch (createErr) {
       console.error("[ensureStoreForOwner] Create error:", createErr);
       throw createErr;
@@ -126,6 +175,7 @@ async function ensureStoreForOwner(ownerId: string) {
       .get();
     if (demoStore) {
       console.log("[ensureStoreForOwner] Using demo store as fallback:", demoStore.id);
+      storeCache.set(ownerId, demoStore);
       return demoStore;
     }
 
@@ -133,6 +183,9 @@ async function ensureStoreForOwner(ownerId: string) {
   } catch (error) {
     console.error("[ensureStoreForOwner] Error:", error);
     throw new Error("فشل في تحميل المتجر: " + (error instanceof Error ? error.message : String(error)));
+  } finally {
+    // Remove from promises map after completion
+    storeCreationPromises.delete(ownerId);
   }
 }
 
