@@ -654,7 +654,7 @@ export function PosAgentApp() {
         const aSku = (a.sku || "").toLowerCase();
         const bSku = (b.sku || "").toLowerCase();
 
-        // Priority 1: Name starts with query
+        // Priority 1: Name starts with query (highest priority)
         const aNameStarts = aName.startsWith(lowerQuery);
         const bNameStarts = bName.startsWith(lowerQuery);
         if (aNameStarts && !bNameStarts) return -1;
@@ -666,23 +666,30 @@ export function PosAgentApp() {
         if (aSkuStarts && !bSkuStarts) return -1;
         if (!aSkuStarts && bSkuStarts) return 1;
 
-        // Priority 3: Name match position (earlier is better)
+        // Priority 3: Both don't start with query, but name contains it
+        const aNameContains = aName.includes(lowerQuery);
+        const bNameContains = bName.includes(lowerQuery);
+        if (aNameContains && !bNameContains) return -1;
+        if (!aNameContains && bNameContains) return 1;
+
+        // Priority 4: Name match position (earlier is better)
         const aNamePos = aName.indexOf(lowerQuery);
         const bNamePos = bName.indexOf(lowerQuery);
-        if (aNamePos !== bNamePos) return aNamePos - bNamePos;
+        if (aNamePos !== bNamePos && aNamePos >= 0 && bNamePos >= 0) return aNamePos - bNamePos;
 
-        // Priority 4: SKU match position (earlier is better)
+        // Priority 5: SKU match position (earlier is better)
         const aSkuPos = aSku.indexOf(lowerQuery);
         const bSkuPos = bSku.indexOf(lowerQuery);
-        if (aSkuPos !== bSkuPos) return aSkuPos - bSkuPos;
+        if (aSkuPos !== bSkuPos && aSkuPos >= 0 && bSkuPos >= 0) return aSkuPos - bSkuPos;
 
-        // Priority 5: Alphabetical by name
+        // Priority 6: Alphabetical by name (only if both have no match)
         return aName.localeCompare(bName);
       });
 
     console.log("[PosAgentApp] Filtered products:", filtered.length);
     setFilteredProducts(filtered);
     setSelectedProductIndex(0);
+    setSelectedSuggestionIndex(0);
   };
 
   const toggleProductVisibility = (productId: string) => {
