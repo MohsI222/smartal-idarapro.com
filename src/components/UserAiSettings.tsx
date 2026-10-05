@@ -213,6 +213,7 @@ export function UserAiSettings() {
                       onChange={(e) => setApiKey(e.target.value)}
                       placeholder={provider === 'gemini' ? 'أدخل مفتاح Gemini API (يبدأ بـ AIza)' : provider === 'groq' ? 'أدخل مفتاح Groq API (يبدأ بـ gsk_)' : provider === 'huggingface' ? 'أدخل مفتاح HuggingFace API (يبدأ بـ hf_)' : provider === 'together' ? 'أدخل مفتاح Together AI API (يبدأ بـ key_)' : 'أدخل مفتاح OpenAI API (يبدأ بـ sk-)'}
                       className="bg-slate-900 border-slate-700 pr-10"
+                      autoComplete="new-password"
                     />
                     <button
                       type="button"
