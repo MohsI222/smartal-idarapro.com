@@ -142,7 +142,7 @@ export function SignContractPage() {
       // Create a professional PDF container with all content
       const container = document.createElement('div');
       container.style.cssText = `
-        background: white;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 20px;
         font-family: 'Arial', 'Helvetica', sans-serif;
         direction: rtl;
@@ -154,8 +154,11 @@ export function SignContractPage() {
       // Header with logo and title
       const header = document.createElement('div');
       header.style.cssText = `
-        padding: 20px;
-        margin-bottom: 15px;
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         text-align: center;
         page-break-inside: avoid;
       `;
@@ -163,7 +166,7 @@ export function SignContractPage() {
       if (contract.logo_url) {
         const logo = document.createElement('img');
         logo.src = contract.logo_url;
-        logo.style.cssText = 'max-width: 120px; max-height: 60px; margin-bottom: 10px;';
+        logo.style.cssText = 'max-width: 100px; max-height: 50px; margin-bottom: 8px;';
         header.appendChild(logo);
       }
 
@@ -171,7 +174,7 @@ export function SignContractPage() {
       title.textContent = contract.title;
       title.style.cssText = `
         color: #667eea;
-        font-size: 22px;
+        font-size: 18px;
         font-weight: bold;
         margin: 0;
       `;
@@ -180,7 +183,7 @@ export function SignContractPage() {
       if (contract.description) {
         const desc = document.createElement('p');
         desc.textContent = contract.description;
-        desc.style.cssText = 'color: #666; margin-top: 8px; font-size: 12px;';
+        desc.style.cssText = 'color: #666; margin-top: 5px; font-size: 10px;';
         header.appendChild(desc);
       }
 
@@ -189,10 +192,10 @@ export function SignContractPage() {
       statusBadge.textContent = contract.status === 'signed' ? (locale.startsWith("ar") ? 'موقع ✅' : 'Signed ✅') : contract.status === 'pending_signature' ? (locale.startsWith("ar") ? 'بانتظار التوقيع ✍️' : 'Pending ✍️') : (locale.startsWith("ar") ? 'مسودة 📝' : 'Draft 📝');
       statusBadge.style.cssText = `
         display: inline-block;
-        margin-top: 10px;
-        padding: 6px 16px;
-        border-radius: 20px;
-        font-size: 12px;
+        margin-top: 8px;
+        padding: 4px 12px;
+        border-radius: 15px;
+        font-size: 10px;
         font-weight: bold;
         color: white;
         background: ${contract.status === 'signed' ? '#10b981' : contract.status === 'pending_signature' ? '#f59e0b' : '#6b7280'};
@@ -204,9 +207,12 @@ export function SignContractPage() {
       // Contract content with professional styling
       const contentWrapper = document.createElement('div');
       contentWrapper.style.cssText = `
-        padding: 15px;
-        margin-bottom: 15px;
-        line-height: 1.6;
+        background: white;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        line-height: 1.5;
         color: #333;
         page-break-inside: avoid;
       `;
@@ -217,9 +223,9 @@ export function SignContractPage() {
         direction: rtl;
         text-align: right;
         color: #333;
-        line-height: 1.6;
+        line-height: 1.5;
         white-space: pre-wrap;
-        font-size: 11px;
+        font-size: 10px;
       `;
       
       // Convert all oklch colors to compatible formats
@@ -230,10 +236,10 @@ export function SignContractPage() {
       headings.forEach(h => {
         (h as HTMLElement).style.cssText = `
           color: #667eea;
-          margin-top: 12px;
-          margin-bottom: 6px;
+          margin-top: 10px;
+          margin-bottom: 5px;
           font-weight: bold;
-          font-size: 13px;
+          font-size: 11px;
         `;
       });
 
@@ -241,9 +247,9 @@ export function SignContractPage() {
       const paragraphs = contentClone.querySelectorAll('p');
       paragraphs.forEach(p => {
         (p as HTMLElement).style.cssText = `
-          margin-bottom: 8px;
+          margin-bottom: 6px;
           text-align: justify;
-          font-size: 11px;
+          font-size: 10px;
         `;
       });
 
@@ -253,20 +259,23 @@ export function SignContractPage() {
       // Contract metadata
       const metadata = document.createElement('div');
       metadata.style.cssText = `
+        background: white;
         padding: 10px;
+        border-radius: 8px;
         margin-bottom: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        font-size: 10px;
+        gap: 8px;
+        font-size: 9px;
         page-break-inside: avoid;
       `;
 
       const addMetadataItem = (label: string, value: string) => {
         const item = document.createElement('div');
         item.innerHTML = `
-          <div style="color: #667eea; font-weight: bold; font-size: 10px; margin-bottom: 3px;">${label}</div>
-          <div style="color: #333; font-size: 10px;">${value}</div>
+          <div style="color: #667eea; font-weight: bold; font-size: 9px; margin-bottom: 2px;">${label}</div>
+          <div style="color: #333; font-size: 9px;">${value}</div>
         `;
         return item;
       };
@@ -287,8 +296,11 @@ export function SignContractPage() {
       if (signed && signatureData) {
         const signatureSection = document.createElement('div');
         signatureSection.style.cssText = `
-          padding: 15px;
+          background: white;
+          padding: 12px;
+          border-radius: 8px;
           margin-bottom: 10px;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
           page-break-inside: avoid;
         `;
 
@@ -296,40 +308,42 @@ export function SignContractPage() {
         sigTitle.textContent = locale.startsWith("ar") ? 'التوقيع' : 'Signature';
         sigTitle.style.cssText = `
           color: #667eea;
-          font-size: 14px;
+          font-size: 12px;
           font-weight: bold;
-          margin-bottom: 10px;
+          margin-bottom: 8px;
           text-align: center;
         `;
         signatureSection.appendChild(sigTitle);
 
         const sigInfo = document.createElement('div');
         sigInfo.style.cssText = `
-          padding: 10px;
-          margin-bottom: 10px;
+          background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+          padding: 8px;
+          margin-bottom: 8px;
+          border-radius: 6px;
           border: 1px solid #667eea;
-          font-size: 10px;
+          font-size: 9px;
         `;
 
         sigInfo.innerHTML = `
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 10px;">${locale.startsWith("ar") ? 'اسم الموقع' : 'Signer Name'}</div>
-              <div style="color: #333; font-size: 10px;">${formData.signer_name}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${locale.startsWith("ar") ? 'اسم الموقع' : 'Signer Name'}</div>
+              <div style="color: #333; font-size: 9px;">${formData.signer_name}</div>
             </div>
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 10px;">${locale.startsWith("ar") ? 'البريد الإلكتروني' : 'Email'}</div>
-              <div style="color: #333; font-size: 10px;">${formData.signer_email}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${locale.startsWith("ar") ? 'البريد الإلكتروني' : 'Email'}</div>
+              <div style="color: #333; font-size: 9px;">${formData.signer_email}</div>
             </div>
             ${formData.signer_phone ? `
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 10px;">${locale.startsWith("ar") ? 'رقم الهاتف' : 'Phone'}</div>
-              <div style="color: #333; font-size: 10px;">${formData.signer_phone}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${locale.startsWith("ar") ? 'رقم الهاتف' : 'Phone'}</div>
+              <div style="color: #333; font-size: 9px;">${formData.signer_phone}</div>
             </div>
             ` : ''}
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 10px;">${locale.startsWith("ar") ? 'تاريخ التوقيع' : 'Signing Date'}</div>
-              <div style="color: #333; font-size: 10px;">${new Date().toLocaleString(locale === 'ar' ? 'ar-MA' : 'en-US')}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${locale.startsWith("ar") ? 'تاريخ التوقيع' : 'Signing Date'}</div>
+              <div style="color: #333; font-size: 9px;">${new Date().toLocaleString(locale === 'ar' ? 'ar-MA' : 'en-US')}</div>
             </div>
           </div>
         `;
@@ -340,10 +354,12 @@ export function SignContractPage() {
         sigImg.src = signatureData;
         sigImg.style.cssText = `
           width: 100%;
-          max-width: 200px;
+          max-width: 150px;
           height: auto;
           border: 1px solid #667eea;
-          padding: 5px;
+          border-radius: 6px;
+          background: white;
+          padding: 4px;
           display: block;
           margin: 0 auto;
         `;
@@ -355,10 +371,13 @@ export function SignContractPage() {
       // Footer
       const footer = document.createElement('div');
       footer.style.cssText = `
+        background: white;
         padding: 10px;
+        border-radius: 8px;
         text-align: center;
         color: #666;
-        font-size: 9px;
+        font-size: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         page-break-inside: avoid;
       `;
       footer.innerHTML = `

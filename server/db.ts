@@ -89,6 +89,7 @@ function buildPoolConfigForUrl(rawConnectionString: string): PoolConfigWithPrepa
     connectionString,
     max,
     connectionTimeoutMillis,
+    idleTimeoutMillis: 30000, // 30 seconds idle timeout
     /** Supabase / pooler TLS — تجنّب أخطاء الشهادة الذاتية مع rejectUnauthorized: false */
     ssl: isSupabase ? { rejectUnauthorized: false } : undefined,
   };
