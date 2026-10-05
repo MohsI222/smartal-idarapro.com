@@ -168,6 +168,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     
+    // Check if current path is a public route (no auth required)
+    const publicRoutes = ['/sign-contract/', '/auth/callback', '/login', '/register', '/'];
+    const isPublicRoute = publicRoutes.some(route => window.location.pathname.startsWith(route));
+    
     // Retry logic for transient errors
     let retries = 0;
     const maxRetries = 2;
@@ -183,7 +187,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return; // Success, exit retry loop
       } catch (e) {
         // Only clear session on 401 Unauthorized (invalid/expired token)
-        if (e instanceof ApiError && e.status === 401) {
+        // But NOT for public routes - keep session there
+        if (e instanceof ApiError && e.status === 401 && !isPublicRoute) {
           console.error("[AuthContext] Token invalid, clearing session");
           setToken(null);
           localStorage.removeItem(TOKEN_KEY);
