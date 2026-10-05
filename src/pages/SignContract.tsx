@@ -10,10 +10,12 @@ import { CheckCircle, FileText, AlertCircle, Download } from "lucide-react";
 import { SignatureCanvas } from "@/components/SignatureCanvas";
 import { fetchPublicContract, submitSignature } from "@/lib/contracts/api";
 import html2pdf from 'html2pdf.js';
+import { useI18n } from "@/i18n/I18nProvider";
 
 export function SignContractPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { t, locale } = useI18n();
   const [contract, setContract] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,10 +42,10 @@ export function SignContractPage() {
       
       if (data.status === "signed") {
         setSigned(true);
-        toast.info("هذا العقد موقع بالفعل");
+        toast.info(locale.startsWith("ar") ? "هذا العقد موقع بالفعل" : "This contract is already signed");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "فشل تحميل العقد");
+      setError(err instanceof Error ? err.message : locale.startsWith("ar") ? "فشل تحميل العقد" : "Failed to load contract");
     } finally {
       setLoading(false);
     }
@@ -55,12 +57,12 @@ export function SignContractPage() {
     console.log("[SignContract] signatureData length:", signatureData?.length);
 
     if (!formData.signer_name || !formData.signer_email) {
-      toast.error("الاسم والبريد الإلكتروني مطلوبان");
+      toast.error(locale.startsWith("ar") ? "الاسم والبريد الإلكتروني مطلوبان" : "Name and email are required");
       return;
     }
 
     if (!signatureData) {
-      toast.error("يرجى التوقيع أولاً");
+      toast.error(locale.startsWith("ar") ? "يرجى التوقيع أولاً" : "Please sign first");
       return;
     }
 
@@ -71,7 +73,7 @@ export function SignContractPage() {
         signature_data: signatureData,
       });
       console.log("[SignContract] Signature submitted successfully");
-      toast.success("تم التوقيع بنجاح ✅");
+      toast.success(locale.startsWith("ar") ? "تم التوقيع بنجاح ✅" : "Signed successfully ✅");
       setSigned(true);
       
       // Reload the contract to show updated status
@@ -80,14 +82,14 @@ export function SignContractPage() {
       }, 1000);
     } catch (err) {
       console.error("[SignContract] Error submitting signature:", err);
-      toast.error(err instanceof Error ? err.message : "فشل حفظ التوقيع");
+      toast.error(err instanceof Error ? err.message : locale.startsWith("ar") ? "فشل حفظ التوقيع" : "Failed to save signature");
     }
   }
 
   function handleExportPDF() {
     const element = document.getElementById('contract-content');
     if (!element) {
-      toast.error("فشل العثور على محتوى العقد");
+      toast.error(locale.startsWith("ar") ? "فشل العثور على محتوى العقد" : "Failed to find contract content");
       return;
     }
 
@@ -186,7 +188,7 @@ export function SignContractPage() {
 
       // Contract status badge
       const statusBadge = document.createElement('div');
-      statusBadge.textContent = contract.status === 'signed' ? 'موقع ✅' : contract.status === 'pending_signature' ? 'بانتظار التوقيع ✍️' : 'مسودة 📝';
+      statusBadge.textContent = contract.status === 'signed' ? (locale.startsWith("ar") ? 'موقع ✅' : 'Signed ✅') : contract.status === 'pending_signature' ? (locale.startsWith("ar") ? 'بانتظار التوقيع ✍️' : 'Pending ✍️') : (locale.startsWith("ar") ? 'مسودة 📝' : 'Draft 📝');
       statusBadge.style.cssText = `
         display: inline-block;
         margin-top: 15px;
@@ -220,6 +222,7 @@ export function SignContractPage() {
         text-align: right;
         color: #333;
         line-height: 1.8;
+        white-space: pre-wrap;
       `;
       
       // Convert all oklch colors to compatible formats
@@ -271,13 +274,13 @@ export function SignContractPage() {
       };
 
       if (contract.start_date) {
-        metadata.appendChild(addMetadataItem('تاريخ البدء', new Date(contract.start_date).toLocaleDateString('ar-MA')));
+        metadata.appendChild(addMetadataItem(locale.startsWith("ar") ? 'تاريخ البدء' : 'Start Date', new Date(contract.start_date).toLocaleDateString(locale === 'ar' ? 'ar-MA' : 'en-US')));
       }
       if (contract.end_date) {
-        metadata.appendChild(addMetadataItem('تاريخ الانتهاء', new Date(contract.end_date).toLocaleDateString('ar-MA')));
+        metadata.appendChild(addMetadataItem(locale.startsWith("ar") ? 'تاريخ الانتهاء' : 'End Date', new Date(contract.end_date).toLocaleDateString(locale === 'ar' ? 'ar-MA' : 'en-US')));
       }
       if (contract.expires_at) {
-        metadata.appendChild(addMetadataItem('تاريخ انتهاء الصلاحية', new Date(contract.expires_at).toLocaleDateString('ar-MA')));
+        metadata.appendChild(addMetadataItem(locale.startsWith("ar") ? 'تاريخ انتهاء الصلاحية' : 'Expiry Date', new Date(contract.expires_at).toLocaleDateString(locale === 'ar' ? 'ar-MA' : 'en-US')));
       }
 
       container.appendChild(metadata);
@@ -294,7 +297,7 @@ export function SignContractPage() {
         `;
 
         const sigTitle = document.createElement('h2');
-        sigTitle.textContent = 'التوقيع';
+        sigTitle.textContent = locale.startsWith("ar") ? 'التوقيع' : 'Signature';
         sigTitle.style.cssText = `
           color: #667eea;
           font-size: 24px;
@@ -316,22 +319,22 @@ export function SignContractPage() {
         sigInfo.innerHTML = `
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 12px;">اسم الموقع</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 12px;">${locale.startsWith("ar") ? 'اسم الموقع' : 'Signer Name'}</div>
               <div style="color: #333; font-size: 14px; font-weight: 500;">${formData.signer_name}</div>
             </div>
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 12px;">البريد الإلكتروني</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 12px;">${locale.startsWith("ar") ? 'البريد الإلكتروني' : 'Email'}</div>
               <div style="color: #333; font-size: 14px; font-weight: 500;">${formData.signer_email}</div>
             </div>
             ${formData.signer_phone ? `
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 12px;">رقم الهاتف</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 12px;">${locale.startsWith("ar") ? 'رقم الهاتف' : 'Phone'}</div>
               <div style="color: #333; font-size: 14px; font-weight: 500;">${formData.signer_phone}</div>
             </div>
             ` : ''}
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 12px;">تاريخ التوقيع</div>
-              <div style="color: #333; font-size: 14px; font-weight: 500;">${new Date().toLocaleString('ar-MA')}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 12px;">${locale.startsWith("ar") ? 'تاريخ التوقيع' : 'Signing Date'}</div>
+              <div style="color: #333; font-size: 14px; font-weight: 500;">${new Date().toLocaleString(locale === 'ar' ? 'ar-MA' : 'en-US')}</div>
             </div>
           </div>
         `;
@@ -368,9 +371,9 @@ export function SignContractPage() {
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
       `;
       footer.innerHTML = `
-        <div style="color: #667eea; font-weight: bold; margin-bottom: 5px;">إدارة العقود الذكية</div>
-        <div>تم إنشاء هذا العقد إلكترونياً بتاريخ ${new Date().toLocaleDateString('ar-MA')}</div>
-        <div style="margin-top: 5px;">Ref: ${contract.id} | ${new Date().toLocaleDateString('ar-MA')}</div>
+        <div style="color: #667eea; font-weight: bold; margin-bottom: 5px;">${locale.startsWith("ar") ? 'إدارة العقود الذكية' : 'Smart Contract Management'}</div>
+        <div>${locale.startsWith("ar") ? 'تم إنشاء هذا العقد إلكترونياً بتاريخ' : 'This contract was created electronically on'} ${new Date().toLocaleDateString(locale === 'ar' ? 'ar-MA' : 'en-US')}</div>
+        <div style="margin-top: 5px;">Ref: ${contract.id} | ${new Date().toLocaleDateString(locale === 'ar' ? 'ar-MA' : 'en-US')}</div>
       `;
       container.appendChild(footer);
 
@@ -390,29 +393,29 @@ export function SignContractPage() {
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      toast.info("جاري تصدير PDF...");
+      toast.info(locale.startsWith("ar") ? "جاري تصدير PDF..." : "Exporting PDF...");
 
       // Use setTimeout to prevent UI blocking
       setTimeout(() => {
         html2pdf().set(opt).from(container).save()
           .then(() => {
-            toast.success("تم تصدير PDF بنجاح");
+            toast.success(locale.startsWith("ar") ? "تم تصدير PDF بنجاح" : "PDF exported successfully");
           })
           .catch((error) => {
             console.error("PDF export error:", error);
-            toast.error("فشل تصدير PDF: " + (error.message || "خطأ غير معروف"));
+            toast.error(locale.startsWith("ar") ? "فشل تصدير PDF: " : "Failed to export PDF: " + (error.message || "Unknown error"));
           });
       }, 100);
     } catch (error) {
       console.error("PDF export setup error:", error);
-      toast.error("فشل إعداد تصدير PDF");
+      toast.error(locale.startsWith("ar") ? "فشل إعداد تصدير PDF" : "Failed to setup PDF export");
     }
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-slate-400">جاري التحميل...</div>
+        <div className="text-slate-400">{locale.startsWith("ar") ? "جاري التحميل..." : "Loading..."}</div>
       </div>
     );
   }
@@ -424,13 +427,13 @@ export function SignContractPage() {
           <CardHeader>
             <div className="flex items-center gap-3 text-red-500">
               <AlertCircle className="h-8 w-8" />
-              <CardTitle>خطأ</CardTitle>
+              <CardTitle>{locale.startsWith("ar") ? "خطأ" : "Error"}</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
             <p className="text-slate-400">{error}</p>
             <Button onClick={() => navigate("/")} className="mt-4 w-full">
-              العودة للرئيسية
+              {locale.startsWith("ar") ? "العودة للرئيسية" : "Back to Home"}
             </Button>
           </CardContent>
         </Card>
@@ -477,7 +480,7 @@ export function SignContractPage() {
               className="w-full"
             >
               <Download className="h-4 w-4 ml-2" />
-              تصدير PDF
+              {locale.startsWith("ar") ? "تصدير PDF" : "Export PDF"}
             </Button>
           </div>
         </Card>
@@ -487,10 +490,10 @@ export function SignContractPage() {
             <CardContent className="py-12">
               <div className="flex flex-col items-center gap-4 text-center">
                 <CheckCircle className="h-16 w-16 text-green-500" />
-                <h2 className="text-2xl font-bold text-green-500">تم التوقيع بنجاح</h2>
-                <p className="text-slate-400">شكراً لك، تم حفظ توقيعك على هذا العقد</p>
+                <h2 className="text-2xl font-bold text-green-500">{locale.startsWith("ar") ? "تم التوقيع بنجاح" : "Signed Successfully"}</h2>
+                <p className="text-slate-400">{locale.startsWith("ar") ? "شكراً لك، تم حفظ توقيعك على هذا العقد" : "Thank you, your signature has been saved on this contract"}</p>
                 <Button onClick={() => navigate("/")} className="mt-4">
-                  العودة للرئيسية
+                  {locale.startsWith("ar") ? "العودة للرئيسية" : "Back to Home"}
                 </Button>
               </div>
             </CardContent>
@@ -498,20 +501,20 @@ export function SignContractPage() {
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>معلومات الموقع</CardTitle>
-              <CardDescription>يرجى ملء المعلومات والتوقيع أدناه</CardDescription>
+              <CardTitle>{locale.startsWith("ar") ? "معلومات الموقع" : "Signer Information"}</CardTitle>
+              <CardDescription>{locale.startsWith("ar") ? "يرجى ملء المعلومات والتوقيع أدناه" : "Please fill in the information and sign below"}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label>الاسم الكامل *</Label>
+                <Label>{locale.startsWith("ar") ? "الاسم الكامل *" : "Full Name *"}</Label>
                 <Input
                   value={formData.signer_name}
                   onChange={(e) => setFormData({ ...formData, signer_name: e.target.value })}
-                  placeholder="أدخل اسمك الكامل"
+                  placeholder={locale.startsWith("ar") ? "أدخل اسمك الكامل" : "Enter your full name"}
                 />
               </div>
               <div>
-                <Label>البريد الإلكتروني *</Label>
+                <Label>{locale.startsWith("ar") ? "البريد الإلكتروني *" : "Email *"}</Label>
                 <Input
                   type="email"
                   value={formData.signer_email}
@@ -520,7 +523,7 @@ export function SignContractPage() {
                 />
               </div>
               <div>
-                <Label>رقم الهاتف</Label>
+                <Label>{locale.startsWith("ar") ? "رقم الهاتف" : "Phone Number"}</Label>
                 <Input
                   type="tel"
                   value={formData.signer_phone}
@@ -529,7 +532,7 @@ export function SignContractPage() {
                 />
               </div>
               <div style={{ display: 'block', visibility: 'visible' }}>
-                <Label style={{ display: 'block', visibility: 'visible', color: '#000' }}>التوقيع الإلكتروني *</Label>
+                <Label style={{ display: 'block', visibility: 'visible', color: '#000' }}>{locale.startsWith("ar") ? "التوقيع الإلكتروني *" : "Electronic Signature *"}</Label>
                 <div style={{ display: 'block', visibility: 'visible', marginTop: '8px' }}>
                   <SignatureCanvas
                     onSave={(data) => setSignatureData(data)}
@@ -539,7 +542,7 @@ export function SignContractPage() {
                 </div>
               </div>
               <Button onClick={handleSubmit} className="w-full" size="lg">
-                تأكيد التوقيع
+                {locale.startsWith("ar") ? "تأكيد التوقيع" : "Confirm Signature"}
               </Button>
             </CardContent>
           </Card>
