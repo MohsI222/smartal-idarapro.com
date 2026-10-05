@@ -1,5 +1,5 @@
 /** Contracts Module - وحدة العقود والتوقيع الإلكتروني */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -47,9 +47,9 @@ export function ContractsModule() {
     } else {
       loadData();
     }
-  }, [id]); // Only reload when id changes
+  }, [id, loadData, loadContractDetails]); // Only reload when id changes
 
-  async function loadData() {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem("idara_token");
@@ -76,9 +76,9 @@ export function ContractsModule() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [navigate]);
 
-  async function loadContractDetails(contractId: string) {
+  const loadContractDetails = useCallback(async (contractId: string) => {
     try {
       setLoading(true);
       const token = localStorage.getItem("idara_token");
@@ -107,9 +107,9 @@ export function ContractsModule() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [navigate]);
 
-  async function handleCreateContract() {
+  const handleCreateContract = useCallback(async () => {
     if (!formData.title || !formData.content) {
       toast.error(t("common.requiredFields"));
       return;
@@ -148,9 +148,9 @@ export function ContractsModule() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "فشل إنشاء العقد");
     }
-  }
+  }, [formData, loadData, navigate]);
 
-  async function handleDeleteContract(id: string) {
+  const handleDeleteContract = useCallback(async (id: string) => {
     if (!confirm(t("contracts.deleteConfirm"))) return;
 
     try {
@@ -160,9 +160,9 @@ export function ContractsModule() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("contracts.deleteError"));
     }
-  }
+  }, [loadData]);
 
-  function handleShareContract(contract: Contract) {
+  const handleShareContract = useCallback((contract: Contract) => {
     const token = localStorage.getItem("idara_token");
     if (!token) {
       toast.error("يجب تسجيل الدخول أولاً");
@@ -172,9 +172,9 @@ export function ContractsModule() {
     const url = `${window.location.origin}/sign-contract/${contract.id}`;
     navigator.clipboard.writeText(url);
     toast.success(t("contracts.shareSuccess"));
-  }
+  }, []);
 
-  function handleSendForSigning(contract: Contract) {
+  const handleSendForSigning = useCallback((contract: Contract) => {
     const token = localStorage.getItem("idara_token");
     if (!token) {
       toast.error("يجب تسجيل الدخول أولاً");
@@ -189,9 +189,9 @@ export function ContractsModule() {
       .catch((error) => {
         toast.error(error instanceof Error ? error.message : t("contracts.sendError"));
       });
-  }
+  }, [loadData]);
 
-  function handleExportPDF(contract: Contract) {
+  const handleExportPDF = useCallback((contract: Contract) => {
     const element = document.getElementById('contract-content');
     if (!element) {
       toast.error(t("contracts.contentNotFound"));
@@ -391,7 +391,7 @@ export function ContractsModule() {
       console.error("Print error:", error);
       toast.error(t("contracts.printError"));
     }
-  }
+  }, [signatures, t]);
 
   if (loading) {
     return (
