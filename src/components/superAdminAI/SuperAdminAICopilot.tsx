@@ -828,7 +828,7 @@ ${recentError.devonPrompt || recentError.fixPrompt}
   if (!isSuperAdmin) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end hidden md:flex">
       {/* Main Widget */}
       <div className={`bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 ${
         isMinimized ? "w-14 h-14" : isExpanded ? "w-[600px] h-[700px]" : "w-[400px] h-[500px]"
