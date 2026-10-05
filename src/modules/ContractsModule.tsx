@@ -70,14 +70,6 @@ export function ContractsModule() {
     }
   }, [navigate]);
 
-  useEffect(() => {
-    if (id) {
-      loadContractDetails(id);
-    } else {
-      loadData();
-    }
-  }, [id, loadData, loadContractDetails]); // Only reload when id changes
-
   const loadContractDetails = useCallback(async (contractId: string) => {
     try {
       setLoading(true);
@@ -108,6 +100,14 @@ export function ContractsModule() {
       setLoading(false);
     }
   }, [navigate]);
+
+  useEffect(() => {
+    if (id) {
+      loadContractDetails(id);
+    } else {
+      loadData();
+    }
+  }, [id, loadData, loadContractDetails]); // Only reload when id changes
 
   const handleCreateContract = useCallback(async () => {
     if (!formData.title || !formData.content) {
