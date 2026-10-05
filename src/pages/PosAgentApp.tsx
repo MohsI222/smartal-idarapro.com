@@ -642,51 +642,61 @@ export function PosAgentApp() {
 
     const lowerQuery = query.toLowerCase();
     
+    // Log all products that match
+    const allMatches = products.filter(p => {
+      const nameMatch = p.name && p.name.toLowerCase().includes(lowerQuery);
+      const skuMatch = p.sku && p.sku.toLowerCase().includes(lowerQuery);
+      return nameMatch || skuMatch;
+    });
+    
+    console.log("[PosAgentApp] All matching products:", allMatches.map(p => ({
+      name: p.name,
+      sku: p.sku,
+      nameStarts: (p.name || "").toLowerCase().startsWith(lowerQuery),
+      skuStarts: (p.sku || "").toLowerCase().startsWith(lowerQuery)
+    })));
+    
     // Filter and sort products by priority
-    const filtered = products
-      .filter(p =>
-        (p.name && p.name.toLowerCase().includes(lowerQuery)) ||
-        (p.sku && p.sku.toLowerCase().includes(lowerQuery))
-      )
-      .sort((a, b) => {
-        const aName = (a.name || "").toLowerCase();
-        const bName = (b.name || "").toLowerCase();
-        const aSku = (a.sku || "").toLowerCase();
-        const bSku = (b.sku || "").toLowerCase();
+    const filtered = allMatches.sort((a, b) => {
+      const aName = (a.name || "").toLowerCase();
+      const bName = (b.name || "").toLowerCase();
+      const aSku = (a.sku || "").toLowerCase();
+      const bSku = (b.sku || "").toLowerCase();
 
-        // Priority 1: Name starts with query (highest priority)
-        const aNameStarts = aName.startsWith(lowerQuery);
-        const bNameStarts = bName.startsWith(lowerQuery);
-        if (aNameStarts && !bNameStarts) return -1;
-        if (!aNameStarts && bNameStarts) return 1;
+      // Priority 1: Name starts with query (highest priority)
+      const aNameStarts = aName.startsWith(lowerQuery);
+      const bNameStarts = bName.startsWith(lowerQuery);
+      if (aNameStarts && !bNameStarts) return -1;
+      if (!aNameStarts && bNameStarts) return 1;
 
-        // Priority 2: SKU starts with query
-        const aSkuStarts = aSku.startsWith(lowerQuery);
-        const bSkuStarts = bSku.startsWith(lowerQuery);
-        if (aSkuStarts && !bSkuStarts) return -1;
-        if (!aSkuStarts && bSkuStarts) return 1;
+      // Priority 2: SKU starts with query
+      const aSkuStarts = aSku.startsWith(lowerQuery);
+      const bSkuStarts = bSku.startsWith(lowerQuery);
+      if (aSkuStarts && !bSkuStarts) return -1;
+      if (!aSkuStarts && bSkuStarts) return 1;
 
-        // Priority 3: Both don't start with query, but name contains it
-        const aNameContains = aName.includes(lowerQuery);
-        const bNameContains = bName.includes(lowerQuery);
-        if (aNameContains && !bNameContains) return -1;
-        if (!aNameContains && bNameContains) return 1;
+      // Priority 3: Both don't start with query, but name contains it
+      const aNameContains = aName.includes(lowerQuery);
+      const bNameContains = bName.includes(lowerQuery);
+      if (aNameContains && !bNameContains) return -1;
+      if (!aNameContains && bNameContains) return 1;
 
-        // Priority 4: Name match position (earlier is better)
-        const aNamePos = aName.indexOf(lowerQuery);
-        const bNamePos = bName.indexOf(lowerQuery);
-        if (aNamePos !== bNamePos && aNamePos >= 0 && bNamePos >= 0) return aNamePos - bNamePos;
+      // Priority 4: Name match position (earlier is better)
+      const aNamePos = aName.indexOf(lowerQuery);
+      const bNamePos = bName.indexOf(lowerQuery);
+      if (aNamePos !== bNamePos && aNamePos >= 0 && bNamePos >= 0) return aNamePos - bNamePos;
 
-        // Priority 5: SKU match position (earlier is better)
-        const aSkuPos = aSku.indexOf(lowerQuery);
-        const bSkuPos = bSku.indexOf(lowerQuery);
-        if (aSkuPos !== bSkuPos && aSkuPos >= 0 && bSkuPos >= 0) return aSkuPos - bSkuPos;
+      // Priority 5: SKU match position (earlier is better)
+      const aSkuPos = aSku.indexOf(lowerQuery);
+      const bSkuPos = bSku.indexOf(lowerQuery);
+      if (aSkuPos !== bSkuPos && aSkuPos >= 0 && bSkuPos >= 0) return aSkuPos - bSkuPos;
 
-        // Priority 6: Alphabetical by name (only if both have no match)
-        return aName.localeCompare(bName);
-      });
+      // Priority 6: Alphabetical by name (only if both have no match)
+      return aName.localeCompare(bName);
+    });
 
     console.log("[PosAgentApp] Filtered products:", filtered.length);
+    console.log("[PosAgentApp] First 5 filtered products:", filtered.slice(0, 5).map(p => p.name));
     setFilteredProducts(filtered);
     setSelectedProductIndex(0);
     setSelectedSuggestionIndex(0);
