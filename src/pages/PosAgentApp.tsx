@@ -663,35 +663,43 @@ export function PosAgentApp() {
       const aSku = (a.sku || "").toLowerCase();
       const bSku = (b.sku || "").toLowerCase();
 
-      // Priority 1: Name starts with query (highest priority)
+      // Priority 1: Name starts with query EXACTLY (highest priority)
       const aNameStarts = aName.startsWith(lowerQuery);
       const bNameStarts = bName.startsWith(lowerQuery);
       if (aNameStarts && !bNameStarts) return -1;
       if (!aNameStarts && bNameStarts) return 1;
 
-      // Priority 2: SKU starts with query
+      // Priority 2: Name starts with query after removing Arabic "ال" prefix
+      const aNameWithoutAl = aName.replace(/^ال/, "");
+      const bNameWithoutAl = bName.replace(/^ال/, "");
+      const aNameStartsAfterAl = aNameWithoutAl.startsWith(lowerQuery);
+      const bNameStartsAfterAl = bNameWithoutAl.startsWith(lowerQuery);
+      if (aNameStartsAfterAl && !bNameStartsAfterAl) return -1;
+      if (!aNameStartsAfterAl && bNameStartsAfterAl) return 1;
+
+      // Priority 3: SKU starts with query
       const aSkuStarts = aSku.startsWith(lowerQuery);
       const bSkuStarts = bSku.startsWith(lowerQuery);
       if (aSkuStarts && !bSkuStarts) return -1;
       if (!aSkuStarts && bSkuStarts) return 1;
 
-      // Priority 3: Both don't start with query, but name contains it
+      // Priority 4: Both don't start with query, but name contains it
       const aNameContains = aName.includes(lowerQuery);
       const bNameContains = bName.includes(lowerQuery);
       if (aNameContains && !bNameContains) return -1;
       if (!aNameContains && bNameContains) return 1;
 
-      // Priority 4: Name match position (earlier is better)
+      // Priority 5: Name match position (earlier is better)
       const aNamePos = aName.indexOf(lowerQuery);
       const bNamePos = bName.indexOf(lowerQuery);
       if (aNamePos !== bNamePos && aNamePos >= 0 && bNamePos >= 0) return aNamePos - bNamePos;
 
-      // Priority 5: SKU match position (earlier is better)
+      // Priority 6: SKU match position (earlier is better)
       const aSkuPos = aSku.indexOf(lowerQuery);
       const bSkuPos = bSku.indexOf(lowerQuery);
       if (aSkuPos !== bSkuPos && aSkuPos >= 0 && bSkuPos >= 0) return aSkuPos - bSkuPos;
 
-      // Priority 6: Alphabetical by name (only if both have no match)
+      // Priority 7: Alphabetical by name (only if both have no match)
       return aName.localeCompare(bName);
     });
 
