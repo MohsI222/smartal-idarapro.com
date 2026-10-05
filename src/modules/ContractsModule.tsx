@@ -340,23 +340,23 @@ export function ContractsModule() {
             <div class="content">${content}</div>
             <div class="metadata">
               <div class="metadata-item">
-                <div class="metadata-label">نوع العقد</div>
+                <div class="metadata-label">${t("contracts.details.type")}</div>
                 <div class="metadata-value">${CONTRACT_TYPE_LABELS[contract.contract_type]}</div>
               </div>
-              ${contract.start_date ? `<div class="metadata-item"><div class="metadata-label">تاريخ البدء</div><div class="metadata-value">${new Date(contract.start_date).toLocaleDateString('ar-MA')}</div></div>` : ''}
-              ${contract.end_date ? `<div class="metadata-item"><div class="metadata-label">تاريخ الانتهاء</div><div class="metadata-value">${new Date(contract.end_date).toLocaleDateString('ar-MA')}</div></div>` : ''}
-              ${contract.expires_at ? `<div class="metadata-item"><div class="metadata-label">تاريخ انتهاء الصلاحية</div><div class="metadata-value">${new Date(contract.expires_at).toLocaleDateString('ar-MA')}</div></div>` : ''}
+              ${contract.start_date ? `<div class="metadata-item"><div class="metadata-label">${t("contracts.details.starts")}</div><div class="metadata-value">${new Date(contract.start_date).toLocaleDateString('ar-MA')}</div></div>` : ''}
+              ${contract.end_date ? `<div class="metadata-item"><div class="metadata-label">${t("contracts.details.ends")}</div><div class="metadata-value">${new Date(contract.end_date).toLocaleDateString('ar-MA')}</div></div>` : ''}
+              ${contract.expires_at ? `<div class="metadata-item"><div class="metadata-label">${t("contracts.details.expires")}</div><div class="metadata-value">${new Date(contract.expires_at).toLocaleDateString('ar-MA')}</div></div>` : ''}
             </div>
             ${signatures.length > 0 ? `
             <div class="signatures">
-              <h2 style="color: #667eea; font-size: 12px; font-weight: bold; margin-bottom: 8px; text-align: center;">التوقيعات</h2>
+              <h2 style="color: #667eea; font-size: 12px; font-weight: bold; margin-bottom: 8px; text-align: center;">${t("contracts.signatures.title")}</h2>
               ${signatures.map(sig => `
                 <div class="signature-item">
                   <div class="signature-info">
-                    <div><div class="metadata-label">اسم الموقع</div><div class="metadata-value">${sig.signer_name}</div></div>
-                    <div><div class="metadata-label">البريد الإلكتروني</div><div class="metadata-value">${sig.signer_email}</div></div>
-                    ${sig.signer_phone ? `<div><div class="metadata-label">رقم الهاتف</div><div class="metadata-value">${sig.signer_phone}</div></div>` : ''}
-                    <div><div class="metadata-label">تاريخ التوقيع</div><div class="metadata-value">${new Date(sig.signed_at).toLocaleString('ar-MA')}</div></div>
+                    <div><div class="metadata-label">${t("contracts.signatures.signerName")}</div><div class="metadata-value">${sig.signer_name}</div></div>
+                    <div><div class="metadata-label">${t("contracts.signatures.signerEmail")}</div><div class="metadata-value">${sig.signer_email}</div></div>
+                    ${sig.signer_phone ? `<div><div class="metadata-label">${t("contracts.signatures.signerPhone")}</div><div class="metadata-value">${sig.signer_phone}</div></div>` : ''}
+                    <div><div class="metadata-label">${t("contracts.signatures.signedAt")}</div><div class="metadata-value">${new Date(sig.signed_at).toLocaleString('ar-MA')}</div></div>
                   </div>
                   ${sig.signature_data ? `<img src="${sig.signature_data}" class="signature-img">` : ''}
                 </div>
@@ -364,8 +364,8 @@ export function ContractsModule() {
             </div>
             ` : ''}
             <div class="footer">
-              <div class="footer-bold">إدارة العقود الذكية</div>
-              <div>تم إنشاء هذا العقد إلكترونياً بتاريخ ${new Date().toLocaleDateString('ar-MA')}</div>
+              <div class="footer-bold">${t("contracts.smartContracts")}</div>
+              <div>${t("contracts.createdElectronically")} ${new Date().toLocaleDateString('ar-MA')}</div>
               <div style="margin-top: 3px;">Ref: ${contract.id}</div>
             </div>
           </div>
