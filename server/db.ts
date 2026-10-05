@@ -45,8 +45,8 @@ let poolInstance: Pool | null = null;
 
 type PoolConfigWithPrepare = PoolConfig & { prepareThreshold?: number };
 
-function poolMaxForUrl(connectionString: string, isSupabase: boolean): number {
-  let max = Math.min(50, Math.max(1, Number(process.env.PG_POOL_MAX ?? 30) || 30));
+function poolMaxForUrl(connectionString: string, isPooled: boolean): number {
+  let max = Math.min(20, Math.max(1, Number(process.env.PG_POOL_MAX ?? 10) || 10));
   const lower = connectionString.toLowerCase();
   try {
     const qm = connectionString.indexOf("?");
@@ -61,8 +61,9 @@ function poolMaxForUrl(connectionString: string, isSupabase: boolean): number {
   } catch {
     /* ignore */
   }
-  if (isSupabase && lower.includes("pgbouncer=true") && !/connection_limit=/i.test(lower)) {
-    max = Math.min(max, 15); // Increased from 5 to 15 for better concurrency
+  // For pooled connections (Supabase/Neon), keep it lower to avoid overload
+  if (isPooled && !/connection_limit=/i.test(lower)) {
+    max = Math.min(max, 10);
   }
   return max;
 }
@@ -89,23 +90,18 @@ function buildPoolConfigForUrl(rawConnectionString: string): PoolConfigWithPrepa
   const connectionString = isPooled ? stripSslModeFromPostgresUrl(normalized) : normalized;
   const max = poolMaxForUrl(connectionString, isPooled);
   const connectionTimeoutMillis = Math.min(
-    120_000,
-    Math.max(2000, Number(process.env.PG_CONNECTION_TIMEOUT_MS ?? 25_000) || 25_000)
+    15000,
+    Math.max(2000, Number(process.env.PG_CONNECTION_TIMEOUT_MS ?? 10000) || 10000)
   );
   const base: PoolConfigWithPrepare = {
     connectionString,
     max,
     connectionTimeoutMillis,
-    idleTimeoutMillis: 60000, // Increased to 60 seconds for better stability
-    // Add keepalive settings for pooled connections
-    ...(isPooled && {
-      keepAlive: true,
-      keepAliveInitialDelayMillis: 10000,
-    }),
+    idleTimeoutMillis: 30000, // Balanced timeout for stability and performance
     /** Supabase/Neon pooler TLS — تجنّب أخطاء الشهادة الذاتية مع rejectUnauthorized: false */
     ssl: isPooled ? { rejectUnauthorized: false } : undefined,
   };
-  if (isPooled) base.prepareThreshold = 0;
+  // Let pg handle prepareThreshold automatically for better performance
   return base;
 }
 
@@ -122,20 +118,6 @@ function buildPoolConfig(): PoolConfigWithPrepare {
 export function getPool(): Pool {
   if (!poolInstance) {
     poolInstance = new Pool(buildPoolConfig());
-    
-    // Handle pool errors and recreate if needed
-    poolInstance.on('error', (err) => {
-      console.error('[db] Pool error:', err);
-      // Don't destroy the pool immediately, let it recover
-    });
-    
-    poolInstance.on('connect', () => {
-      console.log('[db] New client connected to pool');
-    });
-    
-    poolInstance.on('remove', () => {
-      console.log('[db] Client removed from pool');
-    });
   }
   return poolInstance;
 }
