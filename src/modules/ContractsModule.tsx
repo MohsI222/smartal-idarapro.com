@@ -47,7 +47,7 @@ export function ContractsModule() {
     } else {
       loadData();
     }
-  }, [id]);
+  }, [id]); // Only reload when id changes
 
   async function loadData() {
     try {
@@ -246,67 +246,128 @@ export function ContractsModule() {
           <meta charset="UTF-8">
           <title>${contract.title}</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 20px; direction: rtl; }
-            .header { text-align: center; border-bottom: 2px solid #667eea; padding-bottom: 20px; margin-bottom: 20px; }
-            .title { color: #667eea; font-size: 24px; font-weight: bold; margin: 0; }
-            .description { color: #666; margin-top: 10px; font-size: 14px; }
-            .status { display: inline-block; margin-top: 15px; padding: 8px 20px; border-radius: 20px; font-size: 14px; font-weight: bold; color: white; background: ${contract.status === 'signed' ? '#10b981' : contract.status === 'pending_signature' ? '#f59e0b' : '#6b7280'}; }
-            .content { line-height: 2; color: #333; text-align: right; margin-bottom: 20px; white-space: pre-wrap; word-wrap: break-word; }
-            .content p { margin-bottom: 15px; display: block; }
-            .content div { margin-bottom: 15px; display: block; }
-            .content h1, .content h2, .content h3, .content h4, .content h5, .content h6 { margin-bottom: 15px; display: block; color: #667eea; font-weight: bold; }
-            .content li { margin-bottom: 10px; display: list-item; }
-            .content img { max-width: 200px; max-height: 100px; display: block; margin: 0 auto; }
-            .content br { display: block; margin: 5px 0; }
-            .metadata { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; padding: 20px; background: #f5f5f5; margin: 20px 0; border-radius: 8px; }
-            .metadata-item { margin-bottom: 10px; }
-            .metadata-label { color: #667eea; font-weight: bold; font-size: 12px; margin-bottom: 5px; }
-            .metadata-value { color: #333; font-size: 14px; }
-            .signatures { padding: 20px; margin-top: 20px; }
-            .signature-item { background: #f5f5f5; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #ddd; }
-            .signature-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-            .signature-img { max-width: 300px; height: auto; border: 1px solid #667eea; border-radius: 8px; background: white; padding: 10px; display: block; margin: 0 auto; }
-            .footer { text-align: center; padding: 20px; margin-top: 20px; color: #666; font-size: 12px; border-top: 1px solid #ddd; }
-            .footer-bold { font-weight: bold; color: #667eea; margin-bottom: 5px; }
+            body { 
+              font-family: Arial, sans-serif; 
+              margin: 0; 
+              padding: 20px; 
+              direction: rtl;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            .container {
+              max-width: 210mm;
+              margin: 0 auto;
+            }
+            .header { 
+              background: white; 
+              text-align: center; 
+              padding: 15px; 
+              border-radius: 8px; 
+              margin-bottom: 10px; 
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .title { color: #667eea; font-size: 18px; font-weight: bold; margin: 0; }
+            .description { color: #666; margin-top: 5px; font-size: 10px; }
+            .status { display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 15px; font-size: 10px; font-weight: bold; color: white; background: ${contract.status === 'signed' ? '#10b981' : contract.status === 'pending_signature' ? '#f59e0b' : '#6b7280'}; }
+            .content { 
+              background: white;
+              line-height: 1.5; 
+              color: #333; 
+              text-align: right; 
+              margin-bottom: 10px; 
+              padding: 12px;
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+              white-space: pre-wrap; 
+              word-wrap: break-word;
+              font-size: 10px;
+            }
+            .content p { margin-bottom: 6px; display: block; }
+            .content div { margin-bottom: 6px; display: block; }
+            .content h1, .content h2, .content h3, .content h4, .content h5, .content h6 { margin-bottom: 5px; display: block; color: #667eea; font-weight: bold; font-size: 11px; }
+            .content li { margin-bottom: 4px; display: list-item; }
+            .content img { max-width: 100px; max-height: 50px; display: block; margin: 0 auto; }
+            .content br { display: block; margin: 3px 0; }
+            .metadata { 
+              display: grid; 
+              grid-template-columns: 1fr 1fr; 
+              gap: 8px; 
+              padding: 10px; 
+              background: white; 
+              margin: 10px 0; 
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .metadata-item { margin-bottom: 5px; }
+            .metadata-label { color: #667eea; font-weight: bold; font-size: 9px; margin-bottom: 2px; }
+            .metadata-value { color: #333; font-size: 9px; }
+            .signatures { 
+              background: white;
+              padding: 12px; 
+              margin-top: 10px; 
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .signature-item { 
+              background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
+              padding: 8px; 
+              margin-bottom: 8px; 
+              border-radius: 6px; 
+              border: 1px solid #667eea;
+            }
+            .signature-info { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+            .signature-img { max-width: 150px; height: auto; border: 1px solid #667eea; border-radius: 6px; background: white; padding: 4px; display: block; margin: 0 auto; }
+            .footer { 
+              background: white;
+              text-align: center; 
+              padding: 10px; 
+              margin-top: 10px; 
+              color: #666; 
+              font-size: 8px; 
+              border-radius: 8px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .footer-bold { font-weight: bold; color: #667eea; margin-bottom: 3px; }
           </style>
         </head>
         <body>
-          <div class="header">
-            ${contract.logo_url ? `<img src="${contract.logo_url}" style="max-width: 150px; max-height: 80px; margin-bottom: 15px;">` : ''}
-            <h1 class="title">${contract.title}</h1>
-            ${contract.description ? `<p class="description">${contract.description}</p>` : ''}
-            <div class="status">${CONTRACT_STATUS_LABELS[contract.status]}</div>
-          </div>
-          <div class="content">${content}</div>
-          <div class="metadata">
-            <div class="metadata-item">
-              <div class="metadata-label">نوع العقد</div>
-              <div class="metadata-value">${CONTRACT_TYPE_LABELS[contract.contract_type]}</div>
+          <div class="container">
+            <div class="header">
+              ${contract.logo_url ? `<img src="${contract.logo_url}" style="max-width: 100px; max-height: 50px; margin-bottom: 8px;">` : ''}
+              <h1 class="title">${contract.title}</h1>
+              ${contract.description ? `<p class="description">${contract.description}</p>` : ''}
+              <div class="status">${CONTRACT_STATUS_LABELS[contract.status]}</div>
             </div>
-            ${contract.start_date ? `<div class="metadata-item"><div class="metadata-label">تاريخ البدء</div><div class="metadata-value">${new Date(contract.start_date).toLocaleDateString('ar-MA')}</div></div>` : ''}
-            ${contract.end_date ? `<div class="metadata-item"><div class="metadata-label">تاريخ الانتهاء</div><div class="metadata-value">${new Date(contract.end_date).toLocaleDateString('ar-MA')}</div></div>` : ''}
-            ${contract.expires_at ? `<div class="metadata-item"><div class="metadata-label">تاريخ انتهاء الصلاحية</div><div class="metadata-value">${new Date(contract.expires_at).toLocaleDateString('ar-MA')}</div></div>` : ''}
-          </div>
-          ${signatures.length > 0 ? `
-          <div class="signatures">
-            <h2 style="color: #667eea; font-size: 20px; font-weight: bold; margin-bottom: 20px; text-align: center;">التوقيعات</h2>
-            ${signatures.map(sig => `
-              <div class="signature-item">
-                <div class="signature-info">
-                  <div><div class="metadata-label">اسم الموقع</div><div class="metadata-value">${sig.signer_name}</div></div>
-                  <div><div class="metadata-label">البريد الإلكتروني</div><div class="metadata-value">${sig.signer_email}</div></div>
-                  ${sig.signer_phone ? `<div><div class="metadata-label">رقم الهاتف</div><div class="metadata-value">${sig.signer_phone}</div></div>` : ''}
-                  <div><div class="metadata-label">تاريخ التوقيع</div><div class="metadata-value">${new Date(sig.signed_at).toLocaleString('ar-MA')}</div></div>
-                </div>
-                ${sig.signature_data ? `<img src="${sig.signature_data}" class="signature-img">` : ''}
+            <div class="content">${content}</div>
+            <div class="metadata">
+              <div class="metadata-item">
+                <div class="metadata-label">نوع العقد</div>
+                <div class="metadata-value">${CONTRACT_TYPE_LABELS[contract.contract_type]}</div>
               </div>
-            `).join('')}
-          </div>
-          ` : ''}
-          <div class="footer">
-            <div class="footer-bold">إدارة العقود الذكية</div>
-            <div>تم إنشاء هذا العقد إلكترونياً بتاريخ ${new Date().toLocaleDateString('ar-MA')}</div>
-            <div style="margin-top: 5px;">Ref: ${contract.id} | ${new Date(contract.created_at).toLocaleDateString('ar-MA')}</div>
+              ${contract.start_date ? `<div class="metadata-item"><div class="metadata-label">تاريخ البدء</div><div class="metadata-value">${new Date(contract.start_date).toLocaleDateString('ar-MA')}</div></div>` : ''}
+              ${contract.end_date ? `<div class="metadata-item"><div class="metadata-label">تاريخ الانتهاء</div><div class="metadata-value">${new Date(contract.end_date).toLocaleDateString('ar-MA')}</div></div>` : ''}
+              ${contract.expires_at ? `<div class="metadata-item"><div class="metadata-label">تاريخ انتهاء الصلاحية</div><div class="metadata-value">${new Date(contract.expires_at).toLocaleDateString('ar-MA')}</div></div>` : ''}
+            </div>
+            ${signatures.length > 0 ? `
+            <div class="signatures">
+              <h2 style="color: #667eea; font-size: 12px; font-weight: bold; margin-bottom: 8px; text-align: center;">التوقيعات</h2>
+              ${signatures.map(sig => `
+                <div class="signature-item">
+                  <div class="signature-info">
+                    <div><div class="metadata-label">اسم الموقع</div><div class="metadata-value">${sig.signer_name}</div></div>
+                    <div><div class="metadata-label">البريد الإلكتروني</div><div class="metadata-value">${sig.signer_email}</div></div>
+                    ${sig.signer_phone ? `<div><div class="metadata-label">رقم الهاتف</div><div class="metadata-value">${sig.signer_phone}</div></div>` : ''}
+                    <div><div class="metadata-label">تاريخ التوقيع</div><div class="metadata-value">${new Date(sig.signed_at).toLocaleString('ar-MA')}</div></div>
+                  </div>
+                  ${sig.signature_data ? `<img src="${sig.signature_data}" class="signature-img">` : ''}
+                </div>
+              `).join('')}
+            </div>
+            ` : ''}
+            <div class="footer">
+              <div class="footer-bold">إدارة العقود الذكية</div>
+              <div>تم إنشاء هذا العقد إلكترونياً بتاريخ ${new Date().toLocaleDateString('ar-MA')}</div>
+              <div style="margin-top: 3px;">Ref: ${contract.id}</div>
+            </div>
           </div>
         </body>
         </html>
