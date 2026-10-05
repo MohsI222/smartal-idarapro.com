@@ -23,8 +23,8 @@ export function normalizeDatabaseConnectionString(raw: string): string {
     lower.includes("pooler.supabase");
   if (!looksSupabase) return u;
   if (/sslmode=/i.test(u)) return u;
-  // Use verify-full explicitly to avoid the warning
-  return `${u}${u.includes("?") ? "&" : "?"}sslmode=verify-full`;
+  // Use no-verify for Vercel to avoid SSL certificate issues
+  return `${u}${u.includes("?") ? "&" : "?"}sslmode=no-verify`;
 }
 
 function requireDatabaseUrl(): string {
