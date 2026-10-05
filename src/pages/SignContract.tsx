@@ -465,7 +465,8 @@ export function SignContractPage() {
           <CardContent>
             <div
               id="contract-content"
-              className="prose prose-invert max-w-none"
+              className="prose prose-invert max-w-none whitespace-pre-wrap"
+              style={{ direction: 'rtl', textAlign: 'right', color: '#e2e8f0', lineHeight: '1.8' }}
               dangerouslySetInnerHTML={{ __html: contract.content }}
             />
           </CardContent>
