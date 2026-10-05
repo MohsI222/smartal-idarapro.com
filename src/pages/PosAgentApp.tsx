@@ -88,7 +88,7 @@ export function PosAgentApp() {
   const [isClockingIn, setIsClockingIn] = useState(false);
   const [totalRevenue, setTotalRevenue] = useState(0);
   const [totalProductsSold, setTotalProductsSold] = useState(0);
-  const [selectedProductIndex, setSelectedProductIndex] = useState(0);
+  const [selectedProductIndex, setSelectedProductIndex] = useState(-1); // -1 means no selection
   const [selectedSales, setSelectedSales] = useState<Set<string>>(new Set());
   const [agentLocale, setAgentLocale] = useState<"ar" | "en" | "fr" | "es">("ar");
   const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
@@ -265,13 +265,19 @@ export function PosAgentApp() {
       if (filteredProducts.length > 0 && document.activeElement?.tagName !== "INPUT") {
         if (e.key === "ArrowDown") {
           e.preventDefault();
-          setSelectedProductIndex(prev => (prev + 1) % filteredProducts.length);
+          setSelectedProductIndex(prev => {
+            if (prev === -1) return 0;
+            return (prev + 1) % filteredProducts.length;
+          });
         } else if (e.key === "ArrowUp") {
           e.preventDefault();
-          setSelectedProductIndex(prev => (prev - 1 + filteredProducts.length) % filteredProducts.length);
+          setSelectedProductIndex(prev => {
+            if (prev === -1) return filteredProducts.length - 1;
+            return (prev - 1 + filteredProducts.length) % filteredProducts.length;
+          });
         } else if (e.key === "ArrowRight" || e.key === "Enter") {
           e.preventDefault();
-          if (filteredProducts[selectedProductIndex]) {
+          if (selectedProductIndex >= 0 && filteredProducts[selectedProductIndex]) {
             if (currentView === "pos") {
               addToCart(filteredProducts[selectedProductIndex]);
             } else {
@@ -630,83 +636,70 @@ export function PosAgentApp() {
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    console.log("[PosAgentApp] Search query:", query);
-    console.log("[PosAgentApp] Total products:", products.length);
 
     if (!query.trim()) {
       setFilteredProducts(products);
-      setSelectedProductIndex(0);
-      console.log("[PosAgentApp] Query empty, showing all products");
+      setSelectedProductIndex(-1); // No auto-selection
       return;
     }
 
     const lowerQuery = query.toLowerCase();
     
-    // Log all products that match
-    const allMatches = products.filter(p => {
-      const nameMatch = p.name && p.name.toLowerCase().includes(lowerQuery);
-      const skuMatch = p.sku && p.sku.toLowerCase().includes(lowerQuery);
-      return nameMatch || skuMatch;
-    });
-    
-    console.log("[PosAgentApp] All matching products:", allMatches.map(p => ({
-      name: p.name,
-      sku: p.sku,
-      nameStarts: (p.name || "").toLowerCase().startsWith(lowerQuery),
-      skuStarts: (p.sku || "").toLowerCase().startsWith(lowerQuery)
-    })));
-    
     // Filter and sort products by priority
-    const filtered = allMatches.sort((a, b) => {
-      const aName = (a.name || "").toLowerCase();
-      const bName = (b.name || "").toLowerCase();
-      const aSku = (a.sku || "").toLowerCase();
-      const bSku = (b.sku || "").toLowerCase();
+    const filtered = products
+      .filter(p => {
+        const nameMatch = p.name && p.name.toLowerCase().includes(lowerQuery);
+        const skuMatch = p.sku && p.sku.toLowerCase().includes(lowerQuery);
+        return nameMatch || skuMatch;
+      })
+      .sort((a, b) => {
+        const aName = (a.name || "").toLowerCase();
+        const bName = (b.name || "").toLowerCase();
+        const aSku = (a.sku || "").toLowerCase();
+        const bSku = (b.sku || "").toLowerCase();
 
-      // Priority 1: Name starts with query EXACTLY (highest priority)
-      const aNameStarts = aName.startsWith(lowerQuery);
-      const bNameStarts = bName.startsWith(lowerQuery);
-      if (aNameStarts && !bNameStarts) return -1;
-      if (!aNameStarts && bNameStarts) return 1;
+        // Priority 1: Name starts with query EXACTLY (highest priority)
+        const aNameStarts = aName.startsWith(lowerQuery);
+        const bNameStarts = bName.startsWith(lowerQuery);
+        if (aNameStarts && !bNameStarts) return -1;
+        if (!aNameStarts && bNameStarts) return 1;
 
-      // Priority 2: Name starts with query after removing Arabic "ال" prefix
-      const aNameWithoutAl = aName.replace(/^ال/, "");
-      const bNameWithoutAl = bName.replace(/^ال/, "");
-      const aNameStartsAfterAl = aNameWithoutAl.startsWith(lowerQuery);
-      const bNameStartsAfterAl = bNameWithoutAl.startsWith(lowerQuery);
-      if (aNameStartsAfterAl && !bNameStartsAfterAl) return -1;
-      if (!aNameStartsAfterAl && bNameStartsAfterAl) return 1;
+        // Priority 2: Name starts with query after removing Arabic "ال" prefix
+        const aNameWithoutAl = aName.replace(/^ال/, "");
+        const bNameWithoutAl = bName.replace(/^ال/, "");
+        const aNameStartsAfterAl = aNameWithoutAl.startsWith(lowerQuery);
+        const bNameStartsAfterAl = bNameWithoutAl.startsWith(lowerQuery);
+        if (aNameStartsAfterAl && !bNameStartsAfterAl) return -1;
+        if (!aNameStartsAfterAl && bNameStartsAfterAl) return 1;
 
-      // Priority 3: SKU starts with query
-      const aSkuStarts = aSku.startsWith(lowerQuery);
-      const bSkuStarts = bSku.startsWith(lowerQuery);
-      if (aSkuStarts && !bSkuStarts) return -1;
-      if (!aSkuStarts && bSkuStarts) return 1;
+        // Priority 3: SKU starts with query
+        const aSkuStarts = aSku.startsWith(lowerQuery);
+        const bSkuStarts = bSku.startsWith(lowerQuery);
+        if (aSkuStarts && !bSkuStarts) return -1;
+        if (!aSkuStarts && bSkuStarts) return 1;
 
-      // Priority 4: Both don't start with query, but name contains it
-      const aNameContains = aName.includes(lowerQuery);
-      const bNameContains = bName.includes(lowerQuery);
-      if (aNameContains && !bNameContains) return -1;
-      if (!aNameContains && bNameContains) return 1;
+        // Priority 4: Both don't start with query, but name contains it
+        const aNameContains = aName.includes(lowerQuery);
+        const bNameContains = bName.includes(lowerQuery);
+        if (aNameContains && !bNameContains) return -1;
+        if (!aNameContains && bNameContains) return 1;
 
-      // Priority 5: Name match position (earlier is better)
-      const aNamePos = aName.indexOf(lowerQuery);
-      const bNamePos = bName.indexOf(lowerQuery);
-      if (aNamePos !== bNamePos && aNamePos >= 0 && bNamePos >= 0) return aNamePos - bNamePos;
+        // Priority 5: Name match position (earlier is better)
+        const aNamePos = aName.indexOf(lowerQuery);
+        const bNamePos = bName.indexOf(lowerQuery);
+        if (aNamePos !== bNamePos && aNamePos >= 0 && bNamePos >= 0) return aNamePos - bNamePos;
 
-      // Priority 6: SKU match position (earlier is better)
-      const aSkuPos = aSku.indexOf(lowerQuery);
-      const bSkuPos = bSku.indexOf(lowerQuery);
-      if (aSkuPos !== bSkuPos && aSkuPos >= 0 && bSkuPos >= 0) return aSkuPos - bSkuPos;
+        // Priority 6: SKU match position (earlier is better)
+        const aSkuPos = aSku.indexOf(lowerQuery);
+        const bSkuPos = bSku.indexOf(lowerQuery);
+        if (aSkuPos !== bSkuPos && aSkuPos >= 0 && bSkuPos >= 0) return aSkuPos - bSkuPos;
 
-      // Priority 7: Alphabetical by name (only if both have no match)
-      return aName.localeCompare(bName);
-    });
+        // Priority 7: Alphabetical by name (only if both have no match)
+        return aName.localeCompare(bName);
+      });
 
-    console.log("[PosAgentApp] Filtered products:", filtered.length);
-    console.log("[PosAgentApp] First 5 filtered products:", filtered.slice(0, 5).map(p => p.name));
     setFilteredProducts(filtered);
-    setSelectedProductIndex(0);
+    setSelectedProductIndex(-1); // No auto-selection
     setSelectedSuggestionIndex(0);
   };
 
@@ -2210,7 +2203,11 @@ export function PosAgentApp() {
                     {filteredProducts.map((product, index) => (
                       <Card
                         key={product.id}
-                        className={`bg-white/5 border-white/10 hover:bg-white/10 transition-colors active:scale-95 ${index === selectedProductIndex ? 'ring-2 ring-cyan-500 border-cyan-500' : ''}`}
+                        className={`bg-white/5 border-white/10 hover:bg-white/10 cursor-pointer transition-colors active:scale-95 ${index === selectedProductIndex ? 'ring-2 ring-cyan-500 border-cyan-500' : ''}`}
+                        onClick={() => {
+                          setSelectedProductIndex(index);
+                          addToCart(product);
+                        }}
                       >
                         <CardContent className="p-3">
                           <div className="flex gap-3">
