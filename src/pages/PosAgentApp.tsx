@@ -76,6 +76,8 @@ export function PosAgentApp() {
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [visibleProductIds, setVisibleProductIds] = useState<Set<string>>(new Set());
   const [cart, setCart] = useState<SaleLine[]>([]);
@@ -228,6 +230,37 @@ export function PosAgentApp() {
 
       if (currentView !== "pos" && currentView !== "returns") return;
 
+      // Arrow keys for search suggestions (when focused on search input)
+      if (showSearchSuggestions && filteredProducts.length > 0 && document.activeElement?.tagName === "INPUT") {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSelectedSuggestionIndex(prev => (prev + 1) % Math.min(filteredProducts.length, 10));
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSelectedSuggestionIndex(prev => (prev - 1 + Math.min(filteredProducts.length, 10)) % Math.min(filteredProducts.length, 10));
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          const selectedProduct = filteredProducts[selectedSuggestionIndex];
+          if (selectedProduct) {
+            if (currentView === "pos") {
+              addToCart(selectedProduct);
+              toast.success(`${getText("addedToCart")}: ${selectedProduct.name}`);
+            } else {
+              addToReturnCart(selectedProduct);
+              toast.success(`${getText("addedToReturn")}: ${selectedProduct.name}`);
+            }
+            setSearchQuery("");
+            setShowSearchSuggestions(false);
+            setSelectedSuggestionIndex(0);
+          }
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          setShowSearchSuggestions(false);
+          setSelectedSuggestionIndex(0);
+        }
+        return;
+      }
+
       // Arrow keys for product navigation (works for both POS and Returns)
       if (filteredProducts.length > 0 && document.activeElement?.tagName !== "INPUT") {
         if (e.key === "ArrowDown") {
@@ -281,7 +314,7 @@ export function PosAgentApp() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [currentView, filteredProducts, selectedProductIndex, cart, returnCart, searchQuery, showPrintDialog]);
+  }, [currentView, filteredProducts, selectedProductIndex, cart, returnCart, searchQuery, showPrintDialog, showSearchSuggestions, selectedSuggestionIndex]);
 
   // Reload data when switching to dashboard
   useEffect(() => {
@@ -599,19 +632,57 @@ export function PosAgentApp() {
     setSearchQuery(query);
     console.log("[PosAgentApp] Search query:", query);
     console.log("[PosAgentApp] Total products:", products.length);
-    
+
     if (!query.trim()) {
       setFilteredProducts(products);
+      setSelectedProductIndex(0);
       console.log("[PosAgentApp] Query empty, showing all products");
       return;
     }
 
-    const filtered = products.filter(p =>
-      (p.name && p.name.toLowerCase().includes(query.toLowerCase())) ||
-      (p.sku && p.sku.toLowerCase().includes(query.toLowerCase()))
-    );
+    const lowerQuery = query.toLowerCase();
+    
+    // Filter and sort products by priority
+    const filtered = products
+      .filter(p =>
+        (p.name && p.name.toLowerCase().includes(lowerQuery)) ||
+        (p.sku && p.sku.toLowerCase().includes(lowerQuery))
+      )
+      .sort((a, b) => {
+        const aName = (a.name || "").toLowerCase();
+        const bName = (b.name || "").toLowerCase();
+        const aSku = (a.sku || "").toLowerCase();
+        const bSku = (b.sku || "").toLowerCase();
+
+        // Priority 1: Name starts with query
+        const aNameStarts = aName.startsWith(lowerQuery);
+        const bNameStarts = bName.startsWith(lowerQuery);
+        if (aNameStarts && !bNameStarts) return -1;
+        if (!aNameStarts && bNameStarts) return 1;
+
+        // Priority 2: SKU starts with query
+        const aSkuStarts = aSku.startsWith(lowerQuery);
+        const bSkuStarts = bSku.startsWith(lowerQuery);
+        if (aSkuStarts && !bSkuStarts) return -1;
+        if (!aSkuStarts && bSkuStarts) return 1;
+
+        // Priority 3: Name match position (earlier is better)
+        const aNamePos = aName.indexOf(lowerQuery);
+        const bNamePos = bName.indexOf(lowerQuery);
+        if (aNamePos !== bNamePos) return aNamePos - bNamePos;
+
+        // Priority 4: SKU match position (earlier is better)
+        const aSkuPos = aSku.indexOf(lowerQuery);
+        const bSkuPos = bSku.indexOf(lowerQuery);
+        if (aSkuPos !== bSkuPos) return aSkuPos - bSkuPos;
+
+        // Priority 5: Alphabetical by name
+        return aName.localeCompare(bName);
+      });
+
     console.log("[PosAgentApp] Filtered products:", filtered.length);
     setFilteredProducts(filtered);
+    setSelectedProductIndex(0);
   };
 
   const toggleProductVisibility = (productId: string) => {
@@ -2073,9 +2144,42 @@ export function PosAgentApp() {
                     <Input
                       placeholder={getText("search")}
                       value={searchQuery}
-                      onChange={(e) => handleSearch(e.target.value)}
+                      onChange={(e) => {
+                        handleSearch(e.target.value);
+                        setShowSearchSuggestions(e.target.value.length > 0);
+                      }}
+                      onFocus={() => setShowSearchSuggestions(searchQuery.length > 0)}
+                      onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
                       className={`bg-white/10 border-white/20 text-white placeholder:text-white/50 ${isRtl ? "pr-10" : "pl-10"}`}
                     />
+                    {showSearchSuggestions && filteredProducts.length > 0 && (
+                      <div className={`absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto ${isRtl ? "rtl" : "ltr"}`}>
+                        {filteredProducts.slice(0, 10).map((product, index) => (
+                          <div
+                            key={product.id}
+                            className={`px-4 py-3 cursor-pointer hover:bg-gray-800 transition-colors flex items-center justify-between ${
+                              index === selectedSuggestionIndex ? 'bg-cyan-600/20 border-l-4 border-cyan-500' : ''
+                            }`}
+                            onClick={() => {
+                              addToCart(product);
+                              setSearchQuery("");
+                              setShowSearchSuggestions(false);
+                              toast.success(`${getText("addedToCart")}: ${product.name}`);
+                            }}
+                            onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                          >
+                            <div className="flex-1">
+                              <div className="text-white font-medium">{product.name}</div>
+                              <div className="text-gray-400 text-sm">{product.sku}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-cyan-400 font-bold">{product.unit_price.toFixed(2)}</div>
+                              <div className="text-gray-400 text-sm">{product.stock_pieces} {getText("pieces")}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="grid sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto">
                     {filteredProducts.map((product, index) => (
@@ -2318,9 +2422,42 @@ export function PosAgentApp() {
                     <Input
                       placeholder={getText("searchReturn")}
                       value={searchQuery}
-                      onChange={(e) => handleSearch(e.target.value)}
+                      onChange={(e) => {
+                        handleSearch(e.target.value);
+                        setShowSearchSuggestions(e.target.value.length > 0);
+                      }}
+                      onFocus={() => setShowSearchSuggestions(searchQuery.length > 0)}
+                      onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
                       className={`bg-white/10 border-white/20 text-white placeholder:text-white/50 ${isRtl ? "pr-10" : "pl-10"}`}
                     />
+                    {showSearchSuggestions && filteredProducts.length > 0 && (
+                      <div className={`absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-y-auto ${isRtl ? "rtl" : "ltr"}`}>
+                        {filteredProducts.slice(0, 10).map((product, index) => (
+                          <div
+                            key={product.id}
+                            className={`px-4 py-3 cursor-pointer hover:bg-gray-800 transition-colors flex items-center justify-between ${
+                              index === selectedSuggestionIndex ? 'bg-cyan-600/20 border-l-4 border-cyan-500' : ''
+                            }`}
+                            onClick={() => {
+                              addToReturnCart(product);
+                              setSearchQuery("");
+                              setShowSearchSuggestions(false);
+                              toast.success(`${getText("addedToReturn")}: ${product.name}`);
+                            }}
+                            onMouseEnter={() => setSelectedSuggestionIndex(index)}
+                          >
+                            <div className="flex-1">
+                              <div className="text-white font-medium">{product.name}</div>
+                              <div className="text-gray-400 text-sm">{product.sku}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-cyan-400 font-bold">{product.unit_price.toFixed(2)}</div>
+                              <div className="text-gray-400 text-sm">{product.stock_pieces} {getText("pieces")}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="grid sm:grid-cols-2 gap-3 max-h-[500px] overflow-y-auto">
                     {filteredProducts.map((product, index) => (
