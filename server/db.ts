@@ -23,8 +23,8 @@ export function normalizeDatabaseConnectionString(raw: string): string {
     lower.includes("pooler.supabase");
   if (!looksSupabase) return u;
   if (/sslmode=/i.test(u)) return u;
-  // Use no-verify for Vercel to avoid SSL certificate issues
-  return `${u}${u.includes("?") ? "&" : "?"}sslmode=no-verify`;
+  // Use require for stable SSL connection (not verify-full which can be too strict)
+  return `${u}${u.includes("?") ? "&" : "?"}sslmode=require`;
 }
 
 function requireDatabaseUrl(): string {
@@ -90,7 +90,12 @@ function buildPoolConfigForUrl(rawConnectionString: string): PoolConfigWithPrepa
     connectionString,
     max,
     connectionTimeoutMillis,
-    idleTimeoutMillis: 30000, // 30 seconds idle timeout
+    idleTimeoutMillis: 60000, // Increased to 60 seconds for better stability
+    // Add keepalive settings for Supabase
+    ...(isSupabase && {
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
+    }),
     /** Supabase / pooler TLS — تجنّب أخطاء الشهادة الذاتية مع rejectUnauthorized: false */
     ssl: isSupabase ? { rejectUnauthorized: false } : undefined,
   };
@@ -111,6 +116,20 @@ function buildPoolConfig(): PoolConfigWithPrepare {
 export function getPool(): Pool {
   if (!poolInstance) {
     poolInstance = new Pool(buildPoolConfig());
+    
+    // Handle pool errors and recreate if needed
+    poolInstance.on('error', (err) => {
+      console.error('[db] Pool error:', err);
+      // Don't destroy the pool immediately, let it recover
+    });
+    
+    poolInstance.on('connect', () => {
+      console.log('[db] New client connected to pool');
+    });
+    
+    poolInstance.on('remove', () => {
+      console.log('[db] Client removed from pool');
+    });
   }
   return poolInstance;
 }
@@ -125,8 +144,13 @@ function isTransientDbError(e: unknown): boolean {
     code === "ETIMEDOUT" ||
     code === "ECONNREFUSED" ||
     code === "ECONNRESET" ||
+    code === "57P01" || // admin shutdown
+    code === "57P02" || // crash shutdown
+    code === "57P03" || // cannot connect now
     msg.includes("timeout") ||
-    msg.includes("connection terminated")
+    msg.includes("connection terminated") ||
+    msg.includes("connection closed") ||
+    msg.includes("terminating connection due to administrator command")
   );
 }
 
