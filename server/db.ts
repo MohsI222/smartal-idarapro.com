@@ -12,7 +12,7 @@ if (typeof dns.setDefaultResultOrder === "function") {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** يتطلبه اتصال Node/pg مع Supabase Pooler في كثير من البيئات */
+/** يتطلبه اتصال Node/pg مع Supabase/Neon Pooler في كثير من البيئات */
 export function normalizeDatabaseConnectionString(raw: string): string {
   const u = raw.trim();
   if (!u) return u;
@@ -21,9 +21,12 @@ export function normalizeDatabaseConnectionString(raw: string): string {
     lower.includes("supabase.co") ||
     lower.includes("supabase.com") ||
     lower.includes("pooler.supabase");
-  if (!looksSupabase) return u;
+  const looksNeon =
+    lower.includes("neon.tech") ||
+    lower.includes("pooler.neon");
+  if (!looksSupabase && !looksNeon) return u;
   if (/sslmode=/i.test(u)) return u;
-  // Use require for stable SSL connection (not verify-full which can be too strict)
+  // Use require for stable SSL connection with both Supabase and Neon
   return `${u}${u.includes("?") ? "&" : "?"}sslmode=require`;
 }
 
@@ -80,8 +83,11 @@ function buildPoolConfigForUrl(rawConnectionString: string): PoolConfigWithPrepa
   const lower = normalized.toLowerCase();
   const isSupabase =
     lower.includes("supabase.com") || lower.includes("supabase.co") || lower.includes("pooler.supabase");
-  const connectionString = isSupabase ? stripSslModeFromPostgresUrl(normalized) : normalized;
-  const max = poolMaxForUrl(connectionString, isSupabase);
+  const isNeon =
+    lower.includes("neon.tech") || lower.includes("pooler.neon");
+  const isPooled = isSupabase || isNeon;
+  const connectionString = isPooled ? stripSslModeFromPostgresUrl(normalized) : normalized;
+  const max = poolMaxForUrl(connectionString, isPooled);
   const connectionTimeoutMillis = Math.min(
     120_000,
     Math.max(2000, Number(process.env.PG_CONNECTION_TIMEOUT_MS ?? 25_000) || 25_000)
@@ -91,15 +97,15 @@ function buildPoolConfigForUrl(rawConnectionString: string): PoolConfigWithPrepa
     max,
     connectionTimeoutMillis,
     idleTimeoutMillis: 60000, // Increased to 60 seconds for better stability
-    // Add keepalive settings for Supabase
-    ...(isSupabase && {
+    // Add keepalive settings for pooled connections
+    ...(isPooled && {
       keepAlive: true,
       keepAliveInitialDelayMillis: 10000,
     }),
-    /** Supabase / pooler TLS — تجنّب أخطاء الشهادة الذاتية مع rejectUnauthorized: false */
-    ssl: isSupabase ? { rejectUnauthorized: false } : undefined,
+    /** Supabase/Neon pooler TLS — تجنّب أخطاء الشهادة الذاتية مع rejectUnauthorized: false */
+    ssl: isPooled ? { rejectUnauthorized: false } : undefined,
   };
-  if (isSupabase) base.prepareThreshold = 0;
+  if (isPooled) base.prepareThreshold = 0;
   return base;
 }
 
