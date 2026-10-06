@@ -331,7 +331,7 @@ const arMA: Dict = {
 
   "plan.enterprisesSchools": "شركات المقاولات والمدارس — Smart Al-Idara Pro",
   "plan.enterprisesSchools.blurb":
-    "999 درهم/شهر أو 8000 درهم/سنة — كل الأقسام مفتوحة: التعليم، المخزون، رادار التأشيرة، السيارات والعقارات، النقل، RH، العقود والتوقيعات الالكترونية، وغيرها — بدون استثناء. / All modules unlocked: education, inventory, visa radar, cars & real estate, HR, contracts & e-signatures & more.",
+    "999 درهم/شهر أو 8000 درهم/سنة — كل الأقسام مفتوحة: التعليم، المخزون، رادار التأشيرة، السيارات والعقارات، النقل، RH، العقود والتوقيعات الالكترونية، وغيرها — بدون استثناء (عدا بوابة المحامي). / All modules unlocked: education, inventory, visa radar, cars & real estate, HR, contracts & e-signatures & more (except lawyer portal).",
   "plan.lawyers": "المحامون / Lawyers",
   "plan.lawyers.blurb":
     "599 درهم/شهر أو 5000 درهم/سنة — بوابة المحامي الاحترافي + صياغة المقالات القضائية + تتبع الملفات + المحرر القانوني الذكي. / Lawyer Portal, court filings, case tracking & smart legal editor.",
@@ -2488,7 +2488,7 @@ const en: Dict = {
   "dashboard.subscribe": "Subscribe",
   "plan.enterprisesSchools": "Contractors & schools — Smart Al-Idara Pro",
   "plan.enterprisesSchools.blurb":
-    "999 DH/month or 8000 DH/year — all modules unlocked: education, inventory, visa radar, cars & real estate, HR, contracts & e-signatures & more.",
+    "999 DH/month or 8000 DH/year — all modules unlocked: education, inventory, visa radar, cars & real estate, HR, contracts & e-signatures & more (except lawyer portal).",
   "plan.lawyers": "Lawyers",
   "plan.lawyers.blurb": "599 DH/month or 5000 DH/year — Professional Lawyer Portal, court filings, case tracking & smart legal editor.",
   "plan.librariesBase": "Libraries — Essential",
@@ -4721,7 +4721,7 @@ const fr: Dict = {
   "plan.starter": "Démarrage (un module)",
   "plan.enterprisesSchools": "Entreprises (BTP) & écoles — Smart Al-Idara Pro",
   "plan.enterprisesSchools.blurb":
-    "999 DH/mois ou 8000 DH/an — accompagnement dédié, formation et avantages premium.",
+    "999 DH/mois ou 8000 DH/an — tous les modules débloqués: éducation, inventaire, radar visa, voitures & immobilier, RH, contrats & signatures électroniques & plus (sauf portail avocat).",
   "plan.lawyers": "Avocats",
   "plan.lawyers.blurb": "599 DH/mois ou 5000 DH/an — Portail Avocat, actes judiciaires, suivi des dossiers & éditeur juridique intelligent.",
   "plan.librariesBase": "Bibliothèques — Essentiel",
@@ -5499,7 +5499,7 @@ const es: Dict = {
   "plan.starter": "Inicio (un módulo)",
   "plan.enterprisesSchools": "Empresas (construcción) y colegios — Smart Al-Idara Pro",
   "plan.enterprisesSchools.blurb":
-    "999 DH/mes o 8000 DH/año — acompañamiento dedicado, formación y ventajas premium.",
+    "999 DH/mes o 8000 DH/año — todos los módulos desbloqueados: educación, inventario, radar de visados, autos & inmobiliaria, RRHH, contratos & firmas electrónicas & más (excepto portal de abogados).",
   "plan.lawyers": "Abogados",
   "plan.lawyers.blurb": "599 DH/mes o 5000 DH/año — Portal de Abogado, escritos judiciales, seguimiento de expedientes y editor legal inteligente.",
   "plan.librariesBase": "Bibliotecas — Esencial",

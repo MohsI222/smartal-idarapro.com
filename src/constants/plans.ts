@@ -4,7 +4,6 @@ import type { SectionId } from "./sections";
 export const ALL_SAAS_MODULE_IDS: SectionId[] = [
   "hr",
   "law",
-  "lawyer",
   "acc",
   "edu",
   "visa",
