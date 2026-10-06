@@ -342,7 +342,7 @@ const arMA: Dict = {
   "plan.retail": "البقال والمحلات التجارية — الباقة العادية / Retail shops — Basic",
   "plan.retail.blurb": "399 درهم/شهر أو 3830 درهم/سنة — مخزون ومبيعات ومالية ومعاهد. / Stock, sales, finance & institutes tools.",
   "plan.retailPro": "البقال والمحلات التجارية — الباقة برو / Retail shops — Pro",
-  "plan.retailPro.blurb": "799 درهم/شهر أو 7670 درهم/سنة — كل ما في الباقة العادية + رادار الطلبات والتوصيل. / All in Basic plan + delivery hub.",
+  "plan.retailPro.blurb": "799 درهم/شهر أو 7670 درهم/سنة — كل ما في الباقة العادية + رادار الطلبات والتوصيل + السيارات والعقارات + النقل واللوجستيك. / All in Basic plan + delivery hub + cars & real estate + transport & logistics.",
   "plan.deliveryHubOnly": "رادار الطلبات والتوصيل — خطة خاصة / Delivery Hub — Standalone",
   "plan.deliveryHubOnly.blurb": "2500 درهم/شهر أو 24000 درهم/سنة — رادار الطلبات والتوصيل الكامل مع المراسلات. / Full delivery hub with messaging.",
   "plan.institutes": "المعاهد والمراكز / Training institutes",
