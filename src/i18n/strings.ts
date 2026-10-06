@@ -32,6 +32,7 @@ const arMA: Dict = {
   "nav.legalAi": "المحرر الإداري والقانوني الذكي / Smart legal & admin editor",
   "nav.aiDesignStudio": "استوديو التصميم بالذكاء الاصطناعي / AI Design Studio",
   "nav.autoRealEstate": "السيارات والعقارات / Cars & real estate",
+  "nav.contracts": "العقود والتوقيعات الالكترونية / Contracts & e-signatures",
   "nav.weddingStudio": "استوديو دعوات الزفاف / Wedding Invitation Studio",
 
   "legalAi.title": "المحرر الإداري والقانوني الذكي — Smart Legal & Admin Editor",
@@ -330,7 +331,7 @@ const arMA: Dict = {
 
   "plan.enterprisesSchools": "شركات المقاولات والمدارس — Smart Al-Idara Pro",
   "plan.enterprisesSchools.blurb":
-    "999 درهم/شهر أو 8000 درهم/سنة — كل الأقسام مفتوحة: التعليم، المخزون، رادار التأشيرة، السيارات والعقارات، النقل، RH، وغيرها — بدون استثناء. / All modules unlocked: education, inventory, visa radar, cars & real estate, HR & more.",
+    "999 درهم/شهر أو 8000 درهم/سنة — كل الأقسام مفتوحة: التعليم، المخزون، رادار التأشيرة، السيارات والعقارات، النقل، RH، العقود والتوقيعات الالكترونية، وغيرها — بدون استثناء. / All modules unlocked: education, inventory, visa radar, cars & real estate, HR, contracts & e-signatures & more.",
   "plan.lawyers": "المحامون / Lawyers",
   "plan.lawyers.blurb":
     "599 درهم/شهر أو 5000 درهم/سنة — بوابة المحامي الاحترافي + صياغة المقالات القضائية + تتبع الملفات + المحرر القانوني الذكي. / Lawyer Portal, court filings, case tracking & smart legal editor.",
@@ -342,7 +343,7 @@ const arMA: Dict = {
   "plan.retail": "البقال والمحلات التجارية — الباقة العادية / Retail shops — Basic",
   "plan.retail.blurb": "399 درهم/شهر أو 3830 درهم/سنة — مخزون ومبيعات ومالية ومعاهد. / Stock, sales, finance & institutes tools.",
   "plan.retailPro": "البقال والمحلات التجارية — الباقة برو / Retail shops — Pro",
-  "plan.retailPro.blurb": "799 درهم/شهر أو 7670 درهم/سنة — كل ما في الباقة العادية + رادار الطلبات والتوصيل + السيارات والعقارات + النقل واللوجستيك. / All in Basic plan + delivery hub + cars & real estate + transport & logistics.",
+  "plan.retailPro.blurb": "799 درهم/شهر أو 7670 درهم/سنة — كل ما في الباقة العادية + رادار الطلبات والتوصيل + السيارات والعقارات + النقل واللوجستيك + العقود والتوقيعات الالكترونية. / All in Basic plan + delivery hub + cars & real estate + transport & logistics + contracts & e-signatures.",
   "plan.deliveryHubOnly": "رادار الطلبات والتوصيل — خطة خاصة / Delivery Hub — Standalone",
   "plan.deliveryHubOnly.blurb": "2500 درهم/شهر أو 24000 درهم/سنة — رادار الطلبات والتوصيل الكامل مع المراسلات. / Full delivery hub with messaging.",
   "plan.institutes": "المعاهد والمراكز / Training institutes",
@@ -403,6 +404,8 @@ const arMA: Dict = {
   "section.reminders.short": "تذكيرات / Alerts",
   "section.auto_real_estate.title": "قسم السيارات والعقارات / Cars & real estate",
   "section.auto_real_estate.short": "سيارات وعقارات / Cars & property",
+  "section.contracts.title": "العقود والتوقيعات الالكترونية / Contracts & e-signatures",
+  "section.contracts.short": "عقود / Contracts",
   "section.wedding_studio.title": "استوديو دعوات الزفاف / Wedding Invitation Studio",
   "section.wedding_studio.short": "استوديو الزفاف / Wedding Studio",
 
@@ -2485,7 +2488,7 @@ const en: Dict = {
   "dashboard.subscribe": "Subscribe",
   "plan.enterprisesSchools": "Contractors & schools — Smart Al-Idara Pro",
   "plan.enterprisesSchools.blurb":
-    "999 DH/month or 8000 DH/year — all modules unlocked: education, inventory, visa radar, cars & real estate, HR & more.",
+    "999 DH/month or 8000 DH/year — all modules unlocked: education, inventory, visa radar, cars & real estate, HR, contracts & e-signatures & more.",
   "plan.lawyers": "Lawyers",
   "plan.lawyers.blurb": "599 DH/month or 5000 DH/year — Professional Lawyer Portal, court filings, case tracking & smart legal editor.",
   "plan.librariesBase": "Libraries — Essential",
@@ -2496,7 +2499,7 @@ const en: Dict = {
   "plan.retail": "Retail & grocery shops — Basic",
   "plan.retail.blurb": "399 DH/month or 3830 DH/year — stock, sales, finance & institutes.",
   "plan.retailPro": "Retail & grocery shops — Pro",
-  "plan.retailPro.blurb": "799 DH/month or 7670 DH/year — all in Basic plan + delivery hub.",
+  "plan.retailPro.blurb": "799 DH/month or 7670 DH/year — all in Basic plan + delivery hub + cars & real estate + transport & logistics + contracts & e-signatures.",
   "plan.deliveryHubOnly": "Delivery Hub — Standalone",
   "plan.deliveryHubOnly.blurb": "2500 DH/month or 24000 DH/year — full delivery hub with messaging.",
   "plan.institutes": "Institutes & training centers",
@@ -4728,7 +4731,7 @@ const fr: Dict = {
   "plan.retail": "Commerces & épiceries — Basic",
   "plan.retail.blurb": "399 DH/mois ou 3830 DH/an — stocks, ventes, finances & instituts.",
   "plan.retailPro": "Commerces & épiceries — Pro",
-  "plan.retailPro.blurb": "799 DH/mois ou 7670 DH/an — tout dans le plan Basic + hub de livraison.",
+  "plan.retailPro.blurb": "799 DH/mois ou 7670 DH/an — tout dans le plan Basic + hub de livraison + voitures & immobilier + transport & logistique + contrats & signatures électroniques.",
   "plan.deliveryHubOnly": "Hub de livraison — Autonome",
   "plan.deliveryHubOnly.blurb": "2500 DH/mois ou 24000 DH/an — hub de livraison complet avec messagerie.",
   "plan.institutes": "Instituts & centres de formation",
@@ -5506,7 +5509,7 @@ const es: Dict = {
   "plan.retail": "Comercios y ultramarinos — Basic",
   "plan.retail.blurb": "399 DH/mes o 3830 DH/año — stock, ventas, finanzas e institutos.",
   "plan.retailPro": "Comercios y ultramarinos — Pro",
-  "plan.retailPro.blurb": "799 DH/mes o 7670 DH/año — todo en el plan Basic + hub de entrega.",
+  "plan.retailPro.blurb": "799 DH/mes o 7670 DH/año — todo en el plan Basic + hub de entrega + autos & inmobiliaria + transporte & logística + contratos & firmas electrónicas.",
   "plan.deliveryHubOnly": "Hub de entrega — Autónomo",
   "plan.deliveryHubOnly.blurb": "2500 DH/mes o 24000 DH/año — hub de entrega completo con mensajería.",
   "plan.institutes": "Institutos y centros de formación",

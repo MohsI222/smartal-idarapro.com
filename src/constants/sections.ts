@@ -36,7 +36,8 @@ export type SectionId =
   | "edu_print"
   | "tools"
   | "reminders"
-  | "auto_real_estate";
+  | "auto_real_estate"
+  | "contracts";
 
 export type SectionDef = {
   id: SectionId;
@@ -228,5 +229,14 @@ export const SECTIONS: SectionDef[] = [
     color: "text-yellow-400",
     price: "—",
     path: "/app/reminders",
+  },
+  {
+    id: "contracts",
+    titleKey: "section.contracts.title",
+    shortTitleKey: "section.contracts.short",
+    icon: FileText,
+    color: "text-purple-400",
+    price: "—",
+    path: "/app/contracts",
   },
 ];

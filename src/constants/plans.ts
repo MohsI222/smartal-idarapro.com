@@ -21,6 +21,7 @@ export const ALL_SAAS_MODULE_IDS: SectionId[] = [
   "tools",
   "reminders",
   "auto_real_estate",
+  "contracts",
 ];
 
 /** تجربة 5 أيام — كل الأقسام عدا التأشيرة */
@@ -120,7 +121,7 @@ export const PLAN_OPTIONS: PlanOption[] = [
     priceMonthlyDh: 799,
     priceYearlyDh: 7670,
     accent: "rose",
-    modules: ["inventory", "delivery_hub", "acc", "members", "chat", "auto_real_estate", "transport_logistics"],
+    modules: ["inventory", "delivery_hub", "acc", "members", "chat", "auto_real_estate", "transport_logistics", "contracts"],
   },
   {
     id: "delivery_hub_only",
