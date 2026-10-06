@@ -1109,7 +1109,6 @@ const arMA: Dict = {
   "nav.memberMgmt": "المعاهد والمراكز / Member management",
   "nav.inventory": "رادار المخزون والمبيعات / Inventory & sales radar",
   "nav.deliveryHub": "رادار الطلبات والتوصيل / Delivery Hub",
-  "nav.contracts": "العقود والتوقيع الإلكتروني / Contracts & e-signature",
 
   // Contracts Module
   "contracts.title": "العقود والتوقيع الإلكتروني / Contracts & e-signature",

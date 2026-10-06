@@ -175,7 +175,7 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
           const code = result.codeResult.code;
           if (!code) return;
           const now = Date.now();
-          if (now - lastFireRef.current < 200) return; // Longer cooldown for Quagga
+          if (now - lastFireRef.current < 1000) return; // 1 second cooldown to prevent duplicate scans
           lastFireRef.current = now;
           playBarcodeScanBeep();
           setLastCode(code);
@@ -198,7 +198,7 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
         stream.getTracks().forEach(track => track.stop());
 
         const reader = new BrowserMultiFormatReader(buildDecodeHints(), {
-          delayBetweenScanSuccess: 50,   // 50ms cooldown for quick scanning of same product multiple times
+          delayBetweenScanSuccess: 1000,  // 1 second cooldown to prevent duplicate scans
           delayBetweenScanAttempts: 2,    // Faster attempts for better performance
         });
         const controls = await reader.decodeFromVideoDevice(undefined, video, (result, err) => {
@@ -206,7 +206,7 @@ export function BarcodeScannerHub({ products, onMatchedProduct, onUnknownBarcode
           const text = result.getText()?.trim();
           if (!text) return;
           const now = Date.now();
-          if (now - lastFireRef.current < 100) return; // Match cooldown with delayBetweenScanSuccess
+          if (now - lastFireRef.current < 1000) return; // Match cooldown with delayBetweenScanSuccess (1 second)
           lastFireRef.current = now;
           playBarcodeScanBeep();
           setLastCode(text);
