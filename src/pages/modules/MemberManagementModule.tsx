@@ -126,6 +126,7 @@ export function MemberManagementModule() {
 
   useEffect(() => {
     const s = loadMemberMgmt(uid);
+    console.log("[MemberMgmt] Loaded from localStorage:", s);
     setSetup(s.setup);
     setMembers(s.members);
     if (s.setup) {
@@ -140,6 +141,7 @@ export function MemberManagementModule() {
 
   useEffect(() => {
     if (!hydrated) return;
+    console.log("[MemberMgmt] Auto-saving to localStorage:", { setup, membersCount: members.length });
     saveMemberMgmt(uid, { setup, members });
   }, [uid, setup, members, hydrated]);
 
@@ -157,6 +159,7 @@ export function MemberManagementModule() {
       logoDataUrl: setupDraft.logoDataUrl,
       savedAt: new Date().toISOString(),
     };
+    console.log("[MemberMgmt] Saving setup:", next);
     setSetup(next);
     setSetupDialogOpen(false);
   }, [setupDraft]);
