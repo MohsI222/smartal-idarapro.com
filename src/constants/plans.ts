@@ -20,7 +20,6 @@ export const ALL_SAAS_MODULE_IDS: SectionId[] = [
   "tools",
   "reminders",
   "auto_real_estate",
-  "contracts",
 ];
 
 /** تجربة 5 أيام — كل الأقسام عدا التأشيرة */
@@ -66,7 +65,7 @@ export const PLAN_OPTIONS: PlanOption[] = [
     priceYearlyDh: 8000,
     accent: "amber",
     spotlight: true,
-    modules: [...ALL_SAAS_MODULE_IDS],
+    modules: [...ALL_SAAS_MODULE_IDS, "contracts"],
   },
   {
     id: "lawyers",
