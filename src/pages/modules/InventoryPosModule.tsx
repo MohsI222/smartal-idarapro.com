@@ -3385,10 +3385,13 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                         key={product.id}
                         data-quick-idx={idx}
                         tabIndex={0}
-                        className={`p-3 border-b border-slate-800 cursor-pointer transition-colors outline-none focus:ring-1 focus:ring-[#0052CC]/60 ${
+                        className={`p-3 border-b border-slate-800 cursor-pointer transition-colors outline-none focus:ring-1 focus:ring-[#0052CC]/60 active:scale-98 touch-manipulation ${
                           idx === quickListIndex ? 'bg-[#0052CC]/20 border-l-2 border-l-[#0052CC]' : 'hover:bg-slate-800/50'
                         }`}
-                        onClick={() => setQuickListIndex(idx)}
+                        onClick={() => {
+                          setQuickListIndex(idx);
+                          tryAddQuickLineForProductId(product.id);
+                        }}
                         onKeyDown={(e) => {
                           if (e.key === "ArrowDown") {
                             e.preventDefault();
@@ -3438,16 +3441,18 @@ Apply the fix to ensure CSV/Excel imports work correctly.`
                     <p className="text-xs font-bold text-slate-400">{t("inv.quickCurrentUnit")}</p>
                     <div className="flex flex-wrap items-center gap-2">
                       {QUICK_UNITS.map((u) => (
-                        <span
+                        <button
                           key={u}
-                          className={`rounded-lg px-2.5 py-1 text-xs font-bold ${
+                          type="button"
+                          onClick={() => setQuickUnit(u)}
+                          className={`rounded-lg px-2.5 py-1 text-xs font-bold cursor-pointer transition-colors active:scale-95 ${
                             quickUnit === u
                               ? "bg-[#0052CC] text-white"
-                              : "bg-slate-800/80 text-slate-400"
+                              : "bg-slate-800/80 text-slate-400 hover:bg-slate-700"
                           }`}
                         >
                           {t(`inv.unit.${u}`)}
-                        </span>
+                        </button>
                       ))}
                     </div>
                     {filteredQuickProducts[quickListIndex] && (
