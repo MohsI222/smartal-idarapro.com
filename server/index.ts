@@ -37,7 +37,7 @@ import { customDomainMiddleware } from "./customDomainMiddleware.js";
 import {
   resolveGeminiImageApiKey,
 } from "./aiImageGeneration.js";
-import { initializeSupabaseStorage } from "./supabaseStorage.js";
+import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -6220,20 +6220,13 @@ app.post("/api/academy-media/upload", authMiddleware, (req, res, next) => {
     const timestamp = Date.now();
     const randomSuffix = Math.round(Math.random() * 1E9);
     const safeFileName = `${timestamp}-${randomSuffix}${ext}`;
-    const uploadDir = getUploadDir();
     
-    // إنشاء مجلد uploads إذا لم يكن موجوداً
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-      console.log("[api] Created upload directory:", uploadDir);
-    }
+    // Upload to Supabase Storage (app-files bucket)
+    const storagePath = `academy-media/${userId}/${safeFileName}`;
+    console.log("[api] Uploading academy media to Supabase Storage:", storagePath);
     
-    const filePath = path.join(uploadDir, safeFileName);
-
-    console.log("[api] Saving academy file to:", filePath);
-
-    // حفظ الملف
-    fs.writeFileSync(filePath, file.buffer);
+    const publicUrl = await uploadFile(file.buffer, storagePath, file.mimetype);
+    console.log("[api] Supabase upload successful:", publicUrl);
 
     const maxOrder = await db.prepare(`
       SELECT COALESCE(MAX(sort_order), 0) as max_order 
@@ -6242,7 +6235,6 @@ app.post("/api/academy-media/upload", authMiddleware, (req, res, next) => {
     `).get(userId) as { max_order: number };
 
     const type = file.mimetype.startsWith("video/") ? "video" : "image";
-    const webUrl = `/uploads/${safeFileName}`;
 
     console.log("[api] Inserting academy media into database:", {
       id,
@@ -6250,14 +6242,14 @@ app.post("/api/academy-media/upload", authMiddleware, (req, res, next) => {
       type,
       title,
       description,
-      filePath,
-      webUrl
+      storagePath,
+      publicUrl
     });
 
     await db.prepare(`
       INSERT INTO academy_media (id, user_id, type, title, description, url, file_path, file_name, file_mime, sort_order)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, userId, type, title || null, description || null, webUrl, filePath, safeFileName, file.mimetype, maxOrder.max_order + 1);
+    `).run(id, userId, type, title || null, description || null, publicUrl, storagePath, safeFileName, file.mimetype, maxOrder.max_order + 1);
 
     const item = await db.prepare(`
       SELECT * FROM academy_media WHERE id = ?
@@ -6378,33 +6370,24 @@ app.post("/api/inventory/product-video", authMiddleware, (req, res, next) => {
     const timestamp = Date.now();
     const randomSuffix = Math.round(Math.random() * 1E9);
     const safeFileName = `${timestamp}-${randomSuffix}${ext}`;
-    const uploadDir = getUploadDir();
     
-    // إنشاء مجلد uploads إذا لم يكن موجوداً
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-      console.log("[api] Created upload directory:", uploadDir);
-    }
+    // Upload to Supabase Storage (app-files bucket)
+    const storagePath = `product-videos/${userId}/${safeFileName}`;
+    console.log("[api] Uploading product video to Supabase Storage:", storagePath);
     
-    const filePath = path.join(uploadDir, safeFileName);
-
-    console.log("[api] Saving product video to:", filePath);
-
-    // حفظ الملف
-    fs.writeFileSync(filePath, file.buffer);
-
-    const webUrl = `/uploads/${safeFileName}`;
+    const publicUrl = await uploadFile(file.buffer, storagePath, file.mimetype);
+    console.log("[api] Supabase upload successful:", publicUrl);
 
     console.log("[api] Product video upload successful:", {
-      filePath,
-      webUrl,
+      storagePath,
+      publicUrl,
       fileName: safeFileName,
       mime: file.mimetype
     });
 
     res.json({ 
-      video_url: webUrl,
-      video_file_path: filePath,
+      video_url: publicUrl,
+      video_file_path: storagePath,
       video_file_name: safeFileName,
       video_mime: file.mimetype
     });

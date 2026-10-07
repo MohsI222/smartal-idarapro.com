@@ -131,6 +131,10 @@ export function MediaLibraryManager() {
     setUploading(true);
 
     try {
+      console.log("[MediaLibrary] Starting upload process...");
+      console.log("[MediaLibrary] User ID:", userId);
+      console.log("[MediaLibrary] File:", uploadFile.name, uploadFile.size, uploadFile.type);
+
       // Compress image if it's an image (client-side compression under 100KB)
       let fileToUpload = uploadFile;
       if (uploadFile.type.startsWith("image/")) {
@@ -152,6 +156,8 @@ export function MediaLibraryManager() {
       const storagePath = `media-library/${uploadUserId}/${safeFileName}`;
       
       console.log("[MediaLibrary] Uploading to Supabase:", storagePath);
+      console.log("[MediaLibrary] File to upload:", fileToUpload.name, fileToUpload.size, fileToUpload.type);
+      
       const publicUrl = await supabaseUploadFile(fileToUpload, storagePath);
       console.log("[MediaLibrary] Supabase upload successful:", publicUrl);
 
@@ -165,6 +171,8 @@ export function MediaLibraryManager() {
         is_public: uploadIsPublic ? "1" : "0"
       });
 
+      console.log("[MediaLibrary] Sending metadata to server...");
+
       const prefix = "/api";
       const res = await fetch(`${prefix}/media-library`, {
         method: "POST",
@@ -176,7 +184,7 @@ export function MediaLibraryManager() {
       });
 
       const text = await res.text();
-      console.log("Server response:", { status: res.status, text });
+      console.log("[MediaLibrary] Server response:", { status: res.status, text });
 
       if (!res.ok) {
         try {
@@ -196,9 +204,10 @@ export function MediaLibraryManager() {
         setUploadTitle("");
         setUploadIsPublic(false);
         toast("تم الرفع بنجاح", { style: { background: "#22c55e", color: "#fff" } });
+        console.log("[MediaLibrary] Upload completed successfully!");
       }
     } catch (error) {
-      console.error("Error uploading:", error);
+      console.error("[MediaLibrary] Error uploading:", error);
       const errorMessage = error instanceof Error ? error.message : "فشل في الرفع";
       toast(errorMessage, { style: { background: "#ef4444", color: "#fff" } });
     } finally {
