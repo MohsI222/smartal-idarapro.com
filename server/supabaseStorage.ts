@@ -52,6 +52,40 @@ export async function initializeSupabaseStorage() {
 }
 
 /**
+ * Upload a file to Supabase Storage (app-files bucket)
+ * @param fileBuffer - Buffer of the file to upload
+ * @param path - Storage path (e.g., 'media-library/uuid.jpg')
+ * @param contentType - MIME type of the file
+ * @returns Public URL of the uploaded file
+ */
+export async function uploadFile(
+  fileBuffer: Buffer,
+  path: string,
+  contentType: string
+): Promise<string> {
+  try {
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .upload(path, fileBuffer, {
+        upsert: true,
+        contentType,
+      });
+
+    if (error) throw error;
+
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from(BUCKET_NAME)
+      .getPublicUrl(data.path);
+
+    return publicUrlData.publicUrl;
+  } catch (error) {
+    console.error('[Supabase Storage] Upload error:', error);
+    throw error;
+  }
+}
+
+/**
  * Delete a file from Supabase Storage
  */
 export async function deleteFile(path: string): Promise<void> {

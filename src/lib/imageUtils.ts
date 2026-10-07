@@ -3,6 +3,8 @@
  * Compresses images client-side before upload to save storage space
  */
 
+const MAX_SIZE_BYTES = 100 * 1024; // 100KB
+
 export const compressImage = async (
   file: File,
   maxWidth: number = 800,
@@ -63,6 +65,37 @@ export const compressImage = async (
     };
     reader.onerror = () => reject(new Error('Failed to read file'));
   });
+};
+
+/**
+ * Compress image to ensure it's under 100KB
+ * Recursively reduces quality and dimensions if needed
+ */
+export const compressImageUnder100KB = async (
+  file: File,
+  initialQuality: number = 0.8,
+  maxIterations: number = 10
+): Promise<Blob> => {
+  let quality = initialQuality;
+  let maxDimension = 1200;
+  
+  for (let i = 0; i < maxIterations; i++) {
+    const compressed = await compressImage(file, maxDimension, maxDimension, quality);
+    
+    if (compressed.size <= MAX_SIZE_BYTES) {
+      console.log(`[ImageCompression] Compressed to ${compressed.size} bytes after ${i + 1} iterations`);
+      return compressed;
+    }
+    
+    // Reduce quality and dimensions for next iteration
+    quality = Math.max(0.1, quality - 0.1);
+    maxDimension = Math.max(300, maxDimension - 100);
+  }
+  
+  // If still too large after max iterations, return the smallest we got
+  const finalCompressed = await compressImage(file, 300, 300, 0.1);
+  console.warn(`[ImageCompression] Could not compress under 100KB, final size: ${finalCompressed.size} bytes`);
+  return finalCompressed;
 };
 
 export const blobToBase64 = (blob: Blob): Promise<string> => {

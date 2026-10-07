@@ -37,7 +37,7 @@ import { customDomainMiddleware } from "./customDomainMiddleware.js";
 import {
   resolveGeminiImageApiKey,
 } from "./aiImageGeneration.js";
-import { initializeSupabaseStorage } from "./supabaseStorage.js";
+import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -5966,7 +5966,7 @@ app.post("/api/media-library", authMiddleware, async (req, res) => {
   }
 });
 
-// رفع ملف من الجهاز
+// رفع ملف من الجهاز - Uses Supabase Storage (app-files bucket)
 app.post("/api/media-library/upload", authMiddleware, (req, res, next) => {
   mediaUpload.single("file")(req, res, (err) => {
     if (err instanceof multer.MulterError) {
@@ -6009,20 +6009,13 @@ app.post("/api/media-library/upload", authMiddleware, (req, res, next) => {
     const timestamp = Date.now();
     const randomSuffix = Math.round(Math.random() * 1E9);
     const safeFileName = `${timestamp}-${randomSuffix}${ext}`;
-    const uploadDir = getUploadDir();
     
-    // إنشاء مجلد uploads إذا لم يكن موجوداً
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-      console.log("[api] Created upload directory:", uploadDir);
-    }
+    // Upload to Supabase Storage (app-files bucket)
+    const storagePath = `media-library/${userId}/${safeFileName}`;
+    console.log("[api] Uploading to Supabase Storage:", storagePath);
     
-    const filePath = path.join(uploadDir, safeFileName);
-
-    console.log("[api] Saving file to:", filePath);
-
-    // حفظ الملف
-    fs.writeFileSync(filePath, file.buffer);
+    const publicUrl = await uploadFile(file.buffer, storagePath, file.mimetype);
+    console.log("[api] Supabase upload successful:", publicUrl);
 
     const maxOrder = await db.prepare(`
       SELECT COALESCE(MAX(sort_order), 0) as max_order 
@@ -6032,22 +6025,21 @@ app.post("/api/media-library/upload", authMiddleware, (req, res, next) => {
 
     const type = file.mimetype.startsWith("video/") ? "video" : "image";
     const isPublic = is_public === "1" || is_public === undefined || is_public === null ? 1 : 0;
-    const webUrl = `/uploads/${safeFileName}`;
 
     console.log("[api] Inserting into database:", {
       id,
       userId,
       type,
       title,
-      filePath,
-      webUrl,
+      storagePath,
+      publicUrl,
       isPublic
     });
 
     await db.prepare(`
       INSERT INTO media_library (id, user_id, type, title, url, file_path, file_name, file_mime, sort_order, is_public)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, userId, type, title, webUrl, filePath, safeFileName, file.mimetype, maxOrder.max_order + 1, isPublic);
+    `).run(id, userId, type, title, publicUrl, storagePath, safeFileName, file.mimetype, maxOrder.max_order + 1, isPublic);
 
     const item = await db.prepare(`
       SELECT * FROM media_library WHERE id = ?

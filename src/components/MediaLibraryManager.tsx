@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { compressImageUnder100KB } from "@/lib/imageUtils";
 
 type MediaType = "youtube" | "external" | "video" | "image";
 
@@ -126,22 +127,34 @@ export function MediaLibraryManager() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", uploadFile);
-    formData.append("title", uploadTitle);
-    formData.append("is_public", uploadIsPublic ? "1" : "0");
-
-    console.log("Uploading file:", {
-      fileName: uploadFile.name,
-      fileSize: uploadFile.size,
-      fileType: uploadFile.type,
-      title: uploadTitle,
-      isPublic: uploadIsPublic
-    });
-
     setUploading(true);
 
     try {
+      // Compress image if it's an image (client-side compression under 100KB)
+      let fileToUpload = uploadFile;
+      if (uploadFile.type.startsWith("image/")) {
+        console.log("[MediaLibrary] Compressing image before upload...");
+        const compressedBlob = await compressImageUnder100KB(uploadFile);
+        fileToUpload = new File([compressedBlob], uploadFile.name, {
+          type: compressedBlob.type,
+          lastModified: Date.now(),
+        });
+        console.log("[MediaLibrary] Compressed from", uploadFile.size, "to", fileToUpload.size, "bytes");
+      }
+
+      const formData = new FormData();
+      formData.append("file", fileToUpload);
+      formData.append("title", uploadTitle);
+      formData.append("is_public", uploadIsPublic ? "1" : "0");
+
+      console.log("Uploading file:", {
+        fileName: fileToUpload.name,
+        fileSize: fileToUpload.size,
+        fileType: fileToUpload.type,
+        title: uploadTitle,
+        isPublic: uploadIsPublic
+      });
+
       const prefix = "/api";
       const res = await fetch(`${prefix}/media-library/upload`, {
         method: "POST",
