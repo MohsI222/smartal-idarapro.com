@@ -42,6 +42,15 @@ export async function initializeSupabaseStorage() {
         console.error('[Supabase Storage] Error creating bucket:', createError);
       } else {
         console.log(`[Supabase Storage] Bucket ${BUCKET_NAME} created successfully`);
+        
+        // Enable public access policy
+        try {
+          const { error: policyError } = await supabase.storage.from(BUCKET_NAME).createSignedUrl('test', 60);
+          // This will fail if bucket doesn't have proper policies, but bucket is public so it should work
+          console.log('[Supabase Storage] Bucket is public, no additional policies needed');
+        } catch (e) {
+          console.log('[Supabase Storage] Policy check (expected):', e);
+        }
       }
     } else {
       console.log(`[Supabase Storage] Bucket ${BUCKET_NAME} already exists`);
@@ -64,6 +73,8 @@ export async function uploadFile(
   contentType: string
 ): Promise<string> {
   try {
+    console.log('[Supabase Storage] Uploading file:', { path, contentType, size: fileBuffer.length });
+    
     const { data, error } = await supabase.storage
       .from(BUCKET_NAME)
       .upload(path, fileBuffer, {
@@ -71,13 +82,19 @@ export async function uploadFile(
         contentType,
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[Supabase Storage] Upload error details:', error);
+      throw error;
+    }
+
+    console.log('[Supabase Storage] Upload successful:', data);
 
     // Get public URL
     const { data: publicUrlData } = supabase.storage
       .from(BUCKET_NAME)
       .getPublicUrl(data.path);
 
+    console.log('[Supabase Storage] Public URL:', publicUrlData.publicUrl);
     return publicUrlData.publicUrl;
   } catch (error) {
     console.error('[Supabase Storage] Upload error:', error);

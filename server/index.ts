@@ -5966,56 +5966,42 @@ app.post("/api/media-library", authMiddleware, async (req, res) => {
   }
 });
 
-// رفع ملف من الجهاز - Uses Supabase Storage (app-files bucket)
-app.post("/api/media-library/upload", authMiddleware, (req, res, next) => {
-  mediaUpload.single("file")(req, res, (err) => {
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: "حجم الملف كبير جداً. الحد الأقصى 100MB" });
-      }
-      return res.status(400).json({ error: `خطأ في رفع الملف: ${err.message}` });
-    } else if (err) {
-      return res.status(400).json({ error: err.message || "خطأ في رفع الملف" });
-    }
-    next();
-  });
-}, async (req, res) => {
+// رفع ملف من الجهاز - Accepts metadata from client-side Supabase upload
+app.post("/api/media-library", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const { title, is_public } = req.body as { title?: string; is_public?: string };
-  const file = req.file;
+  const { title, url, file_path, file_name, file_mime, is_public } = req.body as {
+    title?: string;
+    url?: string;
+    file_path?: string;
+    file_name?: string;
+    file_mime?: string;
+    is_public?: string;
+  };
 
-  console.log("[api] Upload request:", {
+  console.log("[api] Media library create request:", {
     userId,
     title,
-    is_public,
-    file: file ? { name: file.originalname, size: file.size, mimetype: file.mimetype } : null
+    url,
+    file_path,
+    file_name,
+    file_mime,
+    is_public
   });
 
-  if (!file) {
-    console.log("[api] Upload error: File is required");
-    res.status(400).json({ error: "الملف مطلوب" });
+  if (!title) {
+    console.log("[api] Error: Title is required");
+    res.status(400).json({ error: "العنوان مطلوب" });
     return;
   }
 
-  if (!title) {
-    console.log("[api] Upload error: Title is required");
-    res.status(400).json({ error: "العنوان مطلوب" });
+  if (!url) {
+    console.log("[api] Error: URL is required");
+    res.status(400).json({ error: "رابط الملف مطلوب" });
     return;
   }
 
   try {
     const id = randomUUID();
-    const ext = path.extname(file.originalname) || "";
-    const timestamp = Date.now();
-    const randomSuffix = Math.round(Math.random() * 1E9);
-    const safeFileName = `${timestamp}-${randomSuffix}${ext}`;
-    
-    // Upload to Supabase Storage (app-files bucket)
-    const storagePath = `media-library/${userId}/${safeFileName}`;
-    console.log("[api] Uploading to Supabase Storage:", storagePath);
-    
-    const publicUrl = await uploadFile(file.buffer, storagePath, file.mimetype);
-    console.log("[api] Supabase upload successful:", publicUrl);
 
     const maxOrder = await db.prepare(`
       SELECT COALESCE(MAX(sort_order), 0) as max_order 
@@ -6023,7 +6009,7 @@ app.post("/api/media-library/upload", authMiddleware, (req, res, next) => {
       WHERE user_id = ?
     `).get(userId) as { max_order: number };
 
-    const type = file.mimetype.startsWith("video/") ? "video" : "image";
+    const type = file_mime?.startsWith("video/") ? "video" : "image";
     const isPublic = is_public === "1" || is_public === undefined || is_public === null ? 1 : 0;
 
     console.log("[api] Inserting into database:", {
@@ -6031,24 +6017,29 @@ app.post("/api/media-library/upload", authMiddleware, (req, res, next) => {
       userId,
       type,
       title,
-      storagePath,
-      publicUrl,
+      url,
+      file_path,
+      file_name,
+      file_mime,
       isPublic
     });
 
     await db.prepare(`
       INSERT INTO media_library (id, user_id, type, title, url, file_path, file_name, file_mime, sort_order, is_public)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, userId, type, title, publicUrl, storagePath, safeFileName, file.mimetype, maxOrder.max_order + 1, isPublic);
+    `).run(id, userId, type, title, url, file_path, file_name, file_mime, maxOrder.max_order + 1, isPublic);
 
     const item = await db.prepare(`
       SELECT * FROM media_library WHERE id = ?
     `).get(id);
 
-    console.log("[api] Upload successful:", item);
+    console.log("[api] Create successful:", item);
     res.json({ item });
   } catch (error) {
-    console.error("[api] Error uploading file:", error);
+    console.error("[api] Error creating media item:", error);
+    res.status(500).json({ error: "فشل في إضافة العنصر" });
+  }
+});
     res.status(500).json({ error: "فشل في رفع الملف" });
   }
 });

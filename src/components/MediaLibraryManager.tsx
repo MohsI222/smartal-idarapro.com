@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
+import { uploadFile as supabaseUploadFile } from "@/lib/supabaseClient";
 
 type MediaType = "youtube" | "external" | "video" | "image";
 
@@ -142,30 +143,40 @@ export function MediaLibraryManager() {
         console.log("[MediaLibrary] Compressed from", uploadFile.size, "to", fileToUpload.size, "bytes");
       }
 
-      const formData = new FormData();
-      formData.append("file", fileToUpload);
-      formData.append("title", uploadTitle);
-      formData.append("is_public", uploadIsPublic ? "1" : "0");
+      // Upload directly to Supabase Storage from client
+      const userId = localStorage.getItem("idara_user_id") || "unknown";
+      const ext = fileToUpload.name.split('.').pop() || "";
+      const timestamp = Date.now();
+      const randomSuffix = Math.round(Math.random() * 1E9);
+      const safeFileName = `${timestamp}-${randomSuffix}.${ext}`;
+      const storagePath = `media-library/${userId}/${safeFileName}`;
+      
+      console.log("[MediaLibrary] Uploading to Supabase:", storagePath);
+      const publicUrl = await supabaseUploadFile(fileToUpload, storagePath);
+      console.log("[MediaLibrary] Supabase upload successful:", publicUrl);
 
-      console.log("Uploading file:", {
-        fileName: fileToUpload.name,
-        fileSize: fileToUpload.size,
-        fileType: fileToUpload.type,
+      // Send metadata to server (not the file itself)
+      const body = JSON.stringify({
         title: uploadTitle,
-        isPublic: uploadIsPublic
+        url: publicUrl,
+        file_path: storagePath,
+        file_name: safeFileName,
+        file_mime: fileToUpload.type,
+        is_public: uploadIsPublic ? "1" : "0"
       });
 
       const prefix = "/api";
-      const res = await fetch(`${prefix}/media-library/upload`, {
+      const res = await fetch(`${prefix}/media-library`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-        body: formData
+        body
       });
 
       const text = await res.text();
-      console.log("Upload response:", { status: res.status, text });
+      console.log("Server response:", { status: res.status, text });
 
       if (!res.ok) {
         try {
