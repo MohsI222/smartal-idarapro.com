@@ -15,6 +15,8 @@ import { fetchContracts, createContract, updateContract, deleteContract, fetchTe
 import { CONTRACT_STATUS_LABELS, CONTRACT_TYPE_LABELS, type Contract, type ContractType } from "@/lib/contracts/types";
 import html2pdf from 'html2pdf.js';
 import { useI18n } from "@/i18n/I18nProvider";
+import { compressImageUnder100KB } from "@/lib/imageUtils";
+import { uploadFile as supabaseUploadFile } from "@/lib/supabaseClient";
 
 export function ContractsModule() {
   const navigate = useNavigate();
@@ -887,14 +889,24 @@ export function ContractsModule() {
                   <Input
                     type="file"
                     accept="image/*"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          setFormData({ ...formData, logo_url: reader.result as string });
-                        };
-                        reader.readAsDataURL(file);
+                        try {
+                          // Compress image to under 100KB
+                          const compressedBase64 = await compressImageUnder100KB(file);
+                          const response = await fetch(compressedBase64);
+                          const blob = await response.blob();
+                          const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
+                          
+                          // Upload to Supabase Storage
+                          const fileName = `contract-logos/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+                          const publicUrl = await supabaseUploadFile(compressedFile, fileName);
+                          setFormData({ ...formData, logo_url: publicUrl });
+                        } catch (error) {
+                          console.error("[ContractsModule] Error uploading logo:", error);
+                          toast.error("فشل رفع الشعار");
+                        }
                       }
                     }}
                   />
@@ -1077,14 +1089,24 @@ export function ContractsModule() {
                   <Input
                     type="file"
                     accept="image/*"
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                          setFormData({ ...formData, logo_url: reader.result as string });
-                        };
-                        reader.readAsDataURL(file);
+                        try {
+                          // Compress image to under 100KB
+                          const compressedBase64 = await compressImageUnder100KB(file);
+                          const response = await fetch(compressedBase64);
+                          const blob = await response.blob();
+                          const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
+                          
+                          // Upload to Supabase Storage
+                          const fileName = `contract-logos/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+                          const publicUrl = await supabaseUploadFile(compressedFile, fileName);
+                          setFormData({ ...formData, logo_url: publicUrl });
+                        } catch (error) {
+                          console.error("[ContractsModule] Error uploading logo:", error);
+                          toast.error("فشل رفع الشعار");
+                        }
                       }
                     }}
                   />

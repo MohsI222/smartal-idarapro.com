@@ -87,7 +87,7 @@ export function PublicMediaGallery() {
     }
 
     if (item.file_path) {
-      const mediaUrl = item.url || `/uploads/${item.file_name}`;
+      const mediaUrl = item.url;
       if (item.type === "video") {
         return (
           <video
