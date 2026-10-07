@@ -6040,9 +6040,6 @@ app.post("/api/media-library", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "فشل في إضافة العنصر" });
   }
 });
-    res.status(500).json({ error: "فشل في رفع الملف" });
-  }
-});
 
 // تعديل عنصر
 app.put("/api/media-library/:id", authMiddleware, async (req, res) => {
