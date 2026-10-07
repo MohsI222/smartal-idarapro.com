@@ -37,7 +37,7 @@ import { customDomainMiddleware } from "./customDomainMiddleware.js";
 import {
   resolveGeminiImageApiKey,
 } from "./aiImageGeneration.js";
-import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.js";
+import { initializeSupabaseStorage } from "./supabaseStorage.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
