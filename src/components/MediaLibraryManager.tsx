@@ -27,7 +27,7 @@ interface MediaItem {
 }
 
 export function MediaLibraryManager() {
-  const { token, isAdmin } = useAuth();
+  const { token, isAdmin, userId } = useAuth();
   const [items, setItems] = useState<MediaItem[]>([]);
 
   if (!isAdmin) {
@@ -144,12 +144,12 @@ export function MediaLibraryManager() {
       }
 
       // Upload directly to Supabase Storage from client
-      const userId = localStorage.getItem("idara_user_id") || "unknown";
+      const uploadUserId = userId || localStorage.getItem("idara_user_id") || "unknown";
       const ext = fileToUpload.name.split('.').pop() || "";
       const timestamp = Date.now();
       const randomSuffix = Math.round(Math.random() * 1E9);
       const safeFileName = `${timestamp}-${randomSuffix}.${ext}`;
-      const storagePath = `media-library/${userId}/${safeFileName}`;
+      const storagePath = `media-library/${uploadUserId}/${safeFileName}`;
       
       console.log("[MediaLibrary] Uploading to Supabase:", storagePath);
       const publicUrl = await supabaseUploadFile(fileToUpload, storagePath);
