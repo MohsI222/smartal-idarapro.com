@@ -6172,14 +6172,56 @@ app.get("/api/academy-media", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   try {
     const rows = await db.prepare(`
-      SELECT * FROM academy_media 
-      WHERE user_id = ? 
+      SELECT * FROM academy_media
+      WHERE user_id = ?
       ORDER BY sort_order ASC, created_at DESC
     `).all(userId);
     res.json({ items: rows });
   } catch (error) {
     console.error("[api] Error fetching academy media:", error);
     res.status(500).json({ error: "فشل في جلب ملفات الأكاديمية" });
+  }
+});
+
+// إنشاء عنصر أكاديمية جديد (بعد الرفع المباشر إلى Supabase)
+app.post("/api/academy-media", authMiddleware, async (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+  const { title, description, url, file_path, file_name, file_mime, type } = req.body;
+
+  console.log("[api] Academy create request:", {
+    userId,
+    title,
+    description,
+    url,
+    file_path,
+    file_name,
+    file_mime,
+    type
+  });
+
+  try {
+    const id = randomUUID();
+
+    const maxOrder = await db.prepare(`
+      SELECT COALESCE(MAX(sort_order), 0) as max_order
+      FROM academy_media
+      WHERE user_id = ?
+    `).get(userId) as { max_order: number };
+
+    await db.prepare(`
+      INSERT INTO academy_media (id, user_id, type, title, description, url, file_path, file_name, file_mime, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, userId, type || "image", title || null, description || null, url, file_path, file_name, file_mime, maxOrder.max_order + 1);
+
+    const item = await db.prepare(`
+      SELECT * FROM academy_media WHERE id = ?
+    `).get(id);
+
+    console.log("[api] Academy item created:", item);
+    res.json({ item });
+  } catch (error) {
+    console.error("[api] Error creating academy media:", error);
+    res.status(500).json({ error: "فشل في إنشاء العنصر" });
   }
 });
 

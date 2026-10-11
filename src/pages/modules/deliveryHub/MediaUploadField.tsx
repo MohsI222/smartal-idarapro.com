@@ -5,11 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { UploadCloud, X, Loader2 } from "lucide-react";
+import { compressImageUnder100KB } from "@/lib/imageUtils";
+import { uploadFile } from "@/lib/supabaseClient";
 
-const MAX_IMAGE_MB = 4;
+const MAX_IMAGE_MB = 10;
 const MAX_VIDEO_MB = 20;
-const TARGET_IMAGE_SIZE_KB = 500; // Target 500KB for compressed images
-const MAX_IMAGE_WIDTH = 1200; // Max width for compressed images
 
 function isVideoSrc(value: string): boolean {
   return value.startsWith("data:video") || /\.(mp4|webm|ogg)(\?.*)?$/i.test(value);
@@ -28,53 +28,6 @@ function toEmbedVideoUrl(url: string): string {
     }
   }
   return url;
-}
-
-async function compressImage(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        // Resize if too large
-        if (width > MAX_IMAGE_WIDTH) {
-          height = (height * MAX_IMAGE_WIDTH) / width;
-          width = MAX_IMAGE_WIDTH;
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Failed to get canvas context'));
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Try different quality levels to achieve target size
-        let quality = 0.9;
-        let dataUrl = canvas.toDataURL('image/jpeg', quality);
-        
-        // Reduce quality if still too large
-        while (dataUrl.length > TARGET_IMAGE_SIZE_KB * 1024 && quality > 0.1) {
-          quality -= 0.1;
-          dataUrl = canvas.toDataURL('image/jpeg', quality);
-        }
-
-        resolve(dataUrl);
-      };
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
-  });
 }
 
 export function MediaUploadField({
@@ -106,20 +59,18 @@ export function MediaUploadField({
     try {
       let result: string;
       if (kind === "image") {
-        // Compress image before processing
-        result = await compressImage(file);
-        toast.success("تم ضغط الصورة بنجاح");
+        // Compress image to under 100KB and upload to Supabase
+        const compressedBlob = await compressImageUnder100KB(file);
+        const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
+        const fileName = `delivery-hub/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+        result = await uploadFile(compressedFile, fileName);
+        toast.success("تم رفع الصورة بنجاح");
       } else {
-        // For videos, just read as data URL
-        result = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            if (typeof reader.result === "string") resolve(reader.result);
-            else reject(new Error("Failed to read file"));
-          };
-          reader.onerror = () => reject(new Error("Failed to read file"));
-          reader.readAsDataURL(file);
-        });
+        // For videos, upload directly to Supabase
+        const ext = file.name.split('.').pop() || "mp4";
+        const fileName = `delivery-hub-videos/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
+        result = await uploadFile(file, fileName);
+        toast.success("تم رفع الفيديو بنجاح");
       }
       onChange(result);
     } catch (err) {

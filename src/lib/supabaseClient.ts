@@ -8,8 +8,15 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 
+console.log('[Supabase] Config:', {
+  hasUrl: !!supabaseUrl,
+  hasKey: !!supabaseAnonKey,
+  urlPrefix: supabaseUrl ? supabaseUrl.substring(0, 30) + '...' : 'none',
+  keyPrefix: supabaseAnonKey ? supabaseAnonKey.substring(0, 20) + '...' : 'none'
+});
+
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('[Supabase] Missing Supabase credentials. File upload will be disabled.');
+  console.error('[Supabase] Missing Supabase credentials. File upload will be disabled.');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -21,6 +28,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * @returns Public URL of the uploaded file
  */
 export const uploadFile = async (file: File, path: string): Promise<string> => {
+  console.log('[Supabase] Upload started:', {
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type,
+    path
+  });
+
   try {
     const { data, error } = await supabase.storage
       .from('app-files')
@@ -29,13 +43,22 @@ export const uploadFile = async (file: File, path: string): Promise<string> => {
         contentType: file.type,
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[Supabase] Upload failed:', error);
+      throw error;
+    }
+
+    console.log('[Supabase] Upload success:', {
+      path: data.path,
+      fullPath: data.fullPath
+    });
 
     // Get public URL
     const { data: publicUrlData } = supabase.storage
       .from('app-files')
       .getPublicUrl(data.path);
 
+    console.log('[Supabase] Public URL:', publicUrlData.publicUrl);
     return publicUrlData.publicUrl;
   } catch (error) {
     console.error('[Supabase] Upload error:', error);

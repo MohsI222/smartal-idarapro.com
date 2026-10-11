@@ -16,6 +16,8 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { toast } from "sonner";
+import { compressImageUnder100KB } from "@/lib/imageUtils";
+import { uploadFile } from "@/lib/supabaseClient";
 
 function extractYoutubeId(line: string): string | null {
   const u = line.trim();
@@ -373,47 +375,73 @@ export function CorporateAcademyModule() {
     setUploading(true);
     let ok = 0;
     let invalid = 0;
-    
+
     for (const f of Array.from(files)) {
       // Validate file type
       const isVideo = f.type.startsWith("video/");
       const isImage = f.type.startsWith("image/");
-      
+
       if (!isVideo && !isImage) {
         invalid++;
         toast.error(`Invalid file type: ${f.name}. Only images and videos are allowed.`);
         continue;
       }
-      
+
       try {
-        const formData = new FormData();
-        formData.append("file", f);
-        if (title) formData.append("title", title);
-        if (description) formData.append("description", description);
-        
+        let fileToUpload = f;
+
+        // Compress images to under 100KB
+        if (isImage) {
+          console.log("[Academy] Compressing image before upload...");
+          const compressedBlob = await compressImageUnder100KB(f);
+          fileToUpload = new File([compressedBlob], f.name, {
+            type: compressedBlob.type,
+            lastModified: Date.now(),
+          });
+          console.log("[Academy] Compressed from", f.size, "to", fileToUpload.size, "bytes");
+        }
+
+        // Upload directly to Supabase Storage
+        const ext = fileToUpload.name.split('.').pop() || "";
+        const timestamp = Date.now();
+        const randomSuffix = Math.round(Math.random() * 1E9);
+        const safeFileName = `${timestamp}-${randomSuffix}.${ext}`;
+        const storagePath = `academy-media/${userId}/${safeFileName}`;
+
+        console.log("[Academy] Uploading to Supabase:", storagePath);
+        const publicUrl = await uploadFile(fileToUpload, storagePath);
+        console.log("[Academy] Supabase upload successful:", publicUrl);
+
+        // Send metadata to server
+        const body = JSON.stringify({
+          title,
+          description,
+          url: publicUrl,
+          file_path: storagePath,
+          file_name: safeFileName,
+          file_mime: fileToUpload.type,
+          type: isVideo ? "video" : "image"
+        });
+
         const prefix = "/api";
-        const res = await fetch(`${prefix}/academy-media/upload`, {
+        const res = await fetch(`${prefix}/academy-media`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
-          body: formData
+          body
         });
 
         const text = await res.text();
-        console.log("Academy upload response:", { status: res.status, text });
+        console.log("Academy metadata response:", { status: res.status, text });
 
         if (!res.ok) {
-          try {
-            const errorData = JSON.parse(text);
-            throw new Error(errorData.error || text || "فشل في الرفع");
-          } catch {
-            throw new Error(text || "فشل في الرفع");
-          }
+          throw new Error(text || "فشل في الرفع");
         }
 
         const data = JSON.parse(text) as { item: AcademyMediaItem };
-        
+
         if (data.item) {
           setAcademyMedia((prev) => [...prev, data.item]);
           ok += 1;

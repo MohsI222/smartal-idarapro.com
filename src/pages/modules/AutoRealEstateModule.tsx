@@ -10,6 +10,9 @@ import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import html2pdf from 'html2pdf.js';
+import { compressImageUnder100KB } from "@/lib/imageUtils";
+import { uploadFile } from "@/lib/supabaseClient";
+import { toast } from "sonner";
 
 type ItemType = "Car" | "Property" | "Land";
 type ItemStatus = "Available" | "Rented" | "Sold" | "Maintenance";
@@ -297,15 +300,26 @@ export default function AutoRealEstateModule() {
   }, []);
 
   // INVENTORY HANDLERS
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isLogo: boolean = false) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, isLogo: boolean = false) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        if (isLogo) setContractLogo(ev.target?.result as string);
-        else setNewItem({ ...newItem, image: ev.target?.result as string });
-      };
-      reader.readAsDataURL(file);
+      try {
+        // Compress image to under 100KB
+        const compressedBlob = await compressImageUnder100KB(file);
+        const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
+
+        // Upload to Supabase Storage
+        const fileName = `auto-realestate/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+        const publicUrl = await uploadFile(compressedFile, fileName);
+
+        if (isLogo) setContractLogo(publicUrl);
+        else setNewItem({ ...newItem, image: publicUrl });
+
+        toast.success("تم رفع الصورة بنجاح");
+      } catch (error) {
+        console.error("[AutoRealEstate] Error uploading image:", error);
+        toast.error("فشل رفع الصورة");
+      }
     }
   };
 

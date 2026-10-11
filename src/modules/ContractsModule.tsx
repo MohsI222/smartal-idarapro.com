@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Plus, FileText, Share2, Trash2, Eye, Copy, CheckCircle, ArrowLeft, Download } from "lucide-react";
-import { fetchContracts, createContract, updateContract, deleteContract, fetchTemplates, createTemplate, fetchContract } from "@/lib/contracts/api";
+import { fetchContracts, createContract, updateContract, deleteContract, fetchTemplates, createTemplate, deleteTemplate, fetchContract } from "@/lib/contracts/api";
 import { CONTRACT_STATUS_LABELS, CONTRACT_TYPE_LABELS, type Contract, type ContractType } from "@/lib/contracts/types";
 import html2pdf from 'html2pdf.js';
 import { useI18n } from "@/i18n/I18nProvider";
@@ -161,6 +161,18 @@ export function ContractsModule() {
       loadData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("contracts.deleteError"));
+    }
+  }, [loadData]);
+
+  const handleDeleteTemplate = useCallback(async (id: string) => {
+    if (!confirm("هل أنت متأكد من حذف هذا القالب؟")) return;
+
+    try {
+      await deleteTemplate(id);
+      toast.success("تم حذف القالب بنجاح");
+      loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "فشل حذف القالب");
     }
   }, [loadData]);
 
@@ -894,11 +906,9 @@ export function ContractsModule() {
                       if (file) {
                         try {
                           // Compress image to under 100KB
-                          const compressedBase64 = await compressImageUnder100KB(file);
-                          const response = await fetch(compressedBase64);
-                          const blob = await response.blob();
-                          const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
-                          
+                          const compressedBlob = await compressImageUnder100KB(file);
+                          const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
+
                           // Upload to Supabase Storage
                           const fileName = `contract-logos/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
                           const publicUrl = await supabaseUploadFile(compressedFile, fileName);
@@ -973,6 +983,37 @@ export function ContractsModule() {
             </DialogContent>
           </Dialog>
 
+          {/* Templates Section */}
+          {templates.filter(t => !t.is_public).length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span>قوالب العقود الخاصة بك</span>
+                  <Badge variant="outline">{templates.filter(t => !t.is_public).length} قالب</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3">
+                  {templates.filter(t => !t.is_public).map((template) => (
+                    <div key={template.id} className="flex items-center justify-between p-3 border rounded-lg">
+                      <div className="flex-1">
+                        <div className="font-medium">{template.name}</div>
+                        <div className="text-sm text-slate-400">{template.contract_type}</div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteTemplate(template.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -1020,7 +1061,7 @@ export function ContractsModule() {
                     </SelectContent>
                   </Select>
                 </div>
-                {templates.length > 0 && (
+                {templates.filter(t => !t.is_public).length > 0 && (
                   <div>
                     <Label>استخدم قالب</Label>
                     <Select
@@ -1040,7 +1081,7 @@ export function ContractsModule() {
                         <SelectValue placeholder="اختر قالباً" />
                       </SelectTrigger>
                       <SelectContent>
-                        {templates.map((template) => (
+                        {templates.filter(t => !t.is_public).map((template) => (
                           <SelectItem key={template.id} value={template.id}>
                             {template.name}
                           </SelectItem>
@@ -1094,11 +1135,9 @@ export function ContractsModule() {
                       if (file) {
                         try {
                           // Compress image to under 100KB
-                          const compressedBase64 = await compressImageUnder100KB(file);
-                          const response = await fetch(compressedBase64);
-                          const blob = await response.blob();
-                          const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
-                          
+                          const compressedBlob = await compressImageUnder100KB(file);
+                          const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
+
                           // Upload to Supabase Storage
                           const fileName = `contract-logos/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
                           const publicUrl = await supabaseUploadFile(compressedFile, fileName);
@@ -1126,6 +1165,8 @@ export function ContractsModule() {
           </Dialog>
         </div>
       </div>
+
+      {contracts.length === 0 ? (
 
       {contracts.length === 0 ? (
         <Card>

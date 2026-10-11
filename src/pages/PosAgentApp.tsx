@@ -12,7 +12,7 @@ import { api } from "@/lib/api";
 import { useI18n } from "@/i18n/I18nProvider";
 import { BarcodeScannerHub } from "@/components/BarcodeScannerHub";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
-import { compressImageToBase64 } from "@/lib/imageUtils";
+import { compressImageUnder100KB } from "@/lib/imageUtils";
 import { uploadFile } from "@/lib/supabaseClient";
 import * as XLSX from 'xlsx';
 
@@ -543,8 +543,7 @@ export function PosAgentApp() {
   };
 
   const handleImageUpload = async (file: File) => {
-    const MAX_IMAGE_MB = 4;
-    const MAX_IMAGE_WIDTH = 800; // Reduced for better compression
+    const MAX_IMAGE_MB = 10;
 
     if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
       toast.error(`الملف كبير جداً — الحد الأقصى ${MAX_IMAGE_MB} ميجابايت`);
@@ -552,18 +551,15 @@ export function PosAgentApp() {
     }
 
     try {
-      // Compress image to target size (< 100KB)
-      const compressedBase64 = await compressImageToBase64(
-        file,
-        MAX_IMAGE_WIDTH,
-        MAX_IMAGE_WIDTH,
-        0.7 // Start with 70% quality
-      );
+      // Compress image to under 100KB automatically
+      const compressedBlob = await compressImageUnder100KB(file, 0.8, 10);
+      const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
 
-      // Convert base64 to Blob for upload
-      const response = await fetch(compressedBase64);
-      const blob = await response.blob();
-      const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
+      console.log('[PosAgentApp] Image compressed:', {
+        originalSize: file.size,
+        compressedSize: compressedFile.size,
+        reduction: Math.round((1 - compressedFile.size / file.size) * 100) + '%'
+      });
 
       // Upload to Supabase Storage
       const fileName = `products/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
