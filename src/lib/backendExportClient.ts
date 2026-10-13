@@ -134,9 +134,11 @@ export type BackendPrintHtmlBody = {
 /** يجلب HTML كاملاً من الخادم (خطوط/شعار مضمّنة) — للتحويل إلى PDF عبر Canvas محلياً */
 export async function fetchBackendPrintHtml(opts: BackendPrintHtmlBody): Promise<string | null> {
   const token = localStorage.getItem(TOKEN_KEY);
+  console.log("[fetchBackendPrintHtml] Token exists:", !!token, "Token length:", token?.length);
   if (!token) return null;
 
   try {
+    console.log("[fetchBackendPrintHtml] Sending request to /api/backend/print-html...");
     const res = await fetch("/api/backend/print-html", {
       method: "POST",
       headers: {
@@ -146,15 +148,51 @@ export async function fetchBackendPrintHtml(opts: BackendPrintHtmlBody): Promise
       body: JSON.stringify(opts),
     });
 
+    console.log("[fetchBackendPrintHtml] Response status:", res.status, res.statusText);
     if (!res.ok) {
       console.error("[fetchBackendPrintHtml] Server error:", res.status, res.statusText);
+      const errorText = await res.text().catch(() => "");
+      console.error("[fetchBackendPrintHtml] Error body:", errorText);
       return null;
     }
 
     const data = (await res.json()) as { html?: string };
+    console.log("[fetchBackendPrintHtml] Response data has HTML:", !!data.html);
     return data.html ?? null;
   } catch (error) {
     console.error("[fetchBackendPrintHtml] Network error:", error);
+    return null;
+  }
+}
+
+/** يجلب HTML كاملاً من الخادم للروابط السحرية (بدون JWT) — للتحويل إلى PDF عبر Canvas محلياً */
+export async function fetchBackendPrintHtmlMagicToken(opts: BackendPrintHtmlBody, magicToken: string): Promise<string | null> {
+  console.log("[fetchBackendPrintHtmlMagicToken] Magic token length:", magicToken?.length);
+  if (!magicToken) return null;
+
+  try {
+    console.log("[fetchBackendPrintHtmlMagicToken] Sending request to /api/backend/print-html-magic...");
+    const res = await fetch(`/api/backend/print-html-magic?token=${magicToken}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(opts),
+    });
+
+    console.log("[fetchBackendPrintHtmlMagicToken] Response status:", res.status, res.statusText);
+    if (!res.ok) {
+      console.error("[fetchBackendPrintHtmlMagicToken] Server error:", res.status, res.statusText);
+      const errorText = await res.text().catch(() => "");
+      console.error("[fetchBackendPrintHtmlMagicToken] Error body:", errorText);
+      return null;
+    }
+
+    const data = (await res.json()) as { html?: string };
+    console.log("[fetchBackendPrintHtmlMagicToken] Response data has HTML:", !!data.html);
+    return data.html ?? null;
+  } catch (error) {
+    console.error("[fetchBackendPrintHtmlMagicToken] Network error:", error);
     return null;
   }
 }

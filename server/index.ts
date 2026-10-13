@@ -97,6 +97,40 @@ async function migrateDeliveryHubStockFields() {
   }
 }
 
+async function migratePosAgentCheckFields() {
+  try {
+    // Check if check_number column exists
+    const checkNumberResult = await db.prepare(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'pos_agent_sales'
+      AND column_name = 'check_number'
+    `).get();
+
+    if (!checkNumberResult) {
+      console.log("[Migration] Adding check payment fields to pos_agent_sales table...");
+      await db.prepare(`
+        ALTER TABLE pos_agent_sales
+        ADD COLUMN check_number TEXT
+      `).run();
+      await db.prepare(`
+        ALTER TABLE pos_agent_sales
+        ADD COLUMN check_holder_name TEXT
+      `).run();
+      await db.prepare(`
+        ALTER TABLE pos_agent_sales
+        ADD COLUMN check_holder_cin TEXT
+      `).run();
+      console.log("[Migration] Check payment fields added successfully");
+    } else {
+      console.log("[Migration] Check payment fields already exist");
+    }
+  } catch (error: any) {
+    console.error("[Migration] Error migrating pos agent check fields:", error.message);
+    // Don't throw - allow app to start even if migration fails
+  }
+}
+
 async function fetchSupabaseUserFromAccessToken(accessToken: string): Promise<{
   id: string;
   email?: string;
@@ -6514,6 +6548,7 @@ if (!process.env.VERCEL) {
     try {
       await initDatabase();
       await migrateDeliveryHubStockFields();
+      await migratePosAgentCheckFields();
       await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
       app.listen(PORT, () => {
         console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);

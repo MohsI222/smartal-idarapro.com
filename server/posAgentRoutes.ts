@@ -395,7 +395,7 @@ router.post("/session", async (req, res) => {
 // POST /api/pos-agent/sales - Create a new sale
 router.post("/sales", async (req, res) => {
   try {
-    const { token, employee_id, customer_name, lines, total_amount, paid_amount, credit_amount, payment_method } = req.body as {
+    const { token, employee_id, customer_name, lines, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin } = req.body as {
       token?: string;
       employee_id?: string;
       customer_name?: string;
@@ -404,6 +404,9 @@ router.post("/sales", async (req, res) => {
       paid_amount?: number;
       credit_amount?: number;
       payment_method?: string;
+      check_number?: string;
+      check_holder_name?: string;
+      check_holder_cin?: string;
     };
 
     if (!token || !employee_id || !lines || lines.length === 0) {
@@ -433,9 +436,9 @@ router.post("/sales", async (req, res) => {
 
     // Insert sale
     await db.prepare(
-      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, sale_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash");
+      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin, sale_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash", check_number || null, check_holder_name || null, check_holder_cin || null);
 
     // Insert sale lines and update inventory
     for (const line of lines) {
@@ -726,11 +729,11 @@ router.get("/standalone-employees", async (req, res) => {
       return;
     }
 
-    // Load TL workers (transport and logistics)
+    // Load all TL workers (all departments)
     const employees = await db.prepare(
       `SELECT id, employee_id as employee_id, full_name as name, role_title as role, department
        FROM tl_workers
-       WHERE user_id = ? AND (department = 'transport' OR department = 'logistics')
+       WHERE user_id = ?
        ORDER BY full_name ASC`
     ).all((tokenData as any).user_id);
 
@@ -821,9 +824,9 @@ router.post("/standalone-sales", async (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  
+
   try {
-    const { token, employee_id, customer_name, lines, total_amount, paid_amount, credit_amount, payment_method } = req.body as {
+    const { token, employee_id, customer_name, lines, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin } = req.body as {
       token?: string;
       employee_id?: string;
       customer_name?: string;
@@ -832,6 +835,9 @@ router.post("/standalone-sales", async (req, res) => {
       paid_amount?: number;
       credit_amount?: number;
       payment_method?: string;
+      check_number?: string;
+      check_holder_name?: string;
+      check_holder_cin?: string;
     };
 
     if (!token || !employee_id || !lines || lines.length === 0) {
@@ -861,9 +867,9 @@ router.post("/standalone-sales", async (req, res) => {
 
     // Insert sale
     await db.prepare(
-      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, sale_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash");
+      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin, sale_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash", check_number || null, check_holder_name || null, check_holder_cin || null);
 
     // Insert sale lines and update inventory
     for (const line of lines) {
@@ -1189,6 +1195,101 @@ router.post("/standalone-sales/bulk-delete", async (req, res) => {
   }
 });
 
+// OPTIONS /api/pos-agent/upload-file - Handle CORS preflight
+router.options("/upload-file", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.status(200).end();
+});
+
+// POST /api/pos-agent/upload-file - Upload file to Supabase Storage (public, token-based)
+router.post("/upload-file", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    console.log("[POS Agent] Upload file request received");
+    console.log("[POS Agent] Headers:", JSON.stringify(req.headers, null, 2));
+    console.log("[POS Agent] Body keys:", Object.keys(req.body));
+
+    // Get token from Authorization header OR body
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '') || req.body.token;
+
+    const { file_data, file_name, file_type, file_path } = req.body as {
+      token?: string;
+      file_data?: string; // base64
+      file_name?: string;
+      file_type?: string;
+      file_path?: string;
+    };
+
+    console.log("[POS Agent] Upload file request START:", { 
+      hasToken: !!token, 
+      tokenPrefix: token?.substring(0, 15), 
+      hasFileData: !!file_data, 
+      file_name, 
+      file_path 
+    });
+
+    if (!token || !file_data || !file_name || !file_path) {
+      console.error("[POS Agent] Missing required fields:", { hasToken: !!token, hasFileData: !!file_data, hasFileName: !!file_name, hasFilePath: !!file_path });
+      res.status(400).json({ error: "Missing required fields" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      console.error("[POS Agent] Invalid token - token not found in database");
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    console.log("[POS Agent] Token validated:", { user_id: tokenData.user_id, is_active: tokenData.is_active });
+
+    // Check if token is expired
+    if (tokenData.expires_at && typeof tokenData.expires_at === 'string' && new Date(tokenData.expires_at) < new Date()) {
+      console.error("[POS Agent] Token expired:", tokenData.expires_at);
+      res.status(401).json({ error: "Token expired" });
+      return;
+    }
+
+    // Convert base64 to buffer
+    const buffer = Buffer.from(file_data, 'base64');
+    console.log("[POS Agent] Buffer created, size:", buffer.length);
+
+    // Upload to Supabase Storage
+    const { uploadFile } = await import('./supabaseStorage.js');
+    console.log("[POS Agent] Uploading to:", file_path);
+    const publicUrl = await uploadFile(buffer, file_path, file_type);
+    console.log("[POS Agent] Upload SUCCESS, URL:", publicUrl);
+
+    res.json({
+      success: true,
+      public_url: publicUrl
+    });
+  } catch (error) {
+    console.error("[POS Agent] Error uploading file:", error);
+    res.status(500).json({ error: "Failed to upload file" });
+  }
+});
+
+// Handle OPTIONS preflight
+router.options("/upload-file", (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.status(200).end();
+});
+
 // POST /api/pos-agent/standalone-returns - Create a return (public, token-based)
 router.post("/standalone-returns", async (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -1230,8 +1331,8 @@ router.post("/standalone-returns", async (req, res) => {
 
     // Insert return record (using pos_agent_sales table with negative amounts)
     await db.prepare(
-      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, sale_date)
-       VALUES (?, ?, ?, 'استرجاع', ?, 0, ?, 'return', NOW())`
+      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin, sale_date)
+       VALUES (?, ?, ?, 'استرجاع', ?, 0, ?, 'return', NULL, NULL, NULL, NOW())`
     ).run(returnId, (tokenData as any).user_id, employee_id, -Math.abs(total_amount || 0), -Math.abs(total_amount || 0));
 
     // Insert return lines and update inventory (add stock back)
@@ -1425,11 +1526,12 @@ router.delete("/standalone-products/:id", async (req, res) => {
 });
 
 export function registerPosAgentRoutes(app: express.Express, authMiddleware: (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<void>) {
-  // Apply auth middleware to all routes except validate, standalone, session, attendance, and standalone-products routes
+  // Apply auth middleware to all routes except validate, standalone, session, attendance, upload-file, and standalone-products routes
   app.use("/api/pos-agent", (req, res, next) => {
     const path = req.path;
-    // Allow public access to validate, standalone, session, attendance, and standalone-products routes
-    if (path.startsWith("/validate") || path.startsWith("/standalone") || path.startsWith("/session") || path.startsWith("/attendance")) {
+    // Allow public access to validate, standalone, session, attendance, upload-file, and standalone-products routes
+    // Also allow standalone-sales (POST for creating sales)
+    if (path.startsWith("/validate") || path.startsWith("/standalone") || path.startsWith("/session") || path.startsWith("/attendance") || path.startsWith("/upload-file")) {
       next();
     } else {
       authMiddleware(req, res, next);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { User, ShoppingCart, Clock, LogOut, Settings, BarChart3, Package, Search, Scan, Filter, X, Check, Home, Download, FileText, Camera, CameraOff, Trash2 } from "lucide-react";
+import { User, ShoppingCart, Clock, LogOut, Settings, BarChart3, Package, Search, Scan, Filter, X, Check, Home, Download, FileText, Camera, CameraOff, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,10 @@ type Sale = {
   total_amount: number;
   paid_amount: number;
   credit_amount: number;
+  payment_method: string;
+  check_number?: string;
+  check_holder_name?: string;
+  check_holder_cin?: string;
   sale_date: string;
   lines: SaleLine[];
 };
@@ -64,8 +68,10 @@ type AgentView = "login" | "pos" | "dashboard" | "settings" | "returns";
 
 export function PosAgentApp() {
   const [searchParams] = useSearchParams();
-  const { locale, isRtl } = useI18n();
-  const token = searchParams.get("token");
+  const { locale: globalLocale, isRtl } = useI18n();
+  const [locale, setLocale] = useState(() => localStorage.getItem('pos_locale') || globalLocale || "ar");
+  const urlToken = searchParams.get("token"); // Changed from "sessionToken" to "token"
+  const [sessionToken, setSessionToken] = useState(() => localStorage.getItem('pos_session_sessionToken') || urlToken || null);
 
   const [currentView, setCurrentView] = useState<AgentView>("login");
   const [loading, setLoading] = useState(true);
@@ -83,6 +89,10 @@ export function PosAgentApp() {
   const [cart, setCart] = useState<SaleLine[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "check">("cash");
+  const [checkNumber, setCheckNumber] = useState("");
+  const [checkHolderName, setCheckHolderName] = useState("");
+  const [checkHolderCin, setCheckHolderCin] = useState("");
   const [sales, setSales] = useState<Sale[]>([]);
   const [attendance, setAttendance] = useState<Attendance | null>(null);
   const [isClockingIn, setIsClockingIn] = useState(false);
@@ -109,19 +119,46 @@ export function PosAgentApp() {
   const [showPrintDialog, setShowPrintDialog] = useState(false);
   const [newProductBarcode, setNewProductBarcode] = useState("");
   const [showAddProductDialog, setShowAddProductDialog] = useState(false);
+  const [companyLogo, setCompanyLogo] = useState<string>("");
+  const [storeName, setStoreName] = useState<string>("");
+  const [storePhone, setStorePhone] = useState<string>("");
+  const [storeAddress, setStoreAddress] = useState<string>("");
+  const [storeQrCode, setStoreQrCode] = useState<string>("");
+  const [appDownloadLink, setAppDownloadLink] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
 
-  // Validate token on mount
+  // Load company logo and store settings from localStorage on mount
+  useEffect(() => {
+    const savedLogo = localStorage.getItem('pos_company_logo');
+    if (savedLogo) {
+      setCompanyLogo(savedLogo);
+    }
+    const savedStoreName = localStorage.getItem('pos_store_name');
+    if (savedStoreName) setStoreName(savedStoreName);
+    const savedStorePhone = localStorage.getItem('pos_store_phone');
+    if (savedStorePhone) setStorePhone(savedStorePhone);
+    const savedStoreAddress = localStorage.getItem('pos_store_address');
+    if (savedStoreAddress) setStoreAddress(savedStoreAddress);
+    const savedStoreQrCode = localStorage.getItem('pos_store_qr_code');
+    if (savedStoreQrCode) setStoreQrCode(savedStoreQrCode);
+    const savedAppLink = localStorage.getItem('pos_app_download_link');
+    if (savedAppLink) setAppDownloadLink(savedAppLink);
+    const savedLocale = localStorage.getItem('pos_locale');
+    if (savedLocale) setLocale(savedLocale);
+  }, []);
+
+  // Validate sessionToken on mount
   useEffect(() => {
     const validateToken = async () => {
-      if (!token) {
-        console.error("[PosAgentApp] No token provided");
+      if (!sessionToken) {
+        console.error("[PosAgentApp] No sessionToken provided");
         setValidatingToken(false);
         setLoading(false);
         return;
       }
 
       // Try to restore session from localStorage
-      const savedSession = localStorage.getItem(`pos_agent_${token}`);
+      const savedSession = localStorage.getItem(`pos_agent_${sessionToken}`);
       if (savedSession) {
         try {
           const sessionData = JSON.parse(savedSession);
@@ -143,31 +180,27 @@ export function PosAgentApp() {
             return;
           } else {
             console.error("[PosAgentApp] Invalid session data - missing employee_id");
-            localStorage.removeItem(`pos_agent_${token}`);
+            localStorage.removeItem(`pos_agent_${sessionToken}`);
           }
         } catch (error) {
           console.error("[PosAgentApp] Error restoring session:", error);
-          localStorage.removeItem(`pos_agent_${token}`);
+          localStorage.removeItem(`pos_agent_${sessionToken}`);
         }
       }
 
       try {
-        const response = await api<{ success: boolean; valid: boolean; employee_id?: string; metadata?: Record<string, unknown> }>(`/pos-agent/validate/${token}`);
+        const response = await api<{ success: boolean; valid: boolean; employee_id?: string; metadata?: Record<string, unknown> }>(`/pos-agent/validate/${sessionToken}`);
         if (response.success && response.valid) {
-          // If token has a pre-assigned employee, skip login
-          if (response.employee_id) {
-            setSelectedEmployeeId(response.employee_id);
-            await loadEmployeesAndProceed(response.employee_id);
-          } else {
-            await loadEmployees();
-          }
+          // SECURITY FIX: Always show employee list - never auto-login
+          // This prevents users from accessing other accounts' employees
+          await loadEmployees();
         } else {
-          console.error("[PosAgentApp] Invalid token response:", response);
+          console.error("[PosAgentApp] Invalid sessionToken response:", response);
           // Still load employees even if validation fails - user can still try to login
           await loadEmployees();
         }
       } catch (error) {
-        console.error("[PosAgentApp] Error validating token:", error);
+        console.error("[PosAgentApp] Error validating sessionToken:", error);
         // Still load employees even if validation fails - user can still try to login
         await loadEmployees();
       } finally {
@@ -177,7 +210,7 @@ export function PosAgentApp() {
     };
 
     validateToken();
-  }, [token]);
+  }, [sessionToken]);
 
   // Wireless barcode scanner support
   useBarcodeScanner({
@@ -333,11 +366,11 @@ export function PosAgentApp() {
   // Polling for inventory sync - using Neon as source of truth instead of Supabase Realtime
   // Reduced to 1 second for near real-time sync
   useEffect(() => {
-    if (!token) return;
+    if (!sessionToken) return;
 
     const interval = setInterval(async () => {
       try {
-        const response = await api<{ success: boolean; products: Product[] }>(`/inventory/standalone-products?token=${token}`);
+        const response = await api<{ success: boolean; products: Product[] }>(`/inventory/standalone-products?token=${sessionToken}`);
         if (response.success) {
           console.log("[PosAgentApp] Polling - Loaded products:", response.products.length);
           setProducts(response.products);
@@ -354,12 +387,12 @@ export function PosAgentApp() {
     }, 1000); // Poll every 1 second for near real-time sync
 
     return () => clearInterval(interval);
-  }, [token, searchQuery]);
+  }, [sessionToken, searchQuery]);
 
   const loadEmployees = async () => {
     try {
       // Load employees from Transport & Logistics table
-      const response = await api<{ success: boolean; employees: Employee[] }>(`/pos-agent/standalone-employees?token=${token}`);
+      const response = await api<{ success: boolean; employees: Employee[] }>(`/pos-agent/standalone-employees?token=${sessionToken}`);
       if (response.success) {
         setEmployees(response.employees);
       }
@@ -371,7 +404,7 @@ export function PosAgentApp() {
 
   const loadEmployeesAndProceed = async (employeeId: string) => {
     try {
-      const response = await api<{ success: boolean; employees: Employee[] }>(`/pos-agent/standalone-employees?token=${token}`);
+      const response = await api<{ success: boolean; employees: Employee[] }>(`/pos-agent/standalone-employees?token=${sessionToken}`);
       if (response.success) {
         const emp = response.employees.find((e) => e.employee_id === employeeId);
         if (emp) {
@@ -394,20 +427,23 @@ export function PosAgentApp() {
       return;
     }
 
-    console.log("[PosAgentApp] Attempting login with:", { token: token?.substring(0, 20), employee_id: selectedEmployeeId });
+    console.log("[PosAgentApp] Attempting login with:", { sessionToken: sessionToken?.substring(0, 20), employee_id: selectedEmployeeId });
     setLoading(true);
     try {
       const response = await api<{ success: boolean; employee: Employee; message: string }>("/pos-agent/session", {
         method: "POST",
-        body: JSON.stringify({ token, employee_id: selectedEmployeeId }),
+        body: JSON.stringify({ token: sessionToken, employee_id: selectedEmployeeId }),
       });
 
       console.log("[PosAgentApp] Login response:", response);
 
       if (response.success) {
         setCurrentEmployee(response.employee);
-        // Save to localStorage
-        localStorage.setItem(`pos_agent_${token}`, JSON.stringify({
+        // Save session sessionToken to localStorage
+        setSessionToken(sessionToken);
+        localStorage.setItem('pos_session_sessionToken', sessionToken || '');
+        // Save employee data using sessionToken (not urlToken which might be undefined)
+        localStorage.setItem(`pos_agent_${sessionToken}`, JSON.stringify({
           employee_id: selectedEmployeeId,
           employee: response.employee
         }));
@@ -431,7 +467,7 @@ export function PosAgentApp() {
   const loadProducts = async () => {
     try {
       // Load products from inventory using standalone endpoint
-      const response = await api<{ success: boolean; products: Product[] }>(`/inventory/standalone-products?token=${token}`);
+      const response = await api<{ success: boolean; products: Product[] }>(`/inventory/standalone-products?token=${sessionToken}`);
       if (response.success) {
         console.log("[PosAgentApp] Loaded products:", response.products.map(p => ({ id: p.id, name: p.name, sku: p.sku, stock: p.stock_pieces })));
         console.log("[PosAgentApp] Total products loaded:", response.products.length);
@@ -478,13 +514,13 @@ export function PosAgentApp() {
       let response;
       if (editingProduct) {
         // Update existing product using POS Agent endpoint
-        response = await api<{ success: boolean; product: Product; message: string }>(`/pos-agent/standalone-products/${editingProduct.id}?token=${token}`, {
+        response = await api<{ success: boolean; product: Product; message: string }>(`/pos-agent/standalone-products/${editingProduct.id}?token=${sessionToken}`, {
           method: "PUT",
           body: JSON.stringify(productData),
         });
       } else {
         // Create new product using POS Agent endpoint
-        response = await api<{ success: boolean; product: Product; message: string }>(`/pos-agent/standalone-products?token=${token}`, {
+        response = await api<{ success: boolean; product: Product; message: string }>(`/pos-agent/standalone-products?token=${sessionToken}`, {
           method: "POST",
           body: JSON.stringify(productData),
         });
@@ -526,7 +562,7 @@ export function PosAgentApp() {
 
     setLoading(true);
     try {
-      const response = await api<{ success: boolean; message: string }>(`/pos-agent/standalone-products/${productId}?token=${token}`, {
+      const response = await api<{ success: boolean; message: string }>(`/pos-agent/standalone-products/${productId}?token=${sessionToken}`, {
         method: "DELETE",
       });
 
@@ -606,8 +642,8 @@ export function PosAgentApp() {
         console.log("[PosAgentApp] Skipping loadSales - no employee_id");
         return;
       }
-      console.log("[PosAgentApp] Loading sales with:", { token: token?.substring(0, 20), employee_id: currentEmployee?.employee_id });
-      const response = await api<{ success: boolean; sales: Sale[] }>(`/pos-agent/standalone-sales?token=${token}&employee_id=${currentEmployee.employee_id}`);
+      console.log("[PosAgentApp] Loading sales with:", { sessionToken: sessionToken?.substring(0, 20), employee_id: currentEmployee?.employee_id });
+      const response = await api<{ success: boolean; sales: Sale[] }>(`/pos-agent/standalone-sales?token=${sessionToken}&employee_id=${currentEmployee.employee_id}`);
       console.log("[PosAgentApp] Sales response:", response);
       if (response.success) {
         const salesWithLines = response.sales.map(sale => ({
@@ -629,7 +665,7 @@ export function PosAgentApp() {
 
   const loadAttendance = async () => {
     try {
-      const response = await api<{ success: boolean; attendance: Attendance | null }>(`/pos-agent/standalone-attendance?token=${token}&employee_id=${currentEmployee?.employee_id}`);
+      const response = await api<{ success: boolean; attendance: Attendance | null }>(`/pos-agent/standalone-attendance?token=${sessionToken}&employee_id=${currentEmployee?.employee_id}`);
       if (response.success) {
         setAttendance(response.attendance);
       }
@@ -747,6 +783,76 @@ export function PosAgentApp() {
     });
   };
 
+  const addToCartWithDebounce = (product: Product, e?: React.MouseEvent) => {
+    // Prevent double clicks
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    addToCart(product);
+  };
+
+  const uploadFileToServer = async (file: File, path: string): Promise<string> => {
+    try {
+      console.log("[PosAgentApp] Starting file upload:", { fileName: file.name, path, hasToken: !!sessionToken });
+
+      // Compress image
+      const compressedBlob = await compressImageUnder100KB(file);
+      
+      // Sanitize filename: remove Arabic characters and special chars, use only English letters, numbers, and underscores
+      const sanitizedFileName = file.name
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .replace(/^_+|_+$/g, '') || 'upload.jpg';
+      
+      const compressedFile = new File([compressedBlob], sanitizedFileName, {
+        type: "image/jpeg",
+      });
+
+      console.log("[PosAgentApp] File compressed, size:", compressedFile.size, "sanitized name:", sanitizedFileName);
+
+      // Convert to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(compressedFile);
+      });
+      const base64 = await base64Promise;
+      const base64Data = base64.split(',')[1];
+
+      console.log("[PosAgentApp] Base64 converted, length:", base64Data.length);
+
+      // Update path with sanitized filename
+      const sanitizedPath = path.replace(/[^a-zA-Z0-9._/-]/g, '_');
+
+      // Upload to server - send token in both header and body for compatibility
+      const response = await api<{ success: boolean; public_url: string }>("/pos-agent/upload-file", {
+        method: "POST",
+        token: sessionToken, // Send token in headers via Authorization header
+        body: JSON.stringify({
+          token: sessionToken, // Also send token in body as fallback
+          file_data: base64Data,
+          file_name: compressedFile.name,
+          file_type: compressedFile.type,
+          file_path: sanitizedPath
+        }),
+      });
+
+      console.log("[PosAgentApp] Upload response:", response);
+
+      if (response.success) {
+        console.log("[PosAgentApp] Upload SUCCESS:", response.public_url);
+        return response.public_url;
+      } else {
+        console.error("[PosAgentApp] Upload failed: response.success is false");
+        throw new Error("Upload failed");
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error uploading file:", error);
+      throw error;
+    }
+  };
+
   const removeFromCart = (productId: string) => {
     setCart(cart.filter(line => line.product_id !== productId));
   };
@@ -809,7 +915,7 @@ export function PosAgentApp() {
       const response = await api<{ success: boolean; message: string }>("/pos-agent/standalone-returns", {
         method: "POST",
         body: JSON.stringify({
-          token,
+          sessionToken,
           employee_id: currentEmployee?.employee_id,
           lines: returnCart,
           total_amount: returnCart.reduce((sum, line) => sum + line.line_total, 0)
@@ -851,19 +957,41 @@ export function PosAgentApp() {
     const paid = paidAmount ? parseFloat(paidAmount) : cartTotal;
     const creditAmount = cartTotal - paid;
 
+    // Validate check fields if payment method is check
+    if (paymentMethod === "check") {
+      if (!checkNumber.trim()) {
+        toast.error("رقم الشيك مطلوب");
+        setLoading(false);
+        return;
+      }
+      if (!checkHolderName.trim()) {
+        toast.error("اسم صاحب الشيك مطلوب");
+        setLoading(false);
+        return;
+      }
+      if (!checkHolderCin.trim()) {
+        toast.error("رقم البطاقة الوطنية مطلوب");
+        setLoading(false);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const response = await api<{ success: boolean; sale: Sale; message: string }>("/pos-agent/standalone-sales", {
         method: "POST",
         body: JSON.stringify({
-          token,
+          token: sessionToken,  // Changed from sessionToken to token
           employee_id: currentEmployee.employee_id,
           customer_name: customerName || getText("cashCustomer"),
           lines: cart,
           total_amount: cartTotal,
           paid_amount: paid,
           credit_amount: creditAmount,
-          payment_method: "cash"
+          payment_method: paymentMethod,
+          check_number: paymentMethod === "check" ? checkNumber : null,
+          check_holder_name: paymentMethod === "check" ? checkHolderName : null,
+          check_holder_cin: paymentMethod === "check" ? checkHolderCin : null
         }),
       });
 
@@ -884,6 +1012,10 @@ export function PosAgentApp() {
         setCart([]);
         setCustomerName("");
         setPaidAmount("");
+        setPaymentMethod("cash");
+        setCheckNumber("");
+        setCheckHolderName("");
+        setCheckHolderCin("");
         // Reload sales to ensure persistence
         await loadSales();
         // Refresh stock
@@ -905,7 +1037,7 @@ export function PosAgentApp() {
     try {
       const response = await api<{ success: boolean; attendance: Attendance; message: string }>("/pos-agent/standalone-attendance/clock-in", {
         method: "POST",
-        body: JSON.stringify({ token, employee_id: currentEmployee?.employee_id }),
+        body: JSON.stringify({ token: sessionToken, employee_id: currentEmployee?.employee_id }),
       });
 
       if (response.success) {
@@ -931,7 +1063,7 @@ export function PosAgentApp() {
     try {
       const response = await api<{ success: boolean; attendance: Attendance; message: string }>("/pos-agent/standalone-attendance/clock-out", {
         method: "POST",
-        body: JSON.stringify({ token, employee_id: currentEmployee?.employee_id }),
+        body: JSON.stringify({ token: sessionToken, employee_id: currentEmployee?.employee_id }),
       });
 
       if (response.success) {
@@ -945,7 +1077,7 @@ export function PosAgentApp() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem(`pos_agent_${token}`);
+    localStorage.removeItem(`pos_agent_${sessionToken}`);
     setCurrentEmployee(null);
     setCurrentView("login");
     setCart([]);
@@ -1084,36 +1216,56 @@ export function PosAgentApp() {
       </head>
       <body>
         <div class="header">
-          <h1>${isArabic ? 'فاتورة بيع' : 'SALES RECEIPT'}</h1>
-          <p>Smart Al-Idara Pro</p>
+          ${companyLogo ? `<img src="${companyLogo}" alt="Company Logo" style="max-width: 80px; max-height: 80px; margin-bottom: 10px;" />` : ''}
+          <h1>${locale === 'ar' ? 'فاتورة بيع' : locale === 'fr' ? 'REÇU DE VENTE' : locale === 'es' ? 'RECIBO DE VENTA' : locale === 'en' ? 'SALES RECEIPT' : 'فاتورة بيع'}</h1>
+          <p>${storeName || 'Smart Al-Idara Pro'}</p>
+          ${storePhone ? `<p style="font-size: 11px; margin: 2px 0;">${locale === 'ar' ? 'الهاتف' : locale === 'fr' ? 'Téléphone' : locale === 'es' ? 'Teléfono' : locale === 'en' ? 'Phone' : 'الهاتف'}: ${storePhone}</p>` : ''}
+          ${storeAddress ? `<p style="font-size: 11px; margin: 2px 0;">${storeAddress}</p>` : ''}
         </div>
-        
+
         <div class="info">
           <div class="info-row">
-            <span>${isArabic ? 'التاريخ' : 'Date'}:</span>
-            <span>${saleDate.toLocaleDateString(isArabic ? "ar-EG" : "en-US", { numberingSystem: 'latn' })}</span>
+            <span>${locale === 'ar' ? 'التاريخ' : locale === 'fr' ? 'Date' : locale === 'es' ? 'Fecha' : locale === 'en' ? 'Date' : 'التاريخ'}:</span>
+            <span>${saleDate.toLocaleDateString(locale === 'ar' ? "ar-EG" : locale === 'fr' ? "fr-FR" : locale === 'es' ? "es-ES" : "en-US", { numberingSystem: 'latn' })}</span>
           </div>
           <div class="info-row">
-            <span>${isArabic ? 'الوقت' : 'Time'}:</span>
-            <span>${saleDate.toLocaleTimeString(isArabic ? "ar-EG" : "en-US", { hour: '2-digit', minute: '2-digit', hour12: false, numberingSystem: 'latn' })}</span>
+            <span>${locale === 'ar' ? 'الوقت' : locale === 'fr' ? 'Heure' : locale === 'es' ? 'Hora' : locale === 'en' ? 'Time' : 'الوقت'}:</span>
+            <span>${saleDate.toLocaleTimeString(locale === 'ar' ? "ar-EG" : locale === 'fr' ? "fr-FR" : locale === 'es' ? "es-ES" : "en-US", { hour: '2-digit', minute: '2-digit', hour12: false, numberingSystem: 'latn' })}</span>
           </div>
           <div class="info-row">
-            <span>${isArabic ? 'العميل' : 'Customer'}:</span>
+            <span>${locale === 'ar' ? 'العميل' : locale === 'fr' ? 'Client' : locale === 'es' ? 'Cliente' : locale === 'en' ? 'Customer' : 'العميل'}:</span>
             <span>${sale.customer_name}</span>
           </div>
           <div class="info-row">
-            <span>${isArabic ? 'المندوب' : 'Agent'}:</span>
+            <span>${locale === 'ar' ? 'المندوب' : locale === 'fr' ? 'Agent' : locale === 'es' ? 'Agente' : locale === 'en' ? 'Agent' : 'المندوب'}:</span>
             <span>${currentEmployee?.name || '-'}</span>
           </div>
+          ${sale.payment_method === 'check' ? `
+          <div class="info-row" style="background: #fff3cd; padding: 8px; margin-top: 10px; border-radius: 4px;">
+            <span style="color: #856404; font-weight: bold;">${locale === 'ar' ? 'طريقة الدفع: شيك' : locale === 'fr' ? 'Paiement: Chèque' : locale === 'es' ? 'Pago: Cheque' : locale === 'en' ? 'Payment: Check' : 'طريقة الدفع: شيك'}</span>
+          </div>
+          <div class="info-row">
+            <span>${locale === 'ar' ? 'رقم الشيك' : locale === 'fr' ? 'N° Chèque' : locale === 'es' ? 'N° Cheque' : locale === 'en' ? 'Check No' : 'رقم الشيك'}:</span>
+            <span>${sale.check_number || '-'}</span>
+          </div>
+          <div class="info-row">
+            <span>${locale === 'ar' ? 'صاحب الشيك' : locale === 'fr' ? 'Titulaire' : locale === 'es' ? 'Titular' : locale === 'en' ? 'Check Holder' : 'صاحب الشيك'}:</span>
+            <span>${sale.check_holder_name || '-'}</span>
+          </div>
+          <div class="info-row">
+            <span>${locale === 'ar' ? 'رقم البطاقة الوطنية' : locale === 'fr' ? 'CIN' : locale === 'es' ? 'DNI' : locale === 'en' ? 'National ID' : 'رقم البطاقة الوطنية'}:</span>
+            <span>${sale.check_holder_cin ? sale.check_holder_cin.substring(0, 3) + '***' + sale.check_holder_cin.substring(sale.check_holder_cin.length - 2) : '-'}</span>
+          </div>
+          ` : ''}
         </div>
 
         <table>
           <thead>
             <tr>
-              <th>${isArabic ? 'المنتج' : 'Item'}</th>
-              <th style="text-align: center;">${isArabic ? 'الكمية' : 'Qty'}</th>
-              <th style="text-align: right;">${isArabic ? 'السعر' : 'Price'}</th>
-              <th style="text-align: right;">${isArabic ? 'المجموع' : 'Total'}</th>
+              <th>${locale === 'ar' ? 'المنتج' : locale === 'fr' ? 'Produit' : locale === 'es' ? 'Producto' : locale === 'en' ? 'Item' : 'المنتج'}</th>
+              <th style="text-align: center;">${locale === 'ar' ? 'الكمية' : locale === 'fr' ? 'Qté' : locale === 'es' ? 'Cant' : locale === 'en' ? 'Qty' : 'الكمية'}</th>
+              <th style="text-align: right;">${locale === 'ar' ? 'السعر' : locale === 'fr' ? 'Prix' : locale === 'es' ? 'Precio' : locale === 'en' ? 'Price' : 'السعر'}</th>
+              <th style="text-align: right;">${locale === 'ar' ? 'المجموع' : locale === 'fr' ? 'Total' : locale === 'es' ? 'Total' : locale === 'en' ? 'Total' : 'المجموع'}</th>
             </tr>
           </thead>
           <tbody>
@@ -1123,26 +1275,40 @@ export function PosAgentApp() {
 
         <div class="totals">
           <div class="total-row">
-            <span>${isArabic ? 'الإجمالي' : 'Subtotal'}:</span>
+            <span>${locale === 'ar' ? 'الإجمالي' : locale === 'fr' ? 'Sous-total' : locale === 'es' ? 'Subtotal' : locale === 'en' ? 'Subtotal' : 'الإجمالي'}:</span>
             <span>${sale.total_amount.toFixed(2)} ${getText("currency")}</span>
           </div>
           <div class="total-row">
-            <span>${isArabic ? 'المدفوع' : 'Paid'}:</span>
+            <span>${locale === 'ar' ? 'المدفوع' : locale === 'fr' ? 'Payé' : locale === 'es' ? 'Pagado' : locale === 'en' ? 'Paid' : 'المدفوع'}:</span>
             <span>${sale.paid_amount.toFixed(2)} ${getText("currency")}</span>
           </div>
           <div class="total-row">
-            <span>${isArabic ? 'الديون' : 'Credit'}:</span>
+            <span>${locale === 'ar' ? 'الديون' : locale === 'fr' ? 'Crédit' : locale === 'es' ? 'Crédito' : locale === 'en' ? 'Credit' : 'الديون'}:</span>
             <span>${sale.credit_amount.toFixed(2)} ${getText("currency")}</span>
           </div>
           <div class="total-row grand-total">
-            <span>${isArabic ? 'المجموع النهائي' : 'GRAND TOTAL'}:</span>
+            <span>${locale === 'ar' ? 'المجموع النهائي' : locale === 'fr' ? 'TOTAL GÉNÉRAL' : locale === 'es' ? 'TOTAL GENERAL' : locale === 'en' ? 'GRAND TOTAL' : 'المجموع النهائي'}:</span>
             <span>${sale.total_amount.toFixed(2)} ${getText("currency")}</span>
           </div>
         </div>
 
+        ${storeQrCode ? `
+        <div style="text-align: center; margin-top: 20px;">
+          <img src="${storeQrCode}" alt="QR Code" style="width: 100px; height: 100px;" />
+          <p style="font-size: 10px; margin-top: 5px;">${locale === 'ar' ? 'امسح للطلب عبر التطبيق' : locale === 'fr' ? 'Scannez pour commander via l\'app' : locale === 'es' ? 'Escanea para pedir por la app' : locale === 'en' ? 'Scan to order via app' : 'امسح للطلب عبر التطبيق'}</p>
+        </div>
+        ` : ''}
+
+        ${appDownloadLink ? `
+        <div style="text-align: center; margin-top: 15px; padding: 10px; background: #f0f7ff; border-radius: 8px;">
+          <p style="font-size: 11px; margin: 0; color: #1e3a5f; font-weight: bold;">${locale === 'ar' ? '📱 حمل تطبيق الطلبات والتوصيل' : locale === 'fr' ? '📱 Téléchargez l\'app de livraison' : locale === 'es' ? '📱 Descarga la app de pedidos' : locale === 'en' ? '📱 Download our delivery app' : '📱 حمل تطبيق الطلبات والتوصيل'}</p>
+          <a href="${appDownloadLink}" style="display: inline-block; margin-top: 5px; font-size: 10px; color: #2563eb; text-decoration: none;">${locale === 'ar' ? 'اضغط هنا' : locale === 'fr' ? 'Cliquez ici' : locale === 'es' ? 'Haz clic aquí' : locale === 'en' ? 'Click here' : 'اضغط هنا'}</a>
+        </div>
+        ` : ''}
+
         <div class="footer">
-          <p>${isArabic ? 'شكراً لتسوقكم معنا' : 'Thank you for your purchase'}</p>
-          <p>${isArabic ? 'فاتورة إرشادية - ليست وثيقة رسمية' : 'Indicative receipt - Not an official document'}</p>
+          <p>${locale === 'ar' ? 'شكراً لتسوقكم معنا' : locale === 'fr' ? 'Merci de votre visite' : locale === 'es' ? 'Gracias por su compra' : locale === 'en' ? 'Thank you for your purchase' : 'شكراً لتسوقكم معنا'}</p>
+          <p>${locale === 'ar' ? 'فاتورة إرشادية - ليست وثيقة رسمية' : locale === 'fr' ? 'Reçu indicatif - Pas un document officiel' : locale === 'es' ? 'Recibo indicativo - No es un documento oficial' : locale === 'en' ? 'Indicative receipt - Not an official document' : 'فاتورة إرشادية - ليست وثيقة رسمية'}</p>
         </div>
       </body>
       </html>
@@ -1186,6 +1352,10 @@ export function PosAgentApp() {
         "التاريخ": saleDate.toLocaleDateString(isArabic ? "ar-EG" : "en-US", { numberingSystem: 'latn' }),
         "الوقت": saleDate.toLocaleTimeString(isArabic ? "ar-EG" : "en-US", { hour: '2-digit', minute: '2-digit', hour12: false, numberingSystem: 'latn' }),
         "اسم العميل": sale.customer_name,
+        "طريقة الدفع": sale.payment_method === 'check' ? 'شيك' : 'نقدي',
+        "رقم الشيك": sale.check_number || '-',
+        "صاحب الشيك": sale.check_holder_name || '-',
+        "رقم البطاقة الوطنية": sale.check_holder_cin || '-',
         "الإجمالي": sale.total_amount,
         "المدفوع": sale.paid_amount,
         "الديون": sale.credit_amount,
@@ -1195,8 +1365,20 @@ export function PosAgentApp() {
     });
 
     const worksheet = XLSX.utils.json_to_sheet(data);
+
+    // Add header row with company info
+    const headerData = [
+      ["Smart Al-Idara Pro - تقرير المبيعات"],
+      [`التاريخ: ${new Date().toLocaleDateString("ar-EG", { numberingSystem: 'latn' })}`],
+      [`المندوب: ${currentEmployee?.name || '-'}`],
+      [],
+      Object.keys(data[0] || {}),
+      ...data.map(row => Object.values(row))
+    ];
+
+    const newWorksheet = XLSX.utils.aoa_to_sheet(headerData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "المبيعات");
+    XLSX.utils.book_append_sheet(workbook, newWorksheet, "المبيعات");
     XLSX.writeFile(workbook, `sales_${currentEmployee?.employee_id}_${new Date().toISOString().split('T')[0]}.xlsx`);
     toast.success(getText("exportSuccess"));
   };
@@ -1219,94 +1401,107 @@ export function PosAgentApp() {
     const tableRows = sales.map(sale => {
       const saleDate = new Date(sale.sale_date);
       return `
-      <tr style="background-color: ${sale.total_amount < 0 ? '#fff5f5' : 'white'};">
-        <td style="border: 1px solid #ddd; padding: 8px;">${saleDate.toLocaleDateString(isArabic ? "ar-EG" : "en-US", { numberingSystem: 'latn' })}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${saleDate.toLocaleTimeString(isArabic ? "ar-EG" : "en-US", { hour: '2-digit', minute: '2-digit', hour12: false, numberingSystem: 'latn' })}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${sale.customer_name}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${sale.total_amount.toFixed(2)}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${sale.paid_amount.toFixed(2)}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${sale.credit_amount.toFixed(2)}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${sale.lines.length}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${sale.lines?.map(l => l.product_name).join(", ") || ""}</td>
-      </tr>
-    `;
+        <tr>
+          <td>${saleDate.toLocaleDateString(isArabic ? "ar-EG" : locale === 'fr' ? "fr-FR" : locale === 'es' ? "es-ES" : "en-US", { numberingSystem: 'latn' })}</td>
+          <td>${saleDate.toLocaleTimeString(isArabic ? "ar-EG" : locale === 'fr' ? "fr-FR" : locale === 'es' ? "es-ES" : "en-US", { hour: '2-digit', minute: '2-digit', hour12: false, numberingSystem: 'latn' })}</td>
+          <td>${sale.customer_name}</td>
+          <td>${sale.payment_method === 'check' ? `<span style="color: #d97706; font-weight: bold;">${isArabic ? 'شيك' : locale === 'fr' ? 'Chèque' : locale === 'es' ? 'Cheque' : locale === 'en' ? 'Check' : 'شيك'}</span>` : isArabic ? 'نقدي' : locale === 'fr' ? 'Espèces' : locale === 'es' ? 'Efectivo' : locale === 'en' ? 'Cash' : 'نقدي'}</td>
+          ${sale.payment_method === 'check' ? `<td>${sale.check_number || '-'}</td><td>${sale.check_holder_name || '-'}</td>` : ''}
+          <td>${sale.total_amount.toFixed(2)} ${getText("currency")}</td>
+          <td>${sale.paid_amount.toFixed(2)} ${getText("currency")}</td>
+          <td>${sale.credit_amount.toFixed(2)} ${getText("currency")}</td>
+          <td>${sale.lines?.length || 0}</td>
+        </tr>
+      `;
     }).join('');
 
-    printWindow.document.write(`
+    const htmlContent = `
       <!DOCTYPE html>
-      <html>
+      <html dir="${isArabic ? 'rtl' : 'ltr'}">
       <head>
-        <title>${isArabic ? getText("salesReport") : "Sales Report"}</title>
+        <meta charset="UTF-8">
+        <title>${isArabic ? 'تقرير المبيعات' : 'Sales Report'}</title>
         <style>
           body {
             font-family: Arial, sans-serif;
-            direction: ${isArabic ? 'rtl' : 'ltr'};
             padding: 20px;
-            margin: 0;
+            direction: ${isArabic ? 'rtl' : 'ltr'};
           }
-          h2 {
+          h1 {
             text-align: center;
+            color: #1e3a5f;
             margin-bottom: 10px;
-            color: #333;
           }
           .subtitle {
             text-align: center;
-            margin-bottom: 20px;
-            font-size: 12px;
             color: #666;
+            margin-bottom: 30px;
           }
           table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 12px;
+            margin-top: 20px;
+          }
+          th, td {
             border: 1px solid #ddd;
+            padding: 12px;
+            text-align: ${isArabic ? 'right' : 'left'};
           }
           th {
-            background-color: #428BCA;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            border: 1px solid #ddd;
-            padding: 8px;
+            font-weight: bold;
           }
-          td {
-            border: 1px solid #ddd;
-            padding: 8px;
+          tr:nth-child(even) {
+            background-color: #f9f9f9;
           }
-          @media print {
-            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          tr:hover {
+            background-color: #f0f7ff;
+          }
+          .total-row {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: bold;
           }
         </style>
       </head>
       <body>
-        <h2>${isArabic ? getText("salesReport") : "Sales Report"}</h2>
-        <p class="subtitle">
-          ${isArabic
-            ? `${getText("agent")}: ${currentEmployee?.name} | ${getText("date")}: ${new Date().toLocaleDateString("ar-EG", { numberingSystem: 'latn' })}`
-            : `${getText("agent")}: ${currentEmployee?.name} | ${getText("date")}: ${new Date().toLocaleDateString("en-US")}`}
-        </p>
+        ${companyLogo ? `<div style="text-align: center; margin-bottom: 20px;"><img src="${companyLogo}" alt="Company Logo" style="max-width: 100px; max-height: 100px;" /></div>` : ''}
+        <h1>${isArabic ? 'تقرير المبيعات' : locale === 'fr' ? 'Rapport des ventes' : locale === 'es' ? 'Reporte de ventas' : locale === 'en' ? 'Sales Report' : 'تقرير المبيعات'}</h1>
+        <p class="subtitle">${storeName || 'Smart Al-Idara Pro'} - ${new Date().toLocaleDateString(isArabic ? "ar-EG" : locale === 'fr' ? "fr-FR" : locale === 'es' ? "es-ES" : "en-US", { numberingSystem: 'latn' })}</p>
+        ${storePhone ? `<p style="text-align: center; font-size: 12px; margin: 5px 0;">${isArabic ? 'الهاتف' : locale === 'fr' ? 'Téléphone' : locale === 'es' ? 'Teléfono' : locale === 'en' ? 'Phone' : 'الهاتف'}: ${storePhone}</p>` : ''}
         <table>
           <thead>
             <tr>
-              <th>${isArabic ? getText("date") : "Date"}</th>
-              <th>${isArabic ? getText("time") : "Time"}</th>
-              <th>${isArabic ? getText("customer") : "Customer"}</th>
-              <th>${isArabic ? getText("total") : "Total"}</th>
-              <th>${isArabic ? getText("paid") : "Paid"}</th>
-              <th>${isArabic ? getText("credit") : "Credit"}</th>
-              <th>${isArabic ? getText("items") : "Items"}</th>
-              <th>${isArabic ? getText("products") : "Products"}</th>
+              <th>${isArabic ? 'التاريخ' : locale === 'fr' ? 'Date' : locale === 'es' ? 'Fecha' : locale === 'en' ? 'Date' : 'التاريخ'}</th>
+              <th>${isArabic ? 'الوقت' : locale === 'fr' ? 'Heure' : locale === 'es' ? 'Hora' : locale === 'en' ? 'Time' : 'الوقت'}</th>
+              <th>${isArabic ? 'العميل' : locale === 'fr' ? 'Client' : locale === 'es' ? 'Cliente' : locale === 'en' ? 'Customer' : 'العميل'}</th>
+              <th>${isArabic ? 'طريقة الدفع' : locale === 'fr' ? 'Paiement' : locale === 'es' ? 'Pago' : locale === 'en' ? 'Payment' : 'طريقة الدفع'}</th>
+              ${sales.some(s => s.payment_method === 'check') ? `<th>${isArabic ? 'رقم الشيك' : locale === 'fr' ? 'N° Chèque' : locale === 'es' ? 'N° Cheque' : locale === 'en' ? 'Check No' : 'رقم الشيك'}</th><th>${isArabic ? 'صاحب الشيك' : locale === 'fr' ? 'Titulaire' : locale === 'es' ? 'Titular' : locale === 'en' ? 'Holder' : 'صاحب الشيك'}</th>` : ''}
+              <th>${isArabic ? 'الإجمالي' : locale === 'fr' ? 'Total' : locale === 'es' ? 'Total' : locale === 'en' ? 'Total' : 'الإجمالي'}</th>
+              <th>${isArabic ? 'المدفوع' : locale === 'fr' ? 'Payé' : locale === 'es' ? 'Pagado' : locale === 'en' ? 'Paid' : 'المدفوع'}</th>
+              <th>${isArabic ? 'الديون' : locale === 'fr' ? 'Crédit' : locale === 'es' ? 'Crédito' : locale === 'en' ? 'Credit' : 'الديون'}</th>
+              <th>${isArabic ? 'الأصناف' : locale === 'fr' ? 'Articles' : locale === 'es' ? 'Artículos' : locale === 'en' ? 'Items' : 'الأصناف'}</th>
             </tr>
           </thead>
           <tbody>
             ${tableRows}
           </tbody>
+          <tfoot>
+            <tr class="total-row">
+              <td colspan="${sales.some(s => s.payment_method === 'check') ? 9 : 7}">${isArabic ? 'المجموع' : 'Total'}</td>
+              <td>${sales.reduce((sum, s) => sum + s.total_amount, 0).toFixed(2)} ${getText("currency")}</td>
+            </tr>
+          </tfoot>
         </table>
       </body>
       </html>
-    `);
+    `;
 
+    printWindow.document.write(htmlContent);
     printWindow.document.close();
     printWindow.print();
-    toast.success(getText("printWindowOpened"));
+    toast.success(getText("exportSuccess"));
   };
 
   const exportSalesToCSV = () => {
@@ -1316,13 +1511,27 @@ export function PosAgentApp() {
     }
 
     const isArabic = locale.startsWith("ar");
-    const headers = [getText("date"), getText("time"), getText("customer"), getText("total"), getText("paid"), getText("credit"), getText("items"), getText("products")];
+    const hasCheckSales = sales.some(s => s.payment_method === 'check');
+    const headers = [
+      getText("date"),
+      getText("time"),
+      getText("customer"),
+      "طريقة الدفع",
+      ...(hasCheckSales ? ["رقم الشيك", "صاحب الشيك", "رقم البطاقة الوطنية"] : []),
+      getText("total"),
+      getText("paid"),
+      getText("credit"),
+      getText("items"),
+      getText("products")
+    ];
     const rows = sales.map(sale => {
       const saleDate = new Date(sale.sale_date);
       return [
         saleDate.toLocaleDateString(isArabic ? "ar-EG" : "en-US", { numberingSystem: 'latn' }),
         saleDate.toLocaleTimeString(isArabic ? "ar-EG" : "en-US", { hour: '2-digit', minute: '2-digit', hour12: false, numberingSystem: 'latn' }),
         sale.customer_name,
+        sale.payment_method === 'check' ? 'شيك' : 'نقدي',
+        ...(hasCheckSales ? [sale.check_number || '', sale.check_holder_name || '', sale.check_holder_cin || ''] : []),
         sale.total_amount.toFixed(2),
         sale.paid_amount.toFixed(2),
         sale.credit_amount.toFixed(2),
@@ -1364,7 +1573,7 @@ export function PosAgentApp() {
     try {
       const response = await api<{ success: boolean; message: string }>(`/pos-agent/standalone-sales/${saleId}`, {
         method: "DELETE",
-        body: JSON.stringify({ token, employee_id: currentEmployee?.employee_id }),
+        body: JSON.stringify({ sessionToken, employee_id: currentEmployee?.employee_id }),
       });
 
       if (response.success) {
@@ -1387,7 +1596,7 @@ export function PosAgentApp() {
       const response = await api<{ success: boolean; message: string }>("/pos-agent/standalone-sales/bulk-delete", {
         method: "POST",
         body: JSON.stringify({
-          token,
+          sessionToken,
           employee_id: currentEmployee?.employee_id,
           sale_ids: Array.from(selectedSales)
         }),
@@ -1880,11 +2089,125 @@ export function PosAgentApp() {
         "fr": "Paramètres",
         "es": "Configuración"
       },
+      "companyLogo": {
+        "ar": "شعار الشركة للفاتورة",
+        "en": "Company Logo for Receipt",
+        "fr": "Logo de l'entreprise pour le reçu",
+        "es": "Logo de la empresa para el recibo"
+      },
+      "companyLogoDesc": {
+        "ar": "رفع شعار يظهر في فاتورة البيع",
+        "en": "Upload a logo to display on sales receipt",
+        "fr": "Télécharger un logo pour afficher sur le reçu de vente",
+        "es": "Subir un logo para mostrar en el recibo de venta"
+      },
+      "uploadLogo": {
+        "ar": "رفع شعار",
+        "en": "Upload Logo",
+        "fr": "Télécharger Logo",
+        "es": "Subir Logo"
+      },
+      "changeLogo": {
+        "ar": "تغيير الشعار",
+        "en": "Change Logo",
+        "fr": "Changer Logo",
+        "es": "Cambiar Logo"
+      },
+      "storeInfo": {
+        "ar": "معلومات المتجر للفاتورة",
+        "en": "Store Information for Receipt",
+        "fr": "Informations du magasin pour le reçu",
+        "es": "Información de la tienda para el recibo"
+      },
+      "storeName": {
+        "ar": "اسم المتجر",
+        "en": "Store Name",
+        "fr": "Nom du magasin",
+        "es": "Nombre de la tienda"
+      },
+      "storePhone": {
+        "ar": "رقم الهاتف",
+        "en": "Phone Number",
+        "fr": "Numéro de téléphone",
+        "es": "Número de teléfono"
+      },
+      "storeAddress": {
+        "ar": "العنوان",
+        "en": "Address",
+        "fr": "Adresse",
+        "es": "Dirección"
+      },
+      "storeAddressPlaceholder": {
+        "ar": "العنوان",
+        "en": "Address",
+        "fr": "Adresse",
+        "es": "Dirección"
+      },
+      "qrCode": {
+        "ar": "QR Code للمتجر",
+        "en": "Store QR Code",
+        "fr": "QR Code du magasin",
+        "es": "Código QR de la tienda"
+      },
+      "qrCodeDesc": {
+        "ar": "رفع QR Code يظهر في الفاتورة للطلب عبر التطبيق",
+        "en": "Upload QR Code to display on receipt for app ordering",
+        "fr": "Télécharger un QR Code pour afficher sur le reçu pour commander via l'app",
+        "es": "Subir código QR para mostrar en el recibo para pedir por la app"
+      },
+      "uploadQr": {
+        "ar": "رفع QR",
+        "en": "Upload QR",
+        "fr": "Télécharger QR",
+        "es": "Subir QR"
+      },
+      "changeQr": {
+        "ar": "تغيير QR",
+        "en": "Change QR",
+        "fr": "Changer QR",
+        "es": "Cambiar QR"
+      },
+      "appDownloadLink": {
+        "ar": "رابط تحميل التطبيق",
+        "en": "App Download Link",
+        "fr": "Lien de téléchargement de l'app",
+        "es": "Enlace de descarga de la app"
+      },
+      "appDownloadLinkPlaceholder": {
+        "ar": "https://play.google.com/store/apps/details?id=...",
+        "en": "https://play.google.com/store/apps/details?id=...",
+        "fr": "https://play.google.com/store/apps/details?id=...",
+        "es": "https://play.google.com/store/apps/details?id=..."
+      },
+      "appDownloadLinkDesc": {
+        "ar": "سيظهر هذا الرابط في الفاتورة مع رسالة 'حمل تطبيق الطلبات والتوصيل'",
+        "en": "This link will appear on the receipt with 'Download delivery app' message",
+        "fr": "Ce lien apparaîtra sur le reçu avec le message 'Télécharger l'app de livraison'",
+        "es": "Este enlace aparecerá en el recibo con el mensaje 'Descargar la app de pedidos'"
+      },
+      "deleteLogo": {
+        "ar": "تم حذف الشعار",
+        "en": "Logo deleted",
+        "fr": "Logo supprimé",
+        "es": "Logo eliminado"
+      },
+      "deleteQr": {
+        "ar": "تم حذف QR Code",
+        "en": "QR Code deleted",
+        "fr": "QR Code supprimé",
+        "es": "Código QR eliminado"
+      },
+      "uploading": {
+        "ar": "جاري الرفع...",
+        "en": "Uploading...",
+        "fr": "Téléchargement...",
+        "es": "Subiendo..."
+      },
       "currency": {
-        "ar": "عملة",
-        "en": "currency",
-        "fr": "devise",
-        "es": "moneda"
+        "ar": "د.م.",
+        "en": "MAD",
+        "fr": "MAD",
+        "es": "MAD"
       },
       "cashCustomer": {
         "ar": "عميل نقدي",
@@ -2240,7 +2563,7 @@ export function PosAgentApp() {
                               <div className="flex gap-1">
                                 <Button
                                   size="sm"
-                                  onClick={() => addToCart(product)}
+                                  onClick={(e) => addToCartWithDebounce(product, e)}
                                   className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs py-1"
                                 >
                                   <ShoppingCart className="w-3 h-3 mr-1" />
@@ -2339,6 +2662,38 @@ export function PosAgentApp() {
                           <span className="font-bold text-green-400">{cartTotal.toFixed(2)} {getText("currency")}</span>
                         </div>
                         <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <select
+                              value={paymentMethod}
+                              onChange={(e) => setPaymentMethod(e.target.value as "cash" | "check")}
+                              className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
+                            >
+                              <option value="cash">نقدي</option>
+                              <option value="check">شيك</option>
+                            </select>
+                          </div>
+                          {paymentMethod === "check" && (
+                            <div className="space-y-2">
+                              <Input
+                                placeholder="رقم الشيك"
+                                value={checkNumber}
+                                onChange={(e) => setCheckNumber(e.target.value)}
+                                className="bg-white/10 border border-white/20 text-white placeholder-white/50"
+                              />
+                              <Input
+                                placeholder="اسم صاحب الشيك"
+                                value={checkHolderName}
+                                onChange={(e) => setCheckHolderName(e.target.value)}
+                                className="bg-white/10 border border-white/20 text-white placeholder-white/50"
+                              />
+                              <Input
+                                placeholder="رقم البطاقة الوطنية"
+                                value={checkHolderCin}
+                                onChange={(e) => setCheckHolderCin(e.target.value)}
+                                className="bg-white/10 border border-white/20 text-white placeholder-white/50"
+                              />
+                            </div>
+                          )}
                           <Input
                             placeholder={getText("customerName")}
                             value={customerName}
@@ -2710,7 +3065,14 @@ export function PosAgentApp() {
                             className="w-4 h-4 rounded border-white/30 bg-white/10 text-green-500 focus:ring-green-500"
                           />
                           <div className="flex-1 min-w-0">
-                            <p className="text-white font-medium">{sale.customer_name}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-white font-medium">{sale.customer_name}</p>
+                              {sale.payment_method === 'check' && (
+                                <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 text-xs rounded-full border border-yellow-500/30">
+                                  شيك
+                                </span>
+                              )}
+                            </div>
                             <p className="text-white/70 text-sm">
                               {new Date(sale.sale_date).toLocaleString(locale.startsWith("ar") ? "ar-EG" : "en-US", { numberingSystem: 'latn',
                                 year: 'numeric',
@@ -2721,6 +3083,11 @@ export function PosAgentApp() {
                                 hour12: false
                               })}
                             </p>
+                            {sale.payment_method === 'check' && (
+                              <p className="text-yellow-300/80 text-xs mt-1">
+                                شيك #{sale.check_number} - {sale.check_holder_name}
+                              </p>
+                            )}
                             <p className="text-white/60 text-xs mt-1 truncate">
                               {sale.lines?.map(l => l.product_name).join(", ") || getText("noItems")}
                             </p>
@@ -2768,6 +3135,208 @@ export function PosAgentApp() {
                   <Filter className="w-4 h-4 mr-2" />
                   {getText("filter")}
                 </Button>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white/5 rounded-lg gap-3">
+                <div>
+                  <p className="text-white font-medium">اللغة / Language</p>
+                  <p className="text-white/70 text-sm">اختر لغة الواجهة</p>
+                </div>
+                <select
+                  value={locale}
+                  onChange={(e) => {
+                    setLocale(e.target.value);
+                    localStorage.setItem('pos_locale', e.target.value);
+                  }}
+                  className="bg-white/10 border-white/20 text-white px-3 py-2 rounded"
+                >
+                  <option value="ar">العربية</option>
+                  <option value="en">English</option>
+                  <option value="fr">Français</option>
+                  <option value="es">Español</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white/5 rounded-lg gap-3">
+                <div>
+                  <p className="text-white font-medium">{getText("companyLogo")}</p>
+                  <p className="text-white/70 text-sm">{getText("companyLogoDesc")}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {companyLogo && (
+                    <img src={companyLogo} alt="Logo" className="w-12 h-12 object-contain rounded" />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setUploading(true);
+                        try {
+                          // Sanitize filename to remove Arabic characters
+                          const sanitizedFileName = file.name
+                            .replace(/[^a-zA-Z0-9._-]/g, '_')
+                            .replace(/_{2,}/g, '_')
+                            .replace(/^_+|_+$/g, '') || 'logo.jpg';
+                          const fileName = `pos-logos/${Date.now()}-${sanitizedFileName}`;
+                          const publicUrl = await uploadFileToServer(file, fileName);
+                          setCompanyLogo(publicUrl);
+                          localStorage.setItem('pos_company_logo', publicUrl);
+                          toast.success("تم رفع الشعار بنجاح");
+                        } catch (error) {
+                          console.error("Error uploading logo:", error);
+                          toast.error("فشل رفع الشعار");
+                        } finally {
+                          setUploading(false);
+                        }
+                      }
+                    }}
+                    className="hidden"
+                    id="logo-upload"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => document.getElementById('logo-upload')?.click()}
+                    disabled={uploading}
+                    className="bg-white/10 border-white/20 text-white"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {uploading ? getText("uploading") : companyLogo ? getText("changeLogo") : getText("uploadLogo")}
+                  </Button>
+                  {companyLogo && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setCompanyLogo("");
+                        localStorage.removeItem('pos_company_logo');
+                        toast.success(getText("deleteLogo"));
+                      }}
+                      className="bg-red-500/20 border-red-500/30 text-red-300 hover:bg-red-500/30"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3 p-4 bg-white/5 rounded-lg">
+                <p className="text-white font-medium">{getText("storeInfo")}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-white text-sm">{getText("storeName")}</Label>
+                    <Input
+                      value={storeName}
+                      onChange={(e) => {
+                        setStoreName(e.target.value);
+                        localStorage.setItem('pos_store_name', e.target.value);
+                      }}
+                      placeholder={getText("storeName")}
+                      className="bg-white/10 border-white/20 text-white"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-white text-sm">{getText("storePhone")}</Label>
+                    <Input
+                      value={storePhone}
+                      onChange={(e) => {
+                        setStorePhone(e.target.value);
+                        localStorage.setItem('pos_store_phone', e.target.value);
+                      }}
+                      placeholder={getText("storePhone")}
+                      className="bg-white/10 border-white/20 text-white"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label className="text-white text-sm">{getText("storeAddress")}</Label>
+                    <Input
+                      value={storeAddress}
+                      onChange={(e) => {
+                        setStoreAddress(e.target.value);
+                        localStorage.setItem('pos_store_address', e.target.value);
+                      }}
+                      placeholder={getText("storeAddressPlaceholder")}
+                      className="bg-white/10 border-white/20 text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white/5 rounded-lg gap-3">
+                <div>
+                  <p className="text-white font-medium">{getText("qrCode")}</p>
+                  <p className="text-white/70 text-sm">{getText("qrCodeDesc")}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {storeQrCode && (
+                    <img src={storeQrCode} alt="QR Code" className="w-12 h-12 object-contain rounded" />
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setUploading(true);
+                        try {
+                          // Sanitize filename to remove Arabic characters
+                          const sanitizedFileName = file.name
+                            .replace(/[^a-zA-Z0-9._-]/g, '_')
+                            .replace(/_{2,}/g, '_')
+                            .replace(/^_+|_+$/g, '') || 'qr.jpg';
+                          const fileName = `pos-qr/${Date.now()}-${sanitizedFileName}`;
+                          const publicUrl = await uploadFileToServer(file, fileName);
+                          setStoreQrCode(publicUrl);
+                          localStorage.setItem('pos_store_qr_code', publicUrl);
+                          toast.success("تم رفع QR Code بنجاح");
+                        } catch (error) {
+                          console.error("Error uploading QR code:", error);
+                          toast.error("فشل رفع QR Code");
+                        } finally {
+                          setUploading(false);
+                        }
+                      }
+                    }}
+                    className="hidden"
+                    id="qr-upload"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={() => document.getElementById('qr-upload')?.click()}
+                    disabled={uploading}
+                    className="bg-white/10 border-white/20 text-white"
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    {uploading ? getText("uploading") : storeQrCode ? getText("changeQr") : getText("uploadQr")}
+                  </Button>
+                  {storeQrCode && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setStoreQrCode("");
+                        localStorage.removeItem('pos_store_qr_code');
+                        toast.success(getText("deleteQr"));
+                      }}
+                      className="bg-red-500/20 border-red-500/30 text-red-300 hover:bg-red-500/30"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3 p-4 bg-white/5 rounded-lg">
+                <p className="text-white font-medium">{getText("appDownloadLink")}</p>
+                <Input
+                  value={appDownloadLink}
+                  onChange={(e) => {
+                    setAppDownloadLink(e.target.value);
+                    localStorage.setItem('pos_app_download_link', e.target.value);
+                  }}
+                  placeholder={getText("appDownloadLinkPlaceholder")}
+                  className="bg-white/10 border-white/20 text-white"
+                />
+                <p className="text-white/60 text-xs">{getText("appDownloadLinkDesc")}</p>
               </div>
             </CardContent>
           </Card>
@@ -3054,8 +3623,8 @@ export function PosAgentApp() {
                     return;
                   }
                   try {
-                    // Use standalone endpoint with token query parameter for POS Agent
-                    const response = await api<{ success: boolean; product?: any; error?: string }>(`/pos-agent/standalone-products?token=${token}`, {
+                    // Use standalone endpoint with sessionToken query parameter for POS Agent
+                    const response = await api<{ success: boolean; product?: any; error?: string }>(`/pos-agent/standalone-products?token=${sessionToken}`, {
                       method: "POST",
                       body: JSON.stringify({
                         name: productFormData.name,
@@ -3070,7 +3639,7 @@ export function PosAgentApp() {
                       toast.success("تم إضافة المنتج بنجاح");
                       setShowAddProductDialog(false);
                       // Immediately reload products using the same endpoint
-                      const freshProductsResponse = await api<{ success: boolean; products: Product[] }>(`/inventory/standalone-products?token=${token}`);
+                      const freshProductsResponse = await api<{ success: boolean; products: Product[] }>(`/inventory/standalone-products?token=${sessionToken}`);
                       if (freshProductsResponse && freshProductsResponse.success) {
                         setProducts(freshProductsResponse.products);
                         setFilteredProducts(freshProductsResponse.products);

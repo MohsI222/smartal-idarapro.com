@@ -86,11 +86,12 @@ export async function ensureSuperAdmin(): Promise<void> {
     console.log(`[idara] تم ترقية الحساب إلى Super Admin: ${SUPER_ADMIN_EMAIL}`);
   }
 
+  // Only update name, whatsapp, and role - don't overwrite password hash
   await db
     .prepare(
-      `UPDATE users SET whatsapp = ?, name = ?, password_hash = ?, role = 'superadmin' WHERE id = ?`
+      `UPDATE users SET whatsapp = ?, name = ?, role = 'superadmin' WHERE id = ?`
     )
-    .run(SUPER_ADMIN_WHATSAPP, SUPER_ADMIN_DISPLAY_NAME, hashPassword(pass), row.id);
+    .run(SUPER_ADMIN_WHATSAPP, SUPER_ADMIN_DISPLAY_NAME, row.id);
 
   const sub = (await db
     .prepare(

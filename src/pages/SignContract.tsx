@@ -328,22 +328,22 @@ export function SignContractPage() {
         sigInfo.innerHTML = `
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;">
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${locale.startsWith("ar") ? 'اسم الموقع' : 'Signer Name'}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${t("contracts.signatures.signerName")}</div>
               <div style="color: #333; font-size: 9px;">${formData.signer_name}</div>
             </div>
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${locale.startsWith("ar") ? 'البريد الإلكتروني' : 'Email'}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${t("contracts.signatures.signerEmail")}</div>
               <div style="color: #333; font-size: 9px;">${formData.signer_email}</div>
             </div>
             ${formData.signer_phone ? `
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${locale.startsWith("ar") ? 'رقم الهاتف' : 'Phone'}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${t("contracts.signatures.signerPhone")}</div>
               <div style="color: #333; font-size: 9px;">${formData.signer_phone}</div>
             </div>
             ` : ''}
             <div>
-              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${locale.startsWith("ar") ? 'تاريخ التوقيع' : 'Signing Date'}</div>
-              <div style="color: #333; font-size: 9px;">${new Date().toLocaleString(locale === 'ar' ? 'ar-MA' : 'en-US')}</div>
+              <div style="color: #667eea; font-weight: bold; font-size: 9px;">${t("contracts.signatures.signedAt")}</div>
+              <div style="color: #333; font-size: 9px;">${new Date().toLocaleString(locale === 'ar' ? 'ar-MA' : locale)}</div>
             </div>
           </div>
         `;
@@ -448,8 +448,15 @@ export function SignContractPage() {
           </CardHeader>
           <CardContent>
             <p className="text-slate-400">{error}</p>
-            <Button onClick={() => navigate("/")} className="mt-4 w-full">
-              {locale.startsWith("ar") ? "العودة للرئيسية" : "Back to Home"}
+            <Button onClick={() => {
+              // Close the window instead of navigating to app
+              window.close();
+              // If window.close() doesn't work (popup blocked), show message
+              setTimeout(() => {
+                alert(locale.startsWith("ar") ? "يرجى إغلاق هذه النافذة" : "Please close this window");
+              }, 100);
+            }} className="mt-4 w-full">
+              {locale.startsWith("ar") ? "إغلاق النافذة" : "Close Window"}
             </Button>
           </CardContent>
         </Card>
@@ -508,8 +515,15 @@ export function SignContractPage() {
                 <CheckCircle className="h-16 w-16 text-green-500" />
                 <h2 className="text-2xl font-bold text-green-500">{locale.startsWith("ar") ? "تم التوقيع بنجاح" : "Signed Successfully"}</h2>
                 <p className="text-slate-400">{locale.startsWith("ar") ? "شكراً لك، تم حفظ توقيعك على هذا العقد" : "Thank you, your signature has been saved on this contract"}</p>
-                <Button onClick={() => navigate("/")} className="mt-4">
-                  {locale.startsWith("ar") ? "العودة للرئيسية" : "Back to Home"}
+                <Button onClick={() => {
+                  // Close the window instead of navigating to app
+                  window.close();
+                  // If window.close() doesn't work (popup blocked), show message
+                  setTimeout(() => {
+                    alert(locale.startsWith("ar") ? "يرجى إغلاق هذه النافذة" : "Please close this window");
+                  }, 100);
+                }} className="mt-4">
+                  {locale.startsWith("ar") ? "إغلاق النافذة" : "Close Window"}
                 </Button>
               </div>
             </CardContent>

@@ -137,31 +137,47 @@ function Protected({ children }: { children: ReactNode }) {
   const { token, loading, user } = useAuth();
   const { t } = useI18n();
   const location = useLocation();
-  
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#060d18] text-slate-400">
+      <div className="min-h-screen flex items justify-center bg-[#060d18] text-slate-400">
         {t("common.loading")}
       </div>
     );
   }
-  
-  if (!token) {
+
+  // Check both state and localStorage for token
+  const storedToken = typeof window !== "undefined" ? localStorage.getItem("idara_token") : null;
+  const hasToken = token || storedToken;
+
+  // Check both state and localStorage for user
+  const storedUser = typeof window !== "undefined" ? localStorage.getItem("idara_user") : null;
+  const userObj = user || (storedUser ? JSON.parse(storedUser) : null);
+
+  // Allow magic links on /dept routes even without normal JWT
+  const isDeptRoute = location.pathname.startsWith('/dept/');
+  const hasMagicParam = new URLSearchParams(location.search).has('magic');
+
+  // Only redirect if NO token AND NOT a magic link
+  // If token exists, render children even if userObj is temporarily null
+  if (!hasToken && !(isDeptRoute && hasMagicParam)) {
     const next = `${location.pathname}${location.search}`;
     const qs = next && next !== "/" ? `?next=${encodeURIComponent(next)}` : "";
     return <Navigate to={`/login${qs}`} replace />;
   }
+  
+  // Pass userObj.id or null - PermissionsProvider can handle null
   return (
-    <PermissionsProvider userId={user?.id}>
+    <PermissionsProvider userId={userObj?.id}>
       {children}
     </PermissionsProvider>
   );
 }
 
 function SuperAdminOnly({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, token } = useAuth();
   const SUPER_ADMIN_EMAIL = "lahcenm534@gmail.com";
-  
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#060d18] text-slate-400">
@@ -169,11 +185,24 @@ function SuperAdminOnly({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  
-  if (!user || user.email !== SUPER_ADMIN_EMAIL) {
+
+  // Check if user is authenticated (state or localStorage)
+  const storedToken = typeof window !== "undefined" ? localStorage.getItem("idara_token") : null;
+  const hasToken = token || storedToken;
+
+  // Check user from state or localStorage
+  const storedUser = typeof window !== "undefined" ? localStorage.getItem("idara_user") : null;
+  const userObj = user || (storedUser ? JSON.parse(storedUser) : null);
+
+  if (!hasToken) {
+    return <Navigate to="/login" replace />;
+  }
+
+  // Only check email if userObj exists - if it's null, allow render and let auth context handle it
+  if (userObj && userObj.email !== SUPER_ADMIN_EMAIL) {
     return <Navigate to="/app" replace />;
   }
-  
+
   return <>{children}</>;
 }
 
@@ -198,12 +227,12 @@ function AppRoutes() {
       <Route path="/agent-pos" element={<PosAgentApp />} />
       <Route path="/trust" element={<TrustCharterPage />} />
       <Route path="/subscription-contract" element={<SubscriptionContractPage />} />
-      <Route path="/production" element={<TlDeptLandingRedirect slug="production" />} />
-      <Route path="/quality" element={<TlDeptLandingRedirect slug="quality" />} />
-      <Route path="/maintenance" element={<TlDeptLandingRedirect slug="maintenance" />} />
-      <Route path="/logistics" element={<TlDeptLandingRedirect slug="logistics" />} />
-      <Route path="/transport" element={<TlDeptLandingRedirect slug="transport" />} />
-      <Route path="/utilities" element={<TlDeptLandingRedirect slug="utilities" />} />
+      <Route path="/production" element={<TlDepartmentPage dept="production" />} />
+      <Route path="/quality" element={<TlDepartmentPage dept="quality" />} />
+      <Route path="/maintenance" element={<TlDepartmentPage dept="maintenance" />} />
+      <Route path="/logistics" element={<TlDepartmentPage dept="logistics" />} />
+      <Route path="/transport" element={<TlDepartmentPage dept="transport" />} />
+      <Route path="/utilities" element={<TlDepartmentPage dept="utilities" />} />
       <Route path="/dept/:dept" element={<TlDepartmentPage />} />
       <Route path="/education/exams" element={<Navigate to="/app/edu?tab=exams" replace />} />
       <Route

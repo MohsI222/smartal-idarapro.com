@@ -483,6 +483,56 @@ export function registerTlErpRoutes(
     res.json({ success: true, recipients: recipients || [] });
   });
 
+  // POST /api/tl/standalone-messages - Send message from standalone access (public, token-based)
+  app.post("/api/tl/standalone-messages", async (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+    const { token } = req.query as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: "token_required" });
+      return;
+    }
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as RowWorker | undefined;
+    if (!w) {
+      res.status(404).json({ error: "not_found" });
+      return;
+    }
+
+    const b = req.body as { from_worker_id?: string; to_worker_id?: string; body?: string };
+    if (!b.from_worker_id || !b.to_worker_id || !b.body?.trim()) {
+      res.status(400).json({ error: "بيانات ناقصة" });
+      return;
+    }
+
+    // Verify from_worker_id matches the magic token worker
+    if (b.from_worker_id !== w.id) {
+      res.status(403).json({ error: "unauthorized" });
+      return;
+    }
+
+    // Verify to_worker_id belongs to the same user
+    const toWorker = await db
+      .prepare(`SELECT * FROM tl_workers WHERE id = ? AND user_id = ?`)
+      .get(b.to_worker_id, w.user_id) as RowWorker | undefined;
+    if (!toWorker) {
+      res.status(404).json({ error: "recipient_not_found" });
+      return;
+    }
+
+    const id = randomUUID();
+    await db.prepare(
+      `INSERT INTO tl_messages (id, user_id, from_worker_id, to_worker_id, body, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(id, w.user_id, b.from_worker_id, b.to_worker_id, b.body.trim(), new Date().toISOString());
+
+    const row = await db.prepare(`SELECT * FROM tl_messages WHERE id = ?`).get(id) as any;
+    res.json({ success: true, message: row });
+  });
+
   app.get("/api/tl/resolve-magic", ...authGate, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const token = String((req.query.token as string) ?? "").trim();

@@ -48,8 +48,8 @@ export function TransportLogisticsHub() {
     let active = true;
     void (async () => {
       try {
-        const res = await api<{ data: LogisticsQueueItem[] }>("/logistics-queue");
-        const queue = res.data || [];
+        const res = await api<{ items: LogisticsQueueItem[] }>("/inventory/logistics-queue");
+        const queue = res.items || [];
         if (active) setLogisticsQueue(Array.isArray(queue) ? queue : []);
       } catch (error) {
         console.error("[tl hub] fetchLogisticsQueue failed", error);
@@ -65,8 +65,8 @@ export function TransportLogisticsHub() {
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const res = await api<{ data: LogisticsQueueItem[] }>("/logistics-queue");
-        const queue = res.data || [];
+        const res = await api<{ items: LogisticsQueueItem[] }>("/inventory/logistics-queue");
+        const queue = res.items || [];
         setLogisticsQueue(Array.isArray(queue) ? queue : []);
       } catch (error) {
         console.error("[tl hub] polling fetchLogisticsQueue failed", error);
@@ -79,12 +79,12 @@ export function TransportLogisticsHub() {
   const assignAutoDispatch = async (id: string) => {
     setLogisticsBusy(true);
     try {
-      await api(`/logistics-queue/${id}/assign`, {
-        method: "POST",
+      await api(`/inventory/logistics-queue/${id}/assign`, {
+        method: "PATCH",
         body: JSON.stringify({ status: "auto-dispatch" }),
       });
-      const res = await api<{ data: LogisticsQueueItem[] }>("/logistics-queue");
-      const queue = res.data || [];
+      const res = await api<{ items: LogisticsQueueItem[] }>("/inventory/logistics-queue");
+      const queue = res.items || [];
       setLogisticsQueue(Array.isArray(queue) ? queue : []);
     } catch (error) {
       console.error("[tl hub] assignAutoDispatch failed", error);

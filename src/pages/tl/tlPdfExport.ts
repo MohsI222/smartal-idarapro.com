@@ -28,6 +28,7 @@ export async function exportTlErpPdf(opts: {
   t: (k: string, params?: Record<string, string>) => string;
   fileName: string;
   userId?: string;
+  magicToken?: string;
 }) {
   const { direction, lang, title, vehicles, ops, incidents, t, fileName, userId } = opts;
   const vHtml = buildPdfTableHtml(
@@ -101,7 +102,7 @@ export async function exportTlErpPdf(opts: {
       mainTitle: "Smart Transport & Logistics Pro",
       dateLocale: lang,
       userId,
-    });
+    }, opts.magicToken);
   } catch (error) {
     console.error("[TL PDF Export] Error:", error);
     throw error;

@@ -637,11 +637,19 @@ CREATE TABLE IF NOT EXISTS pos_agent_sales (
   paid_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
   credit_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
   payment_method TEXT NOT NULL DEFAULT 'cash',
+  check_number TEXT,
+  check_holder_name TEXT,
+  check_holder_cin TEXT,
   sale_date TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_pos_agent_sales_user_id ON pos_agent_sales(user_id);
 CREATE INDEX IF NOT EXISTS idx_pos_agent_sales_employee_id ON pos_agent_sales(employee_id);
+
+-- Add check payment fields to pos_agent_sales table
+ALTER TABLE pos_agent_sales ADD COLUMN IF NOT EXISTS check_number TEXT;
+ALTER TABLE pos_agent_sales ADD COLUMN IF NOT EXISTS check_holder_name TEXT;
+ALTER TABLE pos_agent_sales ADD COLUMN IF NOT EXISTS check_holder_cin TEXT;
 
 -- POS Agent Sales Lines Table
 CREATE TABLE IF NOT EXISTS pos_agent_sales_lines (

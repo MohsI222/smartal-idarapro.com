@@ -3,7 +3,7 @@ import {
   buildPlatformReportFullHtml,
 } from "@/lib/legalApplicationPrint";
 import { pushDocumentActivity } from "@/lib/documentActivityLog";
-import { fetchBackendPrintHtml } from "@/lib/backendExportClient";
+import { fetchBackendPrintHtml, fetchBackendPrintHtmlMagicToken } from "@/lib/backendExportClient";
 import { downloadPdfFromFullHtmlDocument } from "@/lib/pdfCanvasExport";
 import { escapeHtmlPdf } from "@/lib/htmlEscape";
 import { isTrialWatermarkExport } from "@/lib/exportPolicy";
@@ -74,12 +74,12 @@ export type ExportPdfProOptions = ExportPdfOptions & {
  * PDF احترافي: يحاول أولاً `/api/backend/print-html` ثم التحويل إلى PDF (jspdf + html2canvas)
  * ثم يرجع لبناء HTML محلي ونفس مسار Canvas عند الفشل.
  */
-export async function exportSmartAlIdaraPdfPreferBackend(opts: ExportPdfProOptions): Promise<void> {
+export async function exportSmartAlIdaraPdfPreferBackend(opts: ExportPdfProOptions, magicToken?: string): Promise<void> {
   const {
     innerHtml,
     innerHtmlForBackend,
     sectionTitle,
-    direction,
+    direction = "rtl",
     lang = typeof document !== "undefined" && document.documentElement.lang
       ? document.documentElement.lang
       : "en",
@@ -87,13 +87,14 @@ export async function exportSmartAlIdaraPdfPreferBackend(opts: ExportPdfProOptio
     documentMode = "platform",
     officialKingdomLine = "المملكة المغربية",
     logoDataUrl,
-    fileName,
+    fileName = "export.pdf",
     trialWatermark: trialW,
   } = opts;
   const trialWatermark = trialW ?? isTrialWatermarkExport();
 
-  const mode =
-    documentMode === "official" ? "official" : documentMode === "creative" ? "creative" : "platform";
+  console.log("[PDF Export] Starting export, fileName:", fileName, "sectionTitle:", sectionTitle, "userId:", opts.userId, "magicToken:", !!magicToken);
+
+  const mode = documentMode === "official" ? "official" : "platform";
   const wmNote =
     trialWatermark && mode !== "official"
       ? `<p style="color:#7f1d1d;font-size:12px;font-weight:700;border:2px solid #fecaca;padding:10px;margin:0 0 12px;background:#fff7ed;">${escapeHtmlPdf(
@@ -104,28 +105,48 @@ export async function exportSmartAlIdaraPdfPreferBackend(opts: ExportPdfProOptio
       : "";
   
   try {
-    const backendHtml = await fetchBackendPrintHtml({
-      direction,
-      lang: lang || "ar",
-      kingdomLine: officialKingdomLine.trim() || "المملكة المغربية",
-      sectionTitle,
-      mainTitle: mode === "official" ? undefined : mainTitle,
-      innerHtml: wmNote + (innerHtmlForBackend ?? innerHtml),
-      mode,
-      logoDataUrl: logoDataUrl?.startsWith("data:image") ? logoDataUrl : undefined,
-    });
+    console.log("[PDF Export] Fetching backend print HTML...");
+    let backendHtml: string | null = null;
+    if (magicToken) {
+      backendHtml = await fetchBackendPrintHtmlMagicToken({
+        direction,
+        lang: lang || "ar",
+        kingdomLine: officialKingdomLine.trim() || "المملكة المغربية",
+        sectionTitle,
+        mainTitle: mode === "official" ? undefined : mainTitle,
+        innerHtml: wmNote + (innerHtmlForBackend ?? innerHtml),
+        mode,
+        logoDataUrl: logoDataUrl?.startsWith("data:image") ? logoDataUrl : undefined,
+      }, magicToken);
+    } else {
+      backendHtml = await fetchBackendPrintHtml({
+        direction,
+        lang: lang || "ar",
+        kingdomLine: officialKingdomLine.trim() || "المملكة المغربية",
+        sectionTitle,
+        mainTitle: mode === "official" ? undefined : mainTitle,
+        innerHtml: wmNote + (innerHtmlForBackend ?? innerHtml),
+        mode,
+        logoDataUrl: logoDataUrl?.startsWith("data:image") ? logoDataUrl : undefined,
+      });
+    }
+    console.log("[PDF Export] Backend HTML received:", !!backendHtml);
     if (backendHtml) {
+      console.log("[PDF Export] Downloading PDF from HTML...");
       await downloadPdfFromFullHtmlDocument(backendHtml, { fileName });
       const token = typeof window !== "undefined" ? localStorage.getItem("idara_token") : null;
+      console.log("[PDF Export] Token for activity log:", !!token);
       if (token) {
         pushDocumentActivity("pdf", `${sectionTitle || fileName}`.replace(/\.pdf$/i, ""), token);
       }
+      console.log("[PDF Export] Export completed successfully");
       return;
     }
   } catch (error) {
     console.error("[PDF Export] Backend print HTML failed, using fallback:", error);
   }
   
+  console.log("[PDF Export] Using fallback export...");
   await exportSmartAlIdaraPdf(opts);
 }
 
@@ -136,8 +157,8 @@ export async function exportSmartAlIdaraPdf(opts: ExportPdfOptions): Promise<voi
   const {
     innerHtml,
     sectionTitle,
-    fileName,
-    direction,
+    fileName = "export.pdf",
+    direction = "rtl",
     lang =
       typeof document !== "undefined" && document.documentElement.lang
         ? document.documentElement.lang
@@ -155,8 +176,7 @@ export async function exportSmartAlIdaraPdf(opts: ExportPdfOptions): Promise<voi
     documentMode === "official"
       ? buildOfficialDocumentFullHtml({
           innerHtml,
-          sectionTitle,
-          mainTitle,
+          sectionTitle: sectionTitle ?? "",
           direction,
           lang,
           dateLocale,
@@ -164,7 +184,7 @@ export async function exportSmartAlIdaraPdf(opts: ExportPdfOptions): Promise<voi
         })
       : buildPlatformReportFullHtml({
           innerHtml,
-          sectionTitle,
+          sectionTitle: sectionTitle ?? "",
           mainTitle,
           direction,
           lang,
@@ -173,7 +193,10 @@ export async function exportSmartAlIdaraPdf(opts: ExportPdfOptions): Promise<voi
         });
 
   await downloadPdfFromFullHtmlDocument(full, { fileName });
-  pushDocumentActivity("pdf", `${sectionTitle || fileName}`.replace(/\.pdf$/i, ""), opts.userId);
+  const userId = opts.userId;
+  if (userId) {
+    pushDocumentActivity("pdf", `${sectionTitle || fileName}`.replace(/\.pdf$/i, ""), userId);
+  }
 }
 
 export async function exportElementToPdf(

@@ -98,6 +98,7 @@ type AuthContextValue = {
   refresh: () => Promise<void>;
   /** يحدّث الرمز من تدفقات مثل `/auth/callback` بعد تخزين JWT في localStorage */
   adoptToken: (jwt: string) => void;
+  setToken: (token: string | null) => void;
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
   register: (
     email: string,
@@ -124,6 +125,8 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const TOKEN_KEY = "idara_token";
+const USER_KEY = "idara_user";
+const SUBSCRIPTION_KEY = "idara_subscription";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
@@ -134,23 +137,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
-  // Check localStorage on mount only once for session isolation
+  // Check localStorage on mount and immediately call refresh
   useEffect(() => {
     const stored = localStorage.getItem(TOKEN_KEY);
+    const hasMagicParam = new URLSearchParams(window.location.search).has('magic');
+    const isDeptRoute = window.location.pathname.startsWith('/dept/');
+    
+    // If this is a magic link, DO NOT restore from localStorage
+    // Magic links should use their own token from URL param, not the main app session
+    if (hasMagicParam && isDeptRoute) {
+      setLoading(false);
+      return;
+    }
+    
     if (stored) {
       try {
-        // Validate token format before using it
-        const parts = stored.split('.');
-        if (parts.length === 3) {
-          setToken(stored);
-        } else {
-          localStorage.removeItem(TOKEN_KEY);
+        // Accept any token for normal auth (don't validate format)
+        // This ensures session persistence even if token format changes
+        setToken(stored);
+        
+        // Always restore from localStorage first to ensure immediate availability
+        const storedUser = localStorage.getItem(USER_KEY);
+        if (storedUser) {
+          try {
+            setUser(JSON.parse(storedUser));
+          } catch {
+            localStorage.removeItem(USER_KEY);
+          }
         }
+        const storedSubscription = localStorage.getItem(SUBSCRIPTION_KEY);
+        if (storedSubscription) {
+          try {
+            setSubscription(JSON.parse(storedSubscription));
+          } catch {
+            localStorage.removeItem(SUBSCRIPTION_KEY);
+          }
+        }
+        
+        // Set loading to false immediately so UI renders
+        setLoading(false);
+        
+        // Call refresh in background to update data
+        setTimeout(() => {
+          void refresh().catch(() => {
+            // If refresh fails, we still have session from localStorage
+          });
+        }, 0);
       } catch {
         localStorage.removeItem(TOKEN_KEY);
+        setLoading(false);
+      }
+    } else {
+      // No token found, set loading to false
+      setLoading(false);
+    }
+    
+    // Also restore user/subscription on every mount (not just when token exists)
+    // This ensures session persistence even if token check fails temporarily
+    const storedUser = localStorage.getItem(USER_KEY);
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem(USER_KEY);
       }
     }
-    setLoading(false);
+    const storedSubscription = localStorage.getItem(SUBSCRIPTION_KEY);
+    if (storedSubscription) {
+      try {
+        setSubscription(JSON.parse(storedSubscription));
+      } catch {
+        localStorage.removeItem(SUBSCRIPTION_KEY);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -167,15 +226,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    
+
     // Check if current path is a public route (no auth required)
-    const publicRoutes = ['/sign-contract/', '/auth/callback', '/login', '/register', '/'];
+    const publicRoutes = ['/sign-contract/', '/auth/callback', '/login', '/register', '/', '/dept/', '/pos-agent', '/agent-pos', '/trust', '/subscription-contract'];
     const isPublicRoute = publicRoutes.some(route => window.location.pathname.startsWith(route));
-    
+
+    // Check if this is a magic link - don't try to refresh JWT for magic links
+    const hasMagicParam = new URLSearchParams(window.location.search).has('magic');
+    if (hasMagicParam) {
+      setLoading(false);
+      return;
+    }
+
     // Retry logic for transient errors
     let retries = 0;
     const maxRetries = 2;
-    
+
     while (retries <= maxRetries) {
       try {
         const me = await api<MeResponse>("/me", { token: effectiveToken });
@@ -183,6 +249,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSubscription(me.subscription);
         setDevices(me.devices);
         setMaxDevices(me.maxDevices);
+
+        // Save to localStorage for persistence across refresh
+        localStorage.setItem(USER_KEY, JSON.stringify(me.user));
+        if (me.subscription) {
+          localStorage.setItem(SUBSCRIPTION_KEY, JSON.stringify(me.subscription));
+        }
+
         setLoading(false);
         return; // Success, exit retry loop
       } catch (e) {
@@ -192,12 +265,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error("[AuthContext] Token invalid, clearing session");
           setToken(null);
           localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(USER_KEY);
+          localStorage.removeItem(SUBSCRIPTION_KEY);
           setUser(null);
           setSubscription(null);
           setLoading(false);
           return; // Exit on 401
         }
-        
+
         // For network errors (no status or 5xx), retry
         if (retries < maxRetries) {
           console.error(`[AuthContext] Refresh failed (attempt ${retries + 1}/${maxRetries + 1}), retrying...`, e);
@@ -205,23 +280,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await new Promise(resolve => setTimeout(resolve, 1000 * retries)); // Exponential backoff
           continue;
         }
+
+        // Max retries reached - keep session from localStorage for network errors
+        console.error("[AuthContext] Refresh failed after retries, keeping session from localStorage:", e);
+        // Restore from localStorage to ensure session persists
+        const storedToken = localStorage.getItem(TOKEN_KEY);
+        const storedUser = localStorage.getItem(USER_KEY);
+        const storedSubscription = localStorage.getItem(SUBSCRIPTION_KEY);
         
-        // Max retries reached, keep session but log error
-        console.error("[AuthContext] Refresh failed after retries, keeping session:", e);
+        if (storedToken) setToken(storedToken);
+        if (storedUser) {
+          try {
+            setUser(JSON.parse(storedUser));
+          } catch {
+            localStorage.removeItem(USER_KEY);
+          }
+        }
+        if (storedSubscription) {
+          try {
+            setSubscription(JSON.parse(storedSubscription));
+          } catch {
+            localStorage.removeItem(SUBSCRIPTION_KEY);
+          }
+        }
+        setLoading(false);
+        return;
+
+
         setLoading(false);
         return;
       }
     }
-  }, [token]);
+  }, [token]); // Include token in deps to ensure refresh uses latest token
 
   const adoptToken = useCallback((jwt: string) => {
     localStorage.setItem(TOKEN_KEY, jwt);
     setToken(jwt);
   }, []);
 
+  // Call refresh when token changes (including initial load from localStorage)
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (token) {
+      void refresh();
+    }
+  }, [token, refresh]);
 
   const login = async (email: string, password: string, rememberMe?: boolean) => {
     const fp = getDeviceFingerprint();
@@ -229,6 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const persistSession = async (res: { token: string; user: User }) => {
       localStorage.setItem(TOKEN_KEY, res.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(res.user));
       setToken(res.token);
       setUser(res.user);
       await refresh();
@@ -274,6 +377,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }),
       });
       localStorage.setItem(TOKEN_KEY, res.token);
+      localStorage.setItem(USER_KEY, JSON.stringify(res.user));
       setToken(res.token);
       setUser(res.user);
       await refresh();
@@ -286,6 +390,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     // Clear all local storage data
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(SUBSCRIPTION_KEY);
     localStorage.removeItem('idara_token');
     
     // Clear all React state
@@ -426,6 +532,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     refresh,
     adoptToken,
+    setToken,
     login,
     register,
     logout,

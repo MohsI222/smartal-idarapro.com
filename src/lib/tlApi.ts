@@ -184,7 +184,22 @@ export async function tlMessageRecipients(token: string, fromWorkerId: string) {
   );
 }
 
-export async function tlSendMessage(token: string, body: { from_worker_id: string; to_worker_id: string; body: string }) {
+export async function tlSendMessage(token: string, body: { from_worker_id: string; to_worker_id: string; body: string }, isMagicLink = false) {
+  console.log("[tlSendMessage] Sending message, from:", body.from_worker_id, "to:", body.to_worker_id, "token length:", token?.length, "isMagicLink:", isMagicLink);
+  if (isMagicLink) {
+    // Use standalone endpoint for magic links
+    const res = await fetch(`${getApiUrlPrefix()}/tl/standalone-messages?token=${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error("[tlSendMessage] Standalone error:", (data as { error?: string }).error ?? res.statusText);
+      throw new ApiError((data as { error?: string }).error ?? res.statusText, res.status);
+    }
+    return { message: data.message } as { message: TlMessage };
+  }
   return api<{ message: TlMessage }>("/tl/messages", { method: "POST", token, body: JSON.stringify(body) });
 }
 
@@ -193,6 +208,7 @@ export async function tlSendMessageWithFile(
   fields: { from_worker_id: string; to_worker_id: string; body?: string },
   file: File | null
 ) {
+  console.log("[tlSendMessageWithFile] Sending message with file, from:", fields.from_worker_id, "to:", fields.to_worker_id, "has file:", !!file, "token length:", token?.length);
   const fd = new FormData();
   fd.append("from_worker_id", fields.from_worker_id);
   fd.append("to_worker_id", fields.to_worker_id);
@@ -203,8 +219,10 @@ export async function tlSendMessageWithFile(
     headers: { Authorization: `Bearer ${token}` },
     body: fd,
   });
+  console.log("[tlSendMessageWithFile] Response status:", res.status, res.statusText);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    console.error("[tlSendMessageWithFile] Error:", (data as { error?: string }).error ?? res.statusText);
     throw new ApiError((data as { error?: string }).error ?? res.statusText, res.status);
   }
   return data as { message: TlMessage };

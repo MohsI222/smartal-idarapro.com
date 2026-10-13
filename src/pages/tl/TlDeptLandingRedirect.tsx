@@ -19,9 +19,13 @@ export function TlDeptLandingRedirect({ slug }: { slug: TlDeptSlug }) {
     );
   }
 
+  // Check both state and localStorage for token
+  const storedToken = typeof window !== "undefined" ? localStorage.getItem("idara_token") : null;
+  const hasToken = token || storedToken;
+
   const pwaQs = "?pwa=1";
   const target = `/dept/${slug}${pwaQs}`;
-  if (!token) {
+  if (!hasToken) {
     return <Navigate to={`/login?next=${encodeURIComponent(target)}`} replace />;
   }
   return <Navigate to={target} replace />;

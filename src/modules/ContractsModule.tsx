@@ -218,7 +218,7 @@ export function ContractsModule() {
       
       // Add proper styling to preserve line breaks
       clone.style.cssText = `
-        line-height: 2.5;
+        line-height: 1.4;
         color: #333;
         text-align: right;
         white-space: pre-wrap;
@@ -226,28 +226,28 @@ export function ContractsModule() {
         max-width: 100%;
         overflow-wrap: break-word;
       `;
-      
+
       // Process all elements to ensure proper spacing
       const allElements = clone.querySelectorAll('*');
       allElements.forEach(el => {
         const htmlEl = el as HTMLElement;
-        // Ensure block elements have proper spacing
+        // Ensure block elements have proper spacing (reduced to fit on one page)
         if (['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI'].includes(el.tagName)) {
-          htmlEl.style.marginBottom = '20px';
+          htmlEl.style.marginBottom = '8px';
           htmlEl.style.display = 'block';
           htmlEl.style.wordBreak = 'break-word';
         }
         // Ensure images are properly sized
         if (el.tagName === 'IMG') {
-          htmlEl.style.maxWidth = '200px';
-          htmlEl.style.maxHeight = '100px';
+          htmlEl.style.maxWidth = '150px';
+          htmlEl.style.maxHeight = '80px';
           htmlEl.style.display = 'block';
           htmlEl.style.margin = '0 auto';
         }
         // Add spacing to br elements
         if (el.tagName === 'BR') {
           htmlEl.style.display = 'block';
-          htmlEl.style.marginBottom = '10px';
+          htmlEl.style.marginBottom = '4px';
         }
       });
       
@@ -279,53 +279,53 @@ export function ContractsModule() {
               margin-bottom: 10px; 
               box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
-            .title { color: #667eea; font-size: 18px; font-weight: bold; margin: 0; }
-            .description { color: #666; margin-top: 5px; font-size: 10px; }
-            .status { display: inline-block; margin-top: 8px; padding: 4px 12px; border-radius: 15px; font-size: 10px; font-weight: bold; color: white; background: ${contract.status === 'signed' ? '#10b981' : contract.status === 'pending_signature' ? '#f59e0b' : '#6b7280'}; }
-            .content { 
+            .title { color: #667eea; font-size: 14px; font-weight: bold; margin: 0; }
+            .description { color: #666; margin-top: 3px; font-size: 8px; }
+            .status { display: inline-block; margin-top: 5px; padding: 2px 8px; border-radius: 10px; font-size: 8px; font-weight: bold; color: white; background: ${contract.status === 'signed' ? '#10b981' : contract.status === 'pending_signature' ? '#f59e0b' : '#6b7280'}; }
+            .content {
               background: white;
-              line-height: 1.5; 
-              color: #333; 
-              text-align: right; 
-              margin-bottom: 10px; 
-              padding: 12px;
-              border-radius: 8px;
+              line-height: 1.3;
+              color: #333;
+              text-align: right;
+              margin-bottom: 8px;
+              padding: 8px;
+              border-radius: 6px;
               box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-              white-space: pre-wrap; 
+              white-space: pre-wrap;
               word-wrap: break-word;
-              font-size: 10px;
+              font-size: 8px;
             }
-            .content p { margin-bottom: 6px; display: block; }
-            .content div { margin-bottom: 6px; display: block; }
-            .content h1, .content h2, .content h3, .content h4, .content h5, .content h6 { margin-bottom: 5px; display: block; color: #667eea; font-weight: bold; font-size: 11px; }
-            .content li { margin-bottom: 4px; display: list-item; }
-            .content img { max-width: 100px; max-height: 50px; display: block; margin: 0 auto; }
-            .content br { display: block; margin: 3px 0; }
-            .metadata { 
-              display: grid; 
-              grid-template-columns: 1fr 1fr; 
-              gap: 8px; 
-              padding: 10px; 
-              background: white; 
-              margin: 10px 0; 
-              border-radius: 8px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .metadata-item { margin-bottom: 5px; }
-            .metadata-label { color: #667eea; font-weight: bold; font-size: 9px; margin-bottom: 2px; }
-            .metadata-value { color: #333; font-size: 9px; }
-            .signatures { 
+            .content p { margin-bottom: 4px; display: block; }
+            .content div { margin-bottom: 4px; display: block; }
+            .content h1, .content h2, .content h3, .content h4, .content h5, .content h6 { margin-bottom: 3px; display: block; color: #667eea; font-weight: bold; font-size: 9px; }
+            .content li { margin-bottom: 2px; display: list-item; }
+            .content img { max-width: 80px; max-height: 40px; display: block; margin: 0 auto; }
+            .content br { display: block; margin: 2px 0; }
+            .metadata {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 6px;
+              padding: 8px;
               background: white;
-              padding: 12px; 
-              margin-top: 10px; 
-              border-radius: 8px;
+              margin: 8px 0;
+              border-radius: 6px;
               box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
-            .signature-item { 
-              background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); 
-              padding: 8px; 
-              margin-bottom: 8px; 
-              border-radius: 6px; 
+            .metadata-item { margin-bottom: 3px; }
+            .metadata-label { color: #667eea; font-weight: bold; font-size: 7px; margin-bottom: 1px; }
+            .metadata-value { color: #333; font-size: 7px; }
+            .signatures {
+              background: white;
+              padding: 8px;
+              margin-top: 8px;
+              border-radius: 6px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .signature-item {
+              background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+              padding: 6px;
+              margin-bottom: 6px;
+              border-radius: 4px;
               border: 1px solid #667eea;
             }
             .signature-info { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
@@ -523,244 +523,23 @@ export function ContractsModule() {
                 variant="outline"
                 onClick={() => {
                   try {
-                    // Create a print-friendly version
-                    const printWindow = window.open('', '_blank');
-                    if (!printWindow) {
-                      toast.error(t("contracts.printOpenError"));
+                    // Use browser's native print with current content
+                    const printContent = document.getElementById('contract-content');
+                    if (!printContent) {
+                      toast.error(t("contracts.contentNotFound"));
                       return;
                     }
 
-                    // Helper function to convert oklch to hex
-                    const convertOklchToHex = (color: string): string => {
-                      if (!color || typeof color !== 'string') return '#000000';
-                      if (color.startsWith('#') || color.startsWith('rgb')) return color;
-                      if (color.includes('oklch')) {
-                        const match = color.match(/oklch\(([\d.]+)/);
-                        if (match) {
-                          const l = parseFloat(match[1]);
-                          const gray = Math.round(l * 255);
-                          return `rgb(${gray}, ${gray}, ${gray})`;
-                        }
-                      }
-                      return '#000000';
-                    };
-
-                    // Get translations for print content
-                    const translations = {
-                      contractType: t("contracts.details.type"),
-                      startDate: t("contracts.details.starts"),
-                      endDate: t("contracts.details.ends"),
-                      expiresAt: t("contracts.details.expires"),
-                      signatures: t("contracts.signatures.title"),
-                      signerName: t("contracts.signatures.signerName"),
-                      signerEmail: t("contracts.signatures.signerEmail"),
-                      signerPhone: t("contracts.signatures.signerPhone"),
-                      signedAt: t("contracts.signatures.signedAt"),
-                      signature: t("contracts.signatures.signature"),
-                      smartContracts: "إدارة العقود الذكية",
-                      createdElectronically: "تم إنشاء هذا العقد إلكترونياً بتاريخ",
-                      ref: "Ref:"
-                    };
-
-                    // Create print content
-                    const printContent = `
-                      <!DOCTYPE html>
-                      <html dir="rtl">
-                      <head>
-                        <title>${contract.title}</title>
-                        <style>
-                          body {
-                            font-family: 'Arial', 'Helvetica', sans-serif;
-                            margin: 0;
-                            padding: 20px;
-                            direction: rtl;
-                          }
-                          .header {
-                            text-align: center;
-                            padding: 20px;
-                            border-bottom: 2px solid #667eea;
-                            margin-bottom: 20px;
-                          }
-                          .logo {
-                            max-width: 150px;
-                            max-height: 80px;
-                            margin-bottom: 15px;
-                          }
-                          .title {
-                            color: #667eea;
-                            font-size: 28px;
-                            font-weight: bold;
-                            margin: 0;
-                          }
-                          .description {
-                            color: #666;
-                            margin-top: 10px;
-                            font-size: 14px;
-                          }
-                          .content {
-                            padding: 20px;
-                            line-height: 1.8;
-                            color: #333;
-                            text-align: right;
-                          }
-                          .content h1, .content h2, .content h3 {
-                            color: #667eea;
-                            margin-top: 20px;
-                            margin-bottom: 10px;
-                            font-weight: bold;
-                          }
-                          .content p {
-                            margin-bottom: 15px;
-                            text-align: justify;
-                          }
-                          .metadata {
-                            display: grid;
-                            grid-template-columns: 1fr 1fr;
-                            gap: 15px;
-                            padding: 20px;
-                            background: #f5f5f5;
-                            margin: 20px 0;
-                            border-radius: 8px;
-                          }
-                          .metadata-item {
-                            margin-bottom: 10px;
-                          }
-                          .metadata-label {
-                            color: #667eea;
-                            font-weight: bold;
-                            font-size: 12px;
-                            margin-bottom: 5px;
-                          }
-                          .metadata-value {
-                            color: #333;
-                            font-size: 14px;
-                          }
-                          .signatures {
-                            padding: 20px;
-                            margin-top: 20px;
-                          }
-                          .signature-item {
-                            background: #f5f5f5;
-                            padding: 15px;
-                            margin-bottom: 15px;
-                            border-radius: 8px;
-                            border: 1px solid #ddd;
-                          }
-                          .signature-info {
-                            display: grid;
-                            grid-template-columns: 1fr 1fr;
-                            gap: 10px;
-                            margin-bottom: 15px;
-                          }
-                          .signature-img {
-                            max-width: 300px;
-                            height: auto;
-                            border: 1px solid #667eea;
-                            border-radius: 8px;
-                            background: white;
-                            padding: 10px;
-                          }
-                          .footer {
-                            text-align: center;
-                            padding: 20px;
-                            margin-top: 20px;
-                            color: #666;
-                            font-size: 12px;
-                            border-top: 1px solid #ddd;
-                          }
-                          @media print {
-                            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                          }
-                        </style>
-                      </head>
-                      <body>
-                        <div class="header">
-                          ${contract.logo_url ? `<img src="${contract.logo_url}" class="logo" alt="شعار">` : ''}
-                          <h1 class="title">${contract.title}</h1>
-                          ${contract.description ? `<p class="description">${contract.description}</p>` : ''}
-                        </div>
-                        <div class="content">
-                          ${selectedContract.content}
-                        </div>
-                        <div class="metadata">
-                          <div class="metadata-item">
-                            <div class="metadata-label">${translations.contractType}</div>
-                            <div class="metadata-value">${CONTRACT_TYPE_LABELS[contract.contract_type]}</div>
-                          </div>
-                          ${contract.start_date ? `
-                          <div class="metadata-item">
-                            <div class="metadata-label">${translations.startDate}</div>
-                            <div class="metadata-value">${new Date(contract.start_date).toLocaleDateString('ar-MA')}</div>
-                          </div>
-                          ` : ''}
-                          ${contract.end_date ? `
-                          <div class="metadata-item">
-                            <div class="metadata-label">${translations.endDate}</div>
-                            <div class="metadata-value">${new Date(contract.end_date).toLocaleDateString('ar-MA')}</div>
-                          </div>
-                          ` : ''}
-                          ${contract.expires_at ? `
-                          <div class="metadata-item">
-                            <div class="metadata-label">${translations.expiresAt}</div>
-                            <div class="metadata-value">${new Date(contract.expires_at).toLocaleDateString('ar-MA')}</div>
-                          </div>
-                          ` : ''}
-                        </div>
-                        ${signatures.length > 0 ? `
-                        <div class="signatures">
-                          <h2 style="color: #667eea; font-size: 24px; font-weight: bold; margin-bottom: 20px; text-align: center;">${translations.signatures}</h2>
-                          ${signatures.map(sig => `
-                            <div class="signature-item">
-                              <div class="signature-info">
-                                <div>
-                                  <div class="metadata-label">${translations.signerName}</div>
-                                  <div class="metadata-value">${sig.signer_name}</div>
-                                </div>
-                                <div>
-                                  <div class="metadata-label">${translations.signerEmail}</div>
-                                  <div class="metadata-value">${sig.signer_email}</div>
-                                </div>
-                                ${sig.signer_phone ? `
-                                <div>
-                                  <div class="metadata-label">${translations.signerPhone}</div>
-                                  <div class="metadata-value">${sig.signer_phone}</div>
-                                </div>
-                                ` : ''}
-                                <div>
-                                  <div class="metadata-label">${translations.signedAt}</div>
-                                  <div class="metadata-value">${new Date(sig.signed_at).toLocaleString('ar-MA')}</div>
-                                </div>
-                              </div>
-                              ${sig.signature_data ? `<img src="${sig.signature_data}" class="signature-img" alt="${translations.signature}">` : ''}
-                            </div>
-                          `).join('')}
-                        </div>
-                        ` : ''}
-                        <div class="footer">
-                          <div style="color: #667eea; font-weight: bold; margin-bottom: 5px;">${translations.smartContracts}</div>
-                          <div>${translations.createdElectronically} ${new Date().toLocaleDateString('ar-MA')}</div>
-                          <div style="margin-top: 5px;">${translations.ref} ${contract.id} | ${new Date(contract.created_at).toLocaleDateString('ar-MA')}</div>
-                        </div>
-                      </body>
-                      </html>
-                    `;
-
-                    printWindow.document.write(printContent);
-                    printWindow.document.close();
-                    
-                    // Wait for content to load then print
-                    printWindow.onload = () => {
-                      setTimeout(() => {
-                        printWindow.print();
-                      }, 500);
-                    };
+                    // Print the current page
+                    window.print();
+                    toast.success(t("contracts.printSuccess"));
                   } catch (error) {
                     console.error("Print error:", error);
-                    toast.error("فشل فتح نافذة الطباعة");
+                    toast.error(t("contracts.printError"));
                   }
                 }}
               >
-                <Eye className="h-4 w-4 ml-2" />
+                <Download className="h-4 w-4 ml-2" />
                 {t("contracts.print")}
               </Button>
               {selectedContract.status === "draft" && (
@@ -1165,8 +944,6 @@ export function ContractsModule() {
           </Dialog>
         </div>
       </div>
-
-      {contracts.length === 0 ? (
 
       {contracts.length === 0 ? (
         <Card>

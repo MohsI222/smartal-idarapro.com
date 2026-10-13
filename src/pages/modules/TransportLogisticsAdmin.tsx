@@ -146,17 +146,15 @@ export function TransportLogisticsAdmin() {
     return () => clearInterval(interval);
   }, [reload]);
 
-  /** رابط يمر عبر تسجيل الدخول ثم يوجّه للقسم مع الرمز السحري — صالح للأجهزة الجديدة */
+  /** رابط مباشر للقسم مع الرمز السحري — يفتح مباشرة بدون طلب تسجيل الدخول */
   const magicLoginUrl = (w: TlWorker) => {
     const base = typeof window !== 'undefined' ? window.location.origin : getPublicOrigin();
-    const target = `/dept/${w.department}?magic=${encodeURIComponent(w.magic_token ?? "")}&pwa=1`;
-    return `${base}/login?next=${encodeURIComponent(target)}`;
+    return `${base}/dept/${w.department}?magic=${encodeURIComponent(w.magic_token ?? "")}&pwa=1`;
   };
 
   const magicRegisterUrl = (w: TlWorker) => {
     const base = typeof window !== 'undefined' ? window.location.origin : getPublicOrigin();
-    const target = `/dept/${w.department}?magic=${encodeURIComponent(w.magic_token ?? "")}&pwa=1`;
-    return `${base}/register?next=${encodeURIComponent(target)}`;
+    return `${base}/dept/${w.department}?magic=${encodeURIComponent(w.magic_token ?? "")}&pwa=1`;
   };
 
   const copyMagic = async (w: TlWorker) => {

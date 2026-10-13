@@ -90,13 +90,14 @@ function statusPill(
   );
 }
 
-export function TlDepartmentPage() {
+export function TlDepartmentPage({ dept: deptProp }: { dept?: string } = {}) {
   useGlobalDomDigitLatinize(true);
-  const { dept } = useParams<{ dept: string }>();
+  const { dept: deptParam } = useParams<{ dept: string }>();
+  const dept = deptProp || deptParam;
   const [search] = useSearchParams();
   const magicParam = search.get("magic");
   const pwaInvite = search.get("pwa") === "1";
-  const { token, approvedModules, user } = useAuth();
+  const { token, approvedModules, user, setToken } = useAuth();
   const { t, isRtl, locale } = useI18n();
   const { install, canNativeInstall, installed } = usePwaInstall();
   const [workers, setWorkers] = useState<TlWorker[]>([]);
@@ -258,14 +259,18 @@ export function TlDepartmentPage() {
       void fetch(`/api/tl/standalone-validate?token=${magicParam}`)
         .then((r) => r.json())
         .then((r) => {
-          if (r?.success && r?.worker && r.worker.department === slug) setCtxWorker(r.worker);
+          if (r?.success && r?.worker && r.worker.department === slug) {
+            setCtxWorker(r.worker);
+            // DO NOT save magic token to AuthContext - it conflicts with normal JWT
+            // Magic links should use their own token from URL param only
+          }
         })
         .catch(() => {
           /* ignore */
         });
       return;
     }
-    
+
     // Normal authenticated flow
     if (!token || !magicParam || !slug) return;
     void tlResolveMagic(magicParam, token)
@@ -655,7 +660,9 @@ export function TlDepartmentPage() {
   };
 
   const sendMsg = async () => {
-    if (!token || !effectiveSender || !msgTo) return;
+    // For magic links, use magicToken directly instead of JWT token
+    const effectiveToken = magicParam || token;
+    if (!effectiveToken || !effectiveSender || !msgTo) return;
     if (!msgBody.trim() && !pendingFile) {
       toast.error(t("tl.msgNeedTextOrFile"));
       return;
@@ -663,18 +670,19 @@ export function TlDepartmentPage() {
     try {
       if (pendingFile) {
         await tlSendMessageWithFile(
-          token,
+          effectiveToken,
           { from_worker_id: effectiveSender.id, to_worker_id: msgTo, body: msgBody },
           pendingFile
         );
         setPendingFile(null);
       } else {
-        await tlSendMessage(token, { from_worker_id: effectiveSender.id, to_worker_id: msgTo, body: msgBody });
+        await tlSendMessage(effectiveToken, { from_worker_id: effectiveSender.id, to_worker_id: msgTo, body: msgBody }, !!magicParam);
       }
       setMsgBody("");
       toast.success(t("tl.msgSent"));
       void loadMessages();
-    } catch {
+    } catch (error) {
+      console.error("[TlDepartmentPage] Send message error:", error);
       toast.error(t("tl.msgErr"));
     }
   };
@@ -820,7 +828,8 @@ export function TlDepartmentPage() {
                     variant="outline"
                     className="gap-1"
                     onClick={() => void (async () => {
-                      if (!token || !slug) return;
+                      if (!slug) return;
+                      // Excel export doesn't need auth, works for both magic and normal
                       try {
                         await exportCurrentGridExcel({
                           isVehicle,
@@ -844,9 +853,13 @@ export function TlDepartmentPage() {
                     variant="outline"
                     className="gap-1"
                     onClick={() => void (async () => {
-                      if (!token || !slug) return;
+                      if (!slug) return;
+                      // For magic links, we don't need token - magicToken is passed directly
+                      if (!magicParam && !token) return;
                       try {
-                        const inc = await tlIncidents(token);
+                        const inc = magicParam 
+                          ? { incidents: [] } // Magic links use standalone incidents endpoint if needed
+                          : await tlIncidents(token);
                         await exportCurrentGridPdf({
                           direction: isRtl ? "rtl" : "ltr",
                           lang: locale,
@@ -857,6 +870,7 @@ export function TlDepartmentPage() {
                           t,
                           fileBase: "tl-work-report",
                           userId: user?.id,
+                          magicToken: magicParam || undefined,
                         });
                         toast.success(t("tl.pdfDone"));
                       } catch {
@@ -1193,7 +1207,8 @@ export function TlDepartmentPage() {
                 variant="outline"
                 className="gap-1"
                 onClick={() => void (async () => {
-                  if (!token || !slug) return;
+                  if (!slug) return;
+                  // Excel export doesn't need auth, works for both magic and normal
                   try {
                     await exportCurrentGridExcel({
                       isVehicle: true,
@@ -1217,9 +1232,12 @@ export function TlDepartmentPage() {
                 variant="outline"
                 className="gap-1"
                 onClick={() => void (async () => {
-                  if (!token || !slug) return;
+                  if (!slug) return;
+                  if (!magicParam && !token) return;
                   try {
-                    const inc = await tlIncidents(token);
+                    const inc = magicParam
+                      ? { incidents: [] }
+                      : await tlIncidents(token);
                     await exportCurrentGridPdf({
                       direction: isRtl ? "rtl" : "ltr",
                       lang: locale,
@@ -1229,6 +1247,7 @@ export function TlDepartmentPage() {
                       incidents: inc.incidents,
                       t,
                       fileBase: "tl-vehicles-report",
+                      magicToken: magicParam || undefined,
                     });
                     toast.success(t("tl.pdfDone"));
                   } catch {
@@ -1471,8 +1490,12 @@ export function TlDepartmentPage() {
                 variant="outline"
                 className="gap-1"
                 onClick={() => void (async () => {
+                  if (!slug) return;
+                  if (!magicParam && !token) return;
                   try {
-                    const inc = token ? await tlIncidents(token) : { incidents: [] };
+                    const inc = magicParam
+                      ? { incidents: [] }
+                      : await tlIncidents(token);
                     await exportCurrentGridPdf({
                       direction: isRtl ? "rtl" : "ltr",
                       lang: locale,
@@ -1483,6 +1506,7 @@ export function TlDepartmentPage() {
                       t,
                       fileBase: "tl-ops-report",
                       userId: user?.id,
+                      magicToken: magicParam || undefined,
                     });
                     toast.success(t("tl.pdfDone"));
                   } catch {

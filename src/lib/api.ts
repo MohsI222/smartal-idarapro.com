@@ -126,7 +126,14 @@ export async function api<T>(
   path: string,
   init?: RequestInit & { token?: string | null }
 ): Promise<T> {
-  const { token, ...rest } = init ?? {};
+  const { token: explicitToken, ...rest } = init ?? {};
+  
+  // Auto-read token from localStorage if not explicitly provided
+  let token = explicitToken;
+  if (!token && typeof window !== "undefined") {
+    token = localStorage.getItem("idara_token");
+  }
+  
   const headers: HeadersInit = {
     "Content-Type": "application/json",
     ...(rest.headers ?? {}),

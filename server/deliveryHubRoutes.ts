@@ -1006,4 +1006,30 @@ export function registerDeliveryHubRoutes(app: express.Application, authMiddlewa
       res.status(500).json({ error: "فشل تحميل المنتجات" });
     }
   });
+
+  // Public endpoint to fetch products for a store by store_id (for stock alerts - no auth required)
+  app.get("/api/delivery-hub/products/public", async (req, res) => {
+    try {
+      const storeId = req.query.store_id as string;
+      if (!storeId) {
+        res.status(400).json({ error: "store_id is required" });
+        return;
+      }
+
+      console.log("[delivery-hub/products/public] Fetching products for store_id:", storeId);
+
+      // Fetch products for this store (including out-of-stock for alerts)
+      const products = await db.prepare(`
+        SELECT * FROM public.delivery_hub_products
+        WHERE store_id = ?
+        ORDER BY sort_order ASC
+      `).all(storeId);
+
+      console.log("[delivery-hub/products/public] Found products:", products?.length || 0);
+      res.json({ products: products || [] });
+    } catch (error) {
+      console.error("[delivery-hub/products/public] Error:", error);
+      res.status(500).json({ error: "فشل تحميل المنتجات" });
+    }
+  });
 }

@@ -18,6 +18,7 @@ import multer from "multer";
 import fs from "node:fs";
 
 import { getUploadDir } from "./paths.js";
+import { db } from "./db.js";
 import {
   MOROCCAN_DOCUMENT_CLASS_LABELS_AR,
   MOROCCAN_INSTITUTION_LABELS_AR,
@@ -543,6 +544,55 @@ export function registerBackendServices(
       res.json({ html });
     } catch (e) {
       console.error("[backend/print-html]", e);
+      res.status(500).json({ error: "فشل توليد وثيقة الطباعة" });
+    }
+  });
+
+  // Magic token version for standalone transport/logistics access
+  app.post("/api/backend/print-html-magic", async (req: Request, res: Response) => {
+    const { token } = req.query as { token?: string };
+    if (!token) {
+      res.status(400).json({ error: "token_required" });
+      return;
+    }
+    
+    // Verify magic token exists in tl_workers
+    const w = await db
+      .prepare(`SELECT * FROM tl_workers WHERE magic_token = ?`)
+      .get(token) as any | undefined;
+    if (!w) {
+      res.status(404).json({ error: "invalid_token" });
+      return;
+    }
+
+    const body = req.body as {
+      direction?: "rtl" | "ltr";
+      lang?: string;
+      kingdomLine?: string;
+      sectionTitle?: string;
+      mainTitle?: string;
+      innerHtml?: string;
+      mode?: "official" | "platform" | "creative";
+      logoDataUrl?: string;
+    };
+    if (!body?.innerHtml) {
+      res.status(400).json({ error: "innerHtml required" });
+      return;
+    }
+    try {
+      const html = await buildEmbeddedPrintHtml({
+        direction: body.direction ?? "rtl",
+        lang: body.lang ?? "ar",
+        kingdomLine: body.kingdomLine ?? "المملكة المغربية",
+        sectionTitle: body.sectionTitle ?? "",
+        mainTitle: body.mainTitle,
+        innerHtml: body.innerHtml,
+        mode: body.mode ?? "official",
+        logoDataUrl: body.logoDataUrl,
+      });
+      res.json({ html });
+    } catch (e) {
+      console.error("[backend/print-html-magic]", e);
       res.status(500).json({ error: "فشل توليد وثيقة الطباعة" });
     }
   });

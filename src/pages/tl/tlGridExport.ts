@@ -106,16 +106,25 @@ export async function exportCurrentGridPdf(opts: {
   t: (k: string) => string;
   fileBase: string;
   userId?: string;
+  magicToken?: string;
 }) {
-  await exportTlErpPdf({
-    direction: opts.direction,
-    lang: opts.lang,
-    title: opts.title,
-    vehicles: opts.vehicles,
-    ops: opts.ops,
-    incidents: opts.incidents,
-    t: opts.t,
-    fileName: `${opts.fileBase}-${Date.now()}.pdf`,
-    userId: opts.userId,
-  });
+  console.log("[exportCurrentGridPdf] Starting PDF export, title:", opts.title, "userId:", opts.userId, "magicToken:", !!opts.magicToken, "vehicles:", opts.vehicles.length, "ops:", opts.ops.length);
+  try {
+    await exportTlErpPdf({
+      direction: opts.direction,
+      lang: opts.lang,
+      title: opts.title,
+      vehicles: opts.vehicles,
+      ops: opts.ops,
+      incidents: opts.incidents,
+      t: opts.t,
+      fileName: `${opts.fileBase}-${Date.now()}.pdf`,
+      userId: opts.userId,
+      magicToken: opts.magicToken,
+    });
+    console.log("[exportCurrentGridPdf] PDF export completed successfully");
+  } catch (error) {
+    console.error("[exportCurrentGridPdf] PDF export failed:", error);
+    throw error;
+  }
 }
