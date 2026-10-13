@@ -45,7 +45,7 @@ export async function initializeSupabaseStorage() {
         
         // Enable public access policy
         try {
-          const { error: policyError } = await supabase.storage.from(BUCKET_NAME).createSignedUrl('test', 60);
+          await supabase.storage.from(BUCKET_NAME).createSignedUrl('test', 60);
           // This will fail if bucket doesn't have proper policies, but bucket is public so it should work
           console.log('[Supabase Storage] Bucket is public, no additional policies needed');
         } catch (e) {

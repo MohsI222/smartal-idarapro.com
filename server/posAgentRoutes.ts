@@ -1196,7 +1196,7 @@ router.post("/standalone-sales/bulk-delete", async (req, res) => {
 });
 
 // OPTIONS /api/pos-agent/upload-file - Handle CORS preflight
-router.options("/upload-file", async (req, res) => {
+router.options("/upload-file", async (_req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -1269,7 +1269,7 @@ router.post("/upload-file", async (req, res) => {
     // Upload to Supabase Storage
     const { uploadFile } = await import('./supabaseStorage.js');
     console.log("[POS Agent] Uploading to:", file_path);
-    const publicUrl = await uploadFile(buffer, file_path, file_type);
+    const publicUrl = await uploadFile(buffer, file_path || 'unknown', file_type || 'application/octet-stream');
     console.log("[POS Agent] Upload SUCCESS, URL:", publicUrl);
 
     res.json({
@@ -1283,7 +1283,7 @@ router.post("/upload-file", async (req, res) => {
 });
 
 // Handle OPTIONS preflight
-router.options("/upload-file", (req, res) => {
+router.options("/upload-file", (_req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');

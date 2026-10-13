@@ -5888,6 +5888,8 @@ app.post("/api/tts", async (_req, res) => {
 });
 
 /** Media Library API - إدارة الفيديوهات والصور */
+// Note: mediaUpload is reserved for future use
+/*
 const mediaUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
@@ -5906,7 +5908,7 @@ const mediaUpload = multer({
       'video/x-msvideo',
       'video/x-matroska'
     ];
-    
+
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -5914,6 +5916,7 @@ const mediaUpload = multer({
     }
   }
 });
+*/
 
 // جلب جميع الفيديوهات والصور
 app.get("/api/media-library", authMiddleware, async (req, res) => {
