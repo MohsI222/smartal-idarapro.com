@@ -107,6 +107,9 @@ router.post("/generate-token", async (req, res) => {
       return;
     }
 
+    // SECURITY: Log who is generating the token
+    console.log("[POS Agent] SECURITY: Token being generated for user_id:", userId);
+
     // Generate unique token
     const token = generateSecureToken();
     console.log("[POS Agent] generate-token - Generated token:", token);
@@ -367,17 +370,30 @@ router.post("/session", async (req, res) => {
        WHERE id = ?`
     ).run(employee_id, tokenData.id);
 
-    // Get employee details from tl_workers (same table as standalone-employees)
+    // SECURITY: Get employee details and verify ownership
+    // Employee must belong to the same user_id as the token
     const employee = await db.prepare(
-      `SELECT id, employee_id, full_name as name, role_title as role, department
+      `SELECT id, employee_id, full_name as name, role_title as role, department, user_id
        FROM tl_workers
        WHERE employee_id = ? AND user_id = ?`
     ).get(employee_id, (tokenData as any).user_id);
 
-    console.log("[POS Agent] Employee found:", employee);
+    console.log("[POS Agent] SECURITY: Employee lookup for employee_id:", employee_id, "user_id:", (tokenData as any).user_id);
+    console.log("[POS Agent] SECURITY: Employee found:", employee);
 
     if (!employee) {
-      res.status(404).json({ error: "Employee not found" });
+      console.error("[POS Agent] SECURITY: Employee not found or doesn't belong to token owner");
+      res.status(404).json({ error: "Employee not found or unauthorized" });
+      return;
+    }
+
+    // Double-check: employee.user_id must match token.user_id
+    if (employee.user_id !== (tokenData as any).user_id) {
+      console.error("[POS Agent] SECURITY VIOLATION: Employee user_id mismatch!", {
+        token_user_id: (tokenData as any).user_id,
+        employee_user_id: employee.user_id
+      });
+      res.status(403).json({ error: "Unauthorized: Employee does not belong to your account" });
       return;
     }
 
@@ -729,13 +745,16 @@ router.get("/standalone-employees", async (req, res) => {
       return;
     }
 
-    // Load all TL workers (all departments)
+    // SECURITY: Load only TL workers belonging to the token's user_id
+    // This prevents users from accessing other accounts' employees
     const employees = await db.prepare(
       `SELECT id, employee_id as employee_id, full_name as name, role_title as role, department
        FROM tl_workers
        WHERE user_id = ?
        ORDER BY full_name ASC`
     ).all((tokenData as any).user_id);
+
+    console.log("[POS Agent] SECURITY: Loaded employees for user_id:", (tokenData as any).user_id, "Count:", employees.length);
 
     res.json({ success: true, employees: employees || [] });
   } catch (error) {
