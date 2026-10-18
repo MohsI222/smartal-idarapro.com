@@ -157,12 +157,18 @@ export function PosAgentApp() {
         return;
       }
 
-      // SECURITY FIX: Clear all POS agent localStorage to prevent cross-account contamination
-      // This ensures we only use the token from the URL, not from a previous session
-      console.log("[PosAgentApp] SECURITY: Clearing all POS agent localStorage entries");
+      // SECURITY FIX: Clear only POS agent SESSION localStorage to prevent cross-account contamination
+      // This ensures we only clear session tokens, NOT settings like logo, store name, etc.
+      console.log("[PosAgentApp] SECURITY: Clearing POS agent session localStorage entries");
       Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('pos_agent_') || key.startsWith('pos_session_')) {
+        // Only clear session-related keys, not settings
+        if (key.startsWith('pos_agent_') && key.includes(sessionToken)) {
           console.log("[PosAgentApp] SECURITY: Removing localStorage key:", key);
+          localStorage.removeItem(key);
+        }
+        // Clear session tokens
+        if (key.startsWith('pos_session_')) {
+          console.log("[PosAgentApp] SECURITY: Removing session key:", key);
           localStorage.removeItem(key);
         }
       });
