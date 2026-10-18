@@ -734,6 +734,16 @@ router.get("/standalone-employees", async (req, res) => {
        WHERE token = ? AND is_active = 1`
     ).get(token);
 
+    console.log("[POS Agent] SECURITY DEBUG: Token validation result:", {
+      token: token?.substring(0, 20),
+      tokenData: tokenData ? {
+        id: (tokenData as any).id,
+        user_id: (tokenData as any).user_id,
+        is_active: (tokenData as any).is_active,
+        expires_at: (tokenData as any).expires_at
+      } : null
+    });
+
     if (!tokenData) {
       res.status(404).json({ error: "Invalid or inactive token" });
       return;
@@ -745,16 +755,22 @@ router.get("/standalone-employees", async (req, res) => {
       return;
     }
 
+    const userIdToUse = (tokenData as any).user_id;
+    console.log("[POS Agent] SECURITY DEBUG: Using user_id for employee query:", userIdToUse);
+
     // SECURITY: Load only TL workers belonging to the token's user_id
     // This prevents users from accessing other accounts' employees
     const employees = await db.prepare(
-      `SELECT id, employee_id as employee_id, full_name as name, role_title as role, department
+      `SELECT id, employee_id as employee_id, full_name as name, role_title as role, department, user_id
        FROM tl_workers
        WHERE user_id = ?
        ORDER BY full_name ASC`
-    ).all((tokenData as any).user_id);
+    ).all(userIdToUse);
 
-    console.log("[POS Agent] SECURITY: Loaded employees for user_id:", (tokenData as any).user_id, "Count:", employees.length);
+    console.log("[POS Agent] SECURITY: Loaded employees for user_id:", userIdToUse, "Count:", employees.length);
+    if (employees.length > 0) {
+      console.log("[POS Agent] SECURITY: First employee user_id:", (employees[0] as any).user_id);
+    }
 
     res.json({ success: true, employees: employees || [] });
   } catch (error) {

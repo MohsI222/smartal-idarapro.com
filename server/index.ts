@@ -99,48 +99,38 @@ async function migrateDeliveryHubStockFields() {
 
 async function migrateDeliveryHubStoreFields() {
   try {
-    // Check if address column exists in delivery_hub_stores
-    const addressCheck = await db.prepare(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'delivery_hub_stores' 
-      AND column_name = 'address'
-    `).get();
-    
-    if (!addressCheck) {
-      console.log("[Migration] Adding missing columns to delivery_hub_stores table...");
-      await db.prepare(`
-        ALTER TABLE public.delivery_hub_stores 
-        ADD COLUMN address TEXT
-      `).run();
-      await db.prepare(`
-        ALTER TABLE public.delivery_hub_stores 
-        ADD COLUMN city TEXT
-      `).run();
-      await db.prepare(`
-        ALTER TABLE public.delivery_hub_stores 
-        ADD COLUMN country TEXT
-      `).run();
-      await db.prepare(`
-        ALTER TABLE public.delivery_hub_stores 
-        ADD COLUMN phone TEXT
-      `).run();
-      await db.prepare(`
-        ALTER TABLE public.delivery_hub_stores 
-        ADD COLUMN whatsapp TEXT
-      `).run();
-      await db.prepare(`
-        ALTER TABLE public.delivery_hub_stores 
-        ADD COLUMN logo_url TEXT
-      `).run();
-      await db.prepare(`
-        ALTER TABLE public.delivery_hub_stores 
-        ADD COLUMN promo_video_url TEXT
-      `).run();
-      console.log("[Migration] Missing columns added to delivery_hub_stores successfully");
-    } else {
-      console.log("[Migration] delivery_hub_stores columns already exist");
+    // Check each column individually and add only missing ones
+    const columnsToAdd = [
+      { name: 'address', type: 'TEXT' },
+      { name: 'city', type: 'TEXT' },
+      { name: 'country', type: 'TEXT' },
+      { name: 'phone', type: 'TEXT' },
+      { name: 'whatsapp', type: 'TEXT' },
+      { name: 'logo_url', type: 'TEXT' },
+      { name: 'promo_video_url', type: 'TEXT' }
+    ];
+
+    for (const col of columnsToAdd) {
+      const check = await db.prepare(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'delivery_hub_stores' 
+        AND column_name = ?
+      `).get(col.name);
+      
+      if (!check) {
+        console.log(`[Migration] Adding column ${col.name} to delivery_hub_stores...`);
+        await db.prepare(`
+          ALTER TABLE public.delivery_hub_stores 
+          ADD COLUMN ${col.name} ${col.type}
+        `).run();
+        console.log(`[Migration] Column ${col.name} added successfully`);
+      } else {
+        console.log(`[Migration] Column ${col.name} already exists`);
+      }
     }
+    
+    console.log("[Migration] delivery_hub_stores migration completed");
   } catch (error: any) {
     console.error("[Migration] Error adding delivery_hub_stores columns:", error.message);
     // Don't throw - allow app to start even if migration fails
