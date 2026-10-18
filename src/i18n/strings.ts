@@ -341,7 +341,7 @@ const arMA: Dict = {
   "plan.librariesPlus.blurb":
     "599 درهم/شهر أو 5000 درهم/سنة — كل أقسام الخطة مفتوحة بما فيها رادار التأشيرة والمخزون والمالية. / All plan modules unlocked including visa radar, inventory & accounting.",
   "plan.retail": "البقال والمحلات التجارية — الباقة العادية / Retail shops — Basic",
-  "plan.retail.blurb": "399 درهم/شهر أو 3830 درهم/سنة — مخزون ومبيعات ومالية ومعاهد. / Stock, sales, finance & institutes tools.",
+  "plan.retail.blurb": "399 درهم/شهر أو 3830 درهم/سنة — مخزون ومبيعات ومالية ومعاهد والنقل واللوجستيك. / Stock, sales, finance, institutes & transport logistics.",
   "plan.retailPro": "البقال والمحلات التجارية — الباقة برو / Retail shops — Pro",
   "plan.retailPro.blurb": "799 درهم/شهر أو 7670 درهم/سنة — كل ما في الباقة العادية + رادار الطلبات والتوصيل + السيارات والعقارات + النقل واللوجستيك + العقود والتوقيعات الالكترونية. / All in Basic plan + delivery hub + cars & real estate + transport & logistics + contracts & e-signatures.",
   "plan.deliveryHubOnly": "رادار الطلبات والتوصيل — خطة خاصة / Delivery Hub — Standalone",
@@ -2496,7 +2496,7 @@ const en: Dict = {
   "plan.librariesPlus.blurb":
     "599 DH/month or 5000 DH/year — all plan modules unlocked including visa radar, inventory & accounting.",
   "plan.retail": "Retail & grocery shops — Basic",
-  "plan.retail.blurb": "399 DH/month or 3830 DH/year — stock, sales, finance & institutes.",
+  "plan.retail.blurb": "399 DH/month or 3830 DH/year — stock, sales, finance, institutes & transport logistics.",
   "plan.retailPro": "Retail & grocery shops — Pro",
   "plan.retailPro.blurb": "799 DH/month or 7670 DH/year — all in Basic plan + delivery hub + cars & real estate + transport & logistics + contracts & e-signatures.",
   "plan.deliveryHubOnly": "Delivery Hub — Standalone",

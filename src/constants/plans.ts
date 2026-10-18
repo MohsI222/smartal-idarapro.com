@@ -110,7 +110,7 @@ export const PLAN_OPTIONS: PlanOption[] = [
     priceMonthlyDh: 399,
     priceYearlyDh: 3830,
     accent: "emerald",
-    modules: ["inventory", "acc", "members", "chat"],
+    modules: ["inventory", "acc", "members", "chat", "transport_logistics"],
   },
   {
     id: "retail_pro",
