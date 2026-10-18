@@ -143,20 +143,20 @@ async function ensureStoreForOwner(ownerId: string) {
           "متجر تجريبي",
           "متجر تجريبي لقسم رادار الطلبات والتوصيل",
           slug,
-          "",
-          "",
-          "",
-        "",
-        "",
-        FALLBACK_IMAGES.banner,
-        "",
-        "",
-        "",
-        "",
-        "",
-        new Date().toISOString(),
-        new Date().toISOString()
-      );
+          "",  // phone
+          "",  // whatsapp
+          "",  // address
+          "",  // city
+          "",  // country
+          FALLBACK_IMAGES.banner,  // banner_url
+          "",  // logo_url
+          "",  // facebook_url
+          "",  // instagram_url
+          "",  // tiktok_url
+          "",  // custom_domain
+          new Date().toISOString(),
+          new Date().toISOString()
+        );
       console.log("[ensureStoreForOwner] Created new store:", storeId);
       const newStore = await db.prepare(`SELECT * FROM public.delivery_hub_stores WHERE id = ?`).get(storeId);
       if (newStore) {

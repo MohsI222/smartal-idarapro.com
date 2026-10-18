@@ -97,6 +97,56 @@ async function migrateDeliveryHubStockFields() {
   }
 }
 
+async function migrateDeliveryHubStoreFields() {
+  try {
+    // Check if address column exists in delivery_hub_stores
+    const addressCheck = await db.prepare(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name = 'delivery_hub_stores' 
+      AND column_name = 'address'
+    `).get();
+    
+    if (!addressCheck) {
+      console.log("[Migration] Adding missing columns to delivery_hub_stores table...");
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_stores 
+        ADD COLUMN address TEXT
+      `).run();
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_stores 
+        ADD COLUMN city TEXT
+      `).run();
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_stores 
+        ADD COLUMN country TEXT
+      `).run();
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_stores 
+        ADD COLUMN phone TEXT
+      `).run();
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_stores 
+        ADD COLUMN whatsapp TEXT
+      `).run();
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_stores 
+        ADD COLUMN logo_url TEXT
+      `).run();
+      await db.prepare(`
+        ALTER TABLE public.delivery_hub_stores 
+        ADD COLUMN promo_video_url TEXT
+      `).run();
+      console.log("[Migration] Missing columns added to delivery_hub_stores successfully");
+    } else {
+      console.log("[Migration] delivery_hub_stores columns already exist");
+    }
+  } catch (error: any) {
+    console.error("[Migration] Error adding delivery_hub_stores columns:", error.message);
+    // Don't throw - allow app to start even if migration fails
+  }
+}
+
 async function migratePosAgentCheckFields() {
   try {
     // Check if check_number column exists
@@ -6551,6 +6601,7 @@ if (!process.env.VERCEL) {
     try {
       await initDatabase();
       await migrateDeliveryHubStockFields();
+      await migrateDeliveryHubStoreFields();
       await migratePosAgentCheckFields();
       await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
       app.listen(PORT, () => {
