@@ -96,8 +96,14 @@ export async function uploadFile(
 
     console.log('[Supabase Storage] Public URL:', publicUrlData.publicUrl);
     return publicUrlData.publicUrl;
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Supabase Storage] Upload error:', error);
+
+    // Check if it's a quota error
+    if (error?.status === 402 || error?.message?.includes('exceed_egress_quota')) {
+      throw new Error('تجاوز مشروع Supabase حد التخزين. يرجى الذهاب إلى Supabase Dashboard > Settings > Billing ورفع الـ spend cap أو ترقية الخطة. / Supabase project exceeded storage quota. Please go to Supabase Dashboard > Settings > Billing to remove spend cap or upgrade plan.');
+    }
+
     throw error;
   }
 }
