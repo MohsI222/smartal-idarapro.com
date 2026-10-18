@@ -157,36 +157,19 @@ export function PosAgentApp() {
         return;
       }
 
-      // Try to restore session from localStorage
-      const savedSession = localStorage.getItem(`pos_agent_${sessionToken}`);
-      if (savedSession) {
-        try {
-          const sessionData = JSON.parse(savedSession);
-          console.log("[PosAgentApp] Restored session from localStorage:", sessionData);
-          console.log("[PosAgentApp] Employee data:", sessionData.employee);
-          console.log("[PosAgentApp] Employee ID:", sessionData.employee?.employee_id || sessionData.employee_id);
-
-          // Use employee_id from either the employee object or the session data
-          const employeeId = sessionData.employee?.employee_id || sessionData.employee_id;
-          if (sessionData.employee && employeeId) {
-            setCurrentEmployee(sessionData.employee);
-            setSelectedEmployeeId(employeeId);
-            await loadProducts();
-            await loadSales();
-            await loadAttendance();
-            setCurrentView("pos");
-            setValidatingToken(false);
-            setLoading(false);
-            return;
-          } else {
-            console.error("[PosAgentApp] Invalid session data - missing employee_id");
-            localStorage.removeItem(`pos_agent_${sessionToken}`);
-          }
-        } catch (error) {
-          console.error("[PosAgentApp] Error restoring session:", error);
-          localStorage.removeItem(`pos_agent_${sessionToken}`);
+      // SECURITY FIX: Clear all POS agent localStorage to prevent cross-account contamination
+      // This ensures we only use the token from the URL, not from a previous session
+      console.log("[PosAgentApp] SECURITY: Clearing all POS agent localStorage entries");
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('pos_agent_') || key.startsWith('pos_session_')) {
+          console.log("[PosAgentApp] SECURITY: Removing localStorage key:", key);
+          localStorage.removeItem(key);
         }
-      }
+      });
+
+      // SECURITY: Do NOT restore session from localStorage
+      // This prevents users from accessing other accounts' employees via cached tokens
+      // Always force employee selection from the current URL token
 
       try {
         const response = await api<{ success: boolean; valid: boolean; employee_id?: string; metadata?: Record<string, unknown> }>(`/pos-agent/validate/${sessionToken}`);
