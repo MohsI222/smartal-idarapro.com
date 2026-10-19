@@ -17,7 +17,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import { toast } from "sonner";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
-import { uploadToCloudinary } from "@/lib/cloudinaryClient";
+import { uploadFile } from "@/lib/supabaseClient";
 
 function extractYoutubeId(line: string): string | null {
   const u = line.trim();
@@ -401,15 +401,24 @@ export function CorporateAcademyModule() {
           console.log("[Academy] Compressed from", f.size, "to", fileToUpload.size, "bytes");
         }
 
-        // Upload to Cloudinary
-        const publicUrl = await uploadToCloudinary(fileToUpload, 'academy-media');
-        console.log("[Academy] Cloudinary upload successful:", publicUrl);
+        // Upload to Supabase Storage
+        const ext = fileToUpload.name.split('.').pop() || "";
+        const timestamp = Date.now();
+        const randomSuffix = Math.round(Math.random() * 1E9);
+        const safeFileName = `${timestamp}-${randomSuffix}.${ext}`;
+        const storagePath = `academy-media/${userId}/${safeFileName}`;
+
+        console.log("[Academy] Uploading to Supabase:", storagePath);
+        const publicUrl = await uploadFile(fileToUpload, storagePath);
+        console.log("[Academy] Supabase upload successful:", publicUrl);
 
         // Send metadata to server
         const body = JSON.stringify({
           title,
           description,
           url: publicUrl,
+          file_path: storagePath,
+          file_name: safeFileName,
           file_mime: fileToUpload.type,
           type: isVideo ? "video" : "image"
         });
