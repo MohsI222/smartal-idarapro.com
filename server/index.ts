@@ -38,6 +38,7 @@ import {
   resolveGeminiImageApiKey,
 } from "./aiImageGeneration.js";
 import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.js";
+import cloudinaryRoutes from "./cloudinaryRoutes.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -5916,6 +5917,9 @@ registerPosAgentRoutes(app, authMiddleware);
 // Initialize contracts tables and register routes
 initContractsTables().catch(err => console.error("[Server] Failed to initialize contracts tables:", err));
 app.use(contractsRoutes);
+
+// Cloudinary upload routes (no auth required for basic uploads, can add if needed)
+app.use('/api/cloudinary', cloudinaryRoutes);
 
 /** TTS API endpoint - using browser Web Speech API (client-side only) */
 app.post("/api/tts", async (_req, res) => {

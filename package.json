@@ -46,7 +46,7 @@
     "bcryptjs": "^3.0.3",
     "bidi-js": "^1.0.3",
     "class-variance-authority": "^0.7.1",
-    "cloudinary": "^2.9.0",
+    "cloudinary": "^2.11.0",
     "clsx": "^2.1.1",
     "cors": "^2.8.5",
     "docx": "^9.6.1",
