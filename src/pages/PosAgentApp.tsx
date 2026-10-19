@@ -13,7 +13,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { BarcodeScannerHub } from "@/components/BarcodeScannerHub";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
-import { uploadFile } from "@/lib/supabaseClient";
+import { uploadToCloudinary } from "@/lib/cloudinaryClient";
 import * as XLSX from 'xlsx';
 
 type Employee = {
@@ -586,9 +586,8 @@ export function PosAgentApp() {
         reduction: Math.round((1 - compressedFile.size / file.size) * 100) + '%'
       });
 
-      // Upload to Supabase Storage
-      const fileName = `products/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
-      const publicUrl = await uploadFile(compressedFile, fileName);
+      // Upload to Cloudinary
+      const publicUrl = await uploadToCloudinary(compressedFile, 'pos-products');
 
       setProductFormData(prev => ({ ...prev, image_url: publicUrl }));
       toast.success("تم رفع الصورة بنجاح");
