@@ -4,46 +4,46 @@
  */
 
 import express from 'express';
-import multer from 'multer';
-import { uploadToCloudinary, deleteFromCloudinary } from './cloudinaryService';
+import { uploadToCloudinary as uploadToCloudinaryService } from './cloudinaryService';
 
 const router = express.Router();
-
-// Configure multer for memory storage (no temp files)
-const storage = multer.memoryStorage();
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
-  },
-});
-
-// Add URL-encoded middleware to parse form fields
-router.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 /**
  * POST /api/cloudinary/upload
  * Upload a file to Cloudinary
- * Body: FormData with 'file' and 'folder'
+ * Body: JSON with 'file' (base64), 'folder', 'fileName', 'fileType'
  */
-router.post('/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', express.json({ limit: '10mb' }), async (req, res) => {
   try {
-    console.log('[Cloudinary API] Request received:', {
-      hasFile: !!req.file,
-      contentType: req.get('content-type'),
-      bodyKeys: Object.keys(req.body),
-      folder: req.body.folder,
-    });
-
-    const file = req.file;
-    const folder = req.body.folder || 'general';
+    const { file, folder, fileName, fileType } = req.body;
 
     if (!file) {
-      console.error('[Cloudinary API] No file in request. req.file is undefined');
       return res.status(400).json({ error: 'No file provided' });
     }
 
     console.log('[Cloudinary API] Upload request:', {
+      hasFile: !!file,
+      folder,
+      fileName,
+      fileType,
+    });
+
+    // Convert base64 to buffer
+    const buffer = Buffer.from(file, 'base64');
+
+    // Upload to Cloudinary
+    const url = await uploadToCloudinaryService(buffer, folder, fileName, fileType);
+
+    console.log('[Cloudinary API] Upload success:', url);
+    res.json({ url });
+  } catch (error) {
+    console.error('[Cloudinary API] Upload error:', error);
+    res.status(500).json({ error: 'Upload failed' });
+  }
+});
+
+export default router;
+
       fileName: file.originalname,
       mimeType: file.mimetype,
       size: file.size,

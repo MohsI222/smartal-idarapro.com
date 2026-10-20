@@ -441,11 +441,10 @@ app.get("/api/health/db", async (_req, res, next) => {
 
 const authOriginGuard = createAuthOriginGuard();
 app.use("/api/auth", authOriginGuard);
-
-// Cloudinary upload routes (MUST be before express.json to avoid JSON parsing FormData)
-app.use('/api/cloudinary', cloudinaryRoutes);
-
 app.use(express.json({ limit: "50mb" }));
+
+// Cloudinary upload routes (after express.json to parse JSON body)
+app.use('/api/cloudinary', cloudinaryRoutes);
 
 // Register AI controller routes
 import aiRouter from "./controllers/ai.controller.js";

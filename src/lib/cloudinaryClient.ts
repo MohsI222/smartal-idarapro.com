@@ -1,34 +1,12 @@
 /**
  * Cloudinary Client for frontend file uploads
- * Uploads directly to Cloudinary using the SDK
+ * Uploads via server API to avoid exposing API keys
  */
 
-import { v2 as cloudinary } from 'cloudinary';
-
-// Configure Cloudinary from environment variable
-const cloudinaryUrl = import.meta.env.VITE_CLOUDINARY_URL || '';
-
-if (cloudinaryUrl) {
-  // Parse CLOUDINARY_URL format: cloudinary://api_key:api_secret@cloud_name
-  const match = cloudinaryUrl.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
-  if (match) {
-    const [, apiKey, apiSecret, cloudName] = match;
-    cloudinary.config({
-      cloud_name: cloudName,
-      api_key: apiKey,
-      api_secret: apiSecret,
-      secure: true,
-    });
-    console.log('[Cloudinary Client] Configured successfully for cloud:', cloudName);
-  } else {
-    console.warn('[Cloudinary Client] Invalid CLOUDINARY_URL format');
-  }
-} else {
-  console.warn('[Cloudinary Client] Missing VITE_CLOUDINARY_URL');
-}
+import { api } from './api';
 
 /**
- * Upload a file to Cloudinary directly
+ * Upload a file to Cloudinary via server API
  * @param file - File to upload
  * @param folder - Cloudinary folder (e.g., 'products', 'delivery-hub', 'contracts')
  * @returns Public URL of the uploaded file
@@ -42,51 +20,52 @@ export const uploadToCloudinary = async (file: File, folder: string): Promise<st
   });
 
   try {
-    // Generate unique filename
-    const timestamp = Date.now();
-    const randomSuffix = Math.round(Math.random() * 1E9);
-    const publicId = `${folder}/${timestamp}-${randomSuffix}-${file.name.split('.')[0]}`;
-
-    // Upload to Cloudinary
-    const result = await new Promise<any>((resolve, reject) => {
-      cloudinary.uploader.upload_stream(
-        {
-          folder,
-          public_id: publicId,
-          resource_type: 'auto', // auto-detect image/video
-          quality: 'auto:good', // automatic quality optimization
-          fetch_format: 'auto', // automatic format conversion (WebP/AVIF)
-          transformation: [
-            { quality: 'auto:good', fetch_format: 'auto' },
-            { width: 1200, crop: 'limit' }, // Limit max width to 1200px
-          ],
-        },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
-        }
-      ).end(file);
+    // Convert file to base64
+    const base64 = await fileToBase64(file);
+    
+    // Upload via server API
+    const response = await api('/cloudinary/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        file: base64,
+        folder,
+        fileName: file.name,
+        fileType: file.type,
+      }),
     });
 
-    console.log('[Cloudinary Client] Upload successful:', {
-      publicId: result.public_id,
-      url: result.secure_url,
-      bytes: result.bytes,
-    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || 'فشل رفع الصورة / Upload failed');
+    }
 
-    // Return optimized URL with auto-quality and auto-format
-    const optimizedUrl = cloudinary.url(result.public_id, {
-      quality: 'auto:good',
-      fetch_format: 'auto',
-      secure: true,
-    });
-
-    console.log('[Cloudinary Client] Optimized URL:', optimizedUrl);
-    return optimizedUrl;
+    const data = await response.json();
+    console.log('[Cloudinary Client] Upload success:', data.url);
+    return data.url;
   } catch (error) {
     console.error('[Cloudinary Client] Upload error:', error);
     throw error;
   }
+};
+
+/**
+ * Convert File to base64 string
+ */
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove data URL prefix (e.g., "data:image/jpeg;base64,")
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = error => reject(error);
+  });
 };
 
 /**
