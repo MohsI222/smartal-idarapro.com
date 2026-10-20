@@ -20,32 +20,46 @@ export const uploadToCloudinary = async (file: File, folder: string): Promise<st
   });
 
   try {
-    // Convert file to buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
+    // Convert file to base64
+    const base64 = await fileToBase64(file);
+    
     // Upload via server API
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('folder', folder);
-
-    const response = await api('/cloudinary/upload', {
+    const data = await api<{ url: string }>('/cloudinary/upload', {
       method: 'POST',
-      body: formData,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        file: base64,
+        folder,
+        fileName: file.name,
+        fileType: file.type,
+      }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || 'فشل رفع الصورة / Upload failed');
-    }
-
-    const data = await response.json();
     console.log('[Cloudinary Client] Upload success:', data.url);
     return data.url;
   } catch (error) {
     console.error('[Cloudinary Client] Upload error:', error);
     throw error;
   }
+};
+
+/**
+ * Convert File to base64 string
+ */
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove data URL prefix (e.g., "data:image/jpeg;base64,")
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = error => reject(error);
+  });
 };
 
 /**

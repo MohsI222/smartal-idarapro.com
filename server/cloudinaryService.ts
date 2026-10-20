@@ -8,16 +8,27 @@ import { v2 as cloudinary } from 'cloudinary';
 // Configure Cloudinary from environment variable
 const cloudinaryUrl = process.env.CLOUDINARY_URL || '';
 
-if (!cloudinaryUrl) {
+let cloudinaryConfigured = false;
+
+if (cloudinaryUrl) {
+  // Parse CLOUDINARY_URL format: cloudinary://api_key:api_secret@cloud_name
+  const match = cloudinaryUrl.match(/cloudinary:\/\/([^:]+):([^@]+)@(.+)/);
+  if (match) {
+    const [, apiKey, apiSecret, cloudName] = match;
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+      secure: true,
+    });
+    cloudinaryConfigured = true;
+    console.log('[Cloudinary] Configured successfully for cloud:', cloudName);
+  } else {
+    console.warn('[Cloudinary] Invalid CLOUDINARY_URL format');
+  }
+} else {
   console.warn('[Cloudinary] Missing CLOUDINARY_URL. Image upload will be disabled.');
 }
-
-cloudinary.config({
-  cloud_name: 'goibxhzl',
-  api_key: '731815276814573',
-  api_secret: 'LQzDcIw9gX0yXx3XxXxXxXxXxXxXxXxX',
-  secure: true,
-});
 
 /**
  * Upload a file to Cloudinary
@@ -33,6 +44,10 @@ export async function uploadToCloudinary(
   fileName: string,
   contentType?: string
 ): Promise<string> {
+  if (!cloudinaryConfigured) {
+    throw new Error('Cloudinary is not configured. Please set CLOUDINARY_URL environment variable.');
+  }
+
   try {
     console.log('[Cloudinary] Uploading file:', {
       folder,
@@ -41,12 +56,12 @@ export async function uploadToCloudinary(
       contentType,
     });
 
-    // Generate unique filename
+    // Use a timestamp-based ID to avoid signature issues
     const timestamp = Date.now();
     const randomSuffix = Math.round(Math.random() * 1E9);
-    const publicId = `${folder}/${timestamp}-${randomSuffix}-${fileName.split('.')[0]}`;
+    const publicId = `${folder}/${timestamp}-${randomSuffix}`;
 
-    // Upload to Cloudinary with auto-optimization
+    // Upload to Cloudinary with auto-optimization (no transformation to avoid signature issues)
     const result = await new Promise<any>((resolve, reject) => {
       cloudinary.uploader.upload_stream(
         {
@@ -55,10 +70,6 @@ export async function uploadToCloudinary(
           resource_type: 'auto', // auto-detect image/video
           quality: 'auto:good', // automatic quality optimization
           fetch_format: 'auto', // automatic format conversion (WebP/AVIF)
-          transformation: [
-            { quality: 'auto:good', fetch_format: 'auto' },
-            { width: 1200, crop: 'limit' }, // Limit max width to 1200px
-          ],
         },
         (error, result) => {
           if (error) reject(error);

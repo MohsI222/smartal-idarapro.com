@@ -110,7 +110,7 @@ export const PLAN_OPTIONS: PlanOption[] = [
     priceMonthlyDh: 399,
     priceYearlyDh: 3830,
     accent: "emerald",
-    modules: ["inventory", "acc", "members", "chat"],
+    modules: ["inventory", "acc", "members", "chat", "transport_logistics"],
   },
   {
     id: "retail_pro",
@@ -128,6 +128,15 @@ export const PLAN_OPTIONS: PlanOption[] = [
     priceMonthlyDh: 2500,
     priceYearlyDh: 24000,
     accent: "emerald",
+    modules: ["delivery_hub", "chat"],
+  },
+  {
+    id: "delivery_hub_starter",
+    labelKey: "plan.deliveryHubStarter",
+    blurbKey: "plan.deliveryHubStarter.blurb",
+    priceMonthlyDh: 100,
+    priceYearlyDh: 1200,
+    accent: "cyan",
     modules: ["delivery_hub", "chat"],
   },
   {

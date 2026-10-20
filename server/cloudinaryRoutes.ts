@@ -4,83 +4,51 @@
  */
 
 import express from 'express';
-import multer from 'multer';
-import { uploadToCloudinary, deleteFromCloudinary } from './cloudinaryService';
+import { uploadToCloudinary as uploadToCloudinaryService } from './cloudinaryService';
 
 const router = express.Router();
-
-// Configure multer for memory storage (no temp files)
-const storage = multer.memoryStorage();
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
-  },
-});
 
 /**
  * POST /api/cloudinary/upload
  * Upload a file to Cloudinary
- * Body: FormData with 'file' and 'folder'
+ * Body: JSON with 'file' (base64), 'folder', 'fileName', 'fileType'
  */
-router.post('/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', express.json({ limit: '10mb' }), async (req, res) => {
   try {
-    const file = req.file;
-    const folder = req.body.folder || 'general';
+    const { file, folder, fileName, fileType } = req.body;
+
+    console.log('[Cloudinary API] Upload request received:', {
+      hasFile: !!file,
+      fileLength: file?.length,
+      folder,
+      fileName,
+      fileType,
+    });
 
     if (!file) {
+      console.error('[Cloudinary API] No file provided');
       return res.status(400).json({ error: 'No file provided' });
     }
 
-    console.log('[Cloudinary API] Upload request:', {
-      fileName: file.originalname,
-      mimeType: file.mimetype,
-      size: file.size,
-      folder,
-    });
+    // Convert base64 to buffer
+    const buffer = Buffer.from(file, 'base64');
+    console.log('[Cloudinary API] Buffer created, size:', buffer.length);
 
     // Upload to Cloudinary
-    const url = await uploadToCloudinary(
-      file.buffer,
-      folder,
-      file.originalname,
-      file.mimetype
-    );
+    const url = await uploadToCloudinaryService(buffer, folder, fileName, fileType);
 
-    res.json({
-      success: true,
-      url,
-      fileName: file.originalname,
-      size: file.size,
-    });
+    console.log('[Cloudinary API] Upload success:', url);
+    res.json({ url });
   } catch (error: any) {
     console.error('[Cloudinary API] Upload error:', error);
-    res.status(500).json({
-      error: error.message || 'فشل رفع الصورة / Upload failed',
+    console.error('[Cloudinary API] Error details:', {
+      message: error.message,
+      name: error.name,
+      http_code: error.http_code,
     });
-  }
-});
-
-/**
- * DELETE /api/cloudinary/delete
- * Delete a file from Cloudinary
- * Body: { publicId: string }
- */
-router.delete('/delete', async (req, res) => {
-  try {
-    const { publicId } = req.body;
-
-    if (!publicId) {
-      return res.status(400).json({ error: 'No publicId provided' });
-    }
-
-    await deleteFromCloudinary(publicId);
-
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('[Cloudinary API] Delete error:', error);
-    res.status(500).json({
-      error: error.message || 'فشل حذف الصورة / Delete failed',
+    res.status(500).json({ 
+      error: 'Upload failed',
+      details: error.message 
     });
   }
 });
