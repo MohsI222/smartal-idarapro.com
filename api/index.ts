@@ -11,6 +11,13 @@ import app from "../server/index.js";
 // initDatabase has internal promise caching to prevent multiple calls
 initDatabase()
   .then(() => console.log("[api/index.ts] Database initialized successfully"))
-  .catch((err) => console.error("[api/index.ts] Failed to initialize database:", err));
+  .catch((err) => {
+    console.error("[api/index.ts] Failed to initialize database:", err);
+    console.error("[api/index.ts] Error details:", {
+      message: err.message,
+      code: err.code,
+      stack: err.stack,
+    });
+  });
 
 export default app;
