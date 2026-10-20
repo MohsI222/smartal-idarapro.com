@@ -56,15 +56,7 @@ export async function uploadToCloudinary(
       contentType,
     });
 
-    // Sanitize filename: remove whitespace, keep letters, numbers, and basic chars
-    const nameWithoutExt = fileName.replace(/\.[^/.]+$/, ''); // Remove extension
-    const sanitizedFileName = nameWithoutExt
-      .trim()
-      .replace(/\s+/g, '-')
-      .replace(/[^\w\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF.-]/g, '') // Keep Arabic and basic chars
-      .substring(0, 50); // Limit length
-
-    // Use a timestamp-based ID instead of filename to avoid signature issues
+    // Use a timestamp-based ID to avoid signature issues
     const timestamp = Date.now();
     const randomSuffix = Math.round(Math.random() * 1E9);
     const publicId = `${folder}/${timestamp}-${randomSuffix}`;
