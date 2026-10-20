@@ -38,6 +38,7 @@ import {
   resolveGeminiImageApiKey,
 } from "./aiImageGeneration.js";
 import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.js";
+import cloudinaryRoutes from "./cloudinaryRoutes.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -440,6 +441,10 @@ app.get("/api/health/db", async (_req, res, next) => {
 
 const authOriginGuard = createAuthOriginGuard();
 app.use("/api/auth", authOriginGuard);
+
+// Cloudinary upload routes (MUST be before express.json to avoid JSON parsing FormData)
+app.use('/api/cloudinary', cloudinaryRoutes);
+
 app.use(express.json({ limit: "50mb" }));
 
 // Register AI controller routes

@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { UploadCloud, X, Loader2 } from "lucide-react";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
-import { uploadFile } from "@/lib/supabaseClient";
+import { uploadToCloudinary } from "@/lib/cloudinaryClient";
 
 const MAX_IMAGE_MB = 10;
 const MAX_VIDEO_MB = 20;
@@ -59,17 +59,14 @@ export function MediaUploadField({
     try {
       let result: string;
       if (kind === "image") {
-        // Compress image to under 100KB and upload to Supabase
+        // Compress image to under 100KB and upload to Cloudinary
         const compressedBlob = await compressImageUnder100KB(file);
         const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
-        const fileName = `delivery-hub/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
-        result = await uploadFile(compressedFile, fileName);
+        result = await uploadToCloudinary(compressedFile, 'delivery-hub');
         toast.success("تم رفع الصورة بنجاح");
       } else {
-        // For videos, upload directly to Supabase
-        const ext = file.name.split('.').pop() || "mp4";
-        const fileName = `delivery-hub-videos/${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
-        result = await uploadFile(file, fileName);
+        // For videos, upload directly to Cloudinary
+        result = await uploadToCloudinary(file, 'delivery-hub-videos');
         toast.success("تم رفع الفيديو بنجاح");
       }
       onChange(result);

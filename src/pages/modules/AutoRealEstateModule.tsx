@@ -11,7 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import html2pdf from 'html2pdf.js';
 import { compressImageUnder100KB } from "@/lib/imageUtils";
-import { uploadFile } from "@/lib/supabaseClient";
+import { uploadToCloudinary } from "@/lib/cloudinaryClient";
 import { toast } from "sonner";
 
 type ItemType = "Car" | "Property" | "Land";
@@ -308,9 +308,8 @@ export default function AutoRealEstateModule() {
         const compressedBlob = await compressImageUnder100KB(file);
         const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
 
-        // Upload to Supabase Storage
-        const fileName = `auto-realestate/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
-        const publicUrl = await uploadFile(compressedFile, fileName);
+        // Upload to Cloudinary
+        const publicUrl = await uploadToCloudinary(compressedFile, 'auto-realestate');
 
         if (isLogo) setContractLogo(publicUrl);
         else setNewItem({ ...newItem, image: publicUrl });

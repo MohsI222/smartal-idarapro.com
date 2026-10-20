@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
     base,
     plugins: [react(), tailwindcss()],
     optimizeDeps: {
-      include: ["jspdf", "html2canvas", "exceljs", "docx"],
+      include: ["jspdf", "html2canvas", "exceljs", "docx", "cloudinary"],
     },
     resolve: {
       alias: { "@": path.resolve(__dirname, "./src") },
