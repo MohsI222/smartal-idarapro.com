@@ -56,12 +56,20 @@ export async function uploadToCloudinary(
       contentType,
     });
 
-    // Generate unique filename
+    // Sanitize filename: remove whitespace, keep letters, numbers, and basic chars
+    const nameWithoutExt = fileName.replace(/\.[^/.]+$/, ''); // Remove extension
+    const sanitizedFileName = nameWithoutExt
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^\w\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF.-]/g, '') // Keep Arabic and basic chars
+      .substring(0, 50); // Limit length
+
+    // Use a timestamp-based ID instead of filename to avoid signature issues
     const timestamp = Date.now();
     const randomSuffix = Math.round(Math.random() * 1E9);
-    const publicId = `${folder}/${timestamp}-${randomSuffix}-${fileName.split('.')[0]}`;
+    const publicId = `${folder}/${timestamp}-${randomSuffix}`;
 
-    // Upload to Cloudinary with auto-optimization
+    // Upload to Cloudinary with auto-optimization (no transformation to avoid signature issues)
     const result = await new Promise<any>((resolve, reject) => {
       cloudinary.uploader.upload_stream(
         {
@@ -70,10 +78,6 @@ export async function uploadToCloudinary(
           resource_type: 'auto', // auto-detect image/video
           quality: 'auto:good', // automatic quality optimization
           fetch_format: 'auto', // automatic format conversion (WebP/AVIF)
-          transformation: [
-            { quality: 'auto:good', fetch_format: 'auto' },
-            { width: 1200, crop: 'limit' }, // Limit max width to 1200px
-          ],
         },
         (error, result) => {
           if (error) reject(error);

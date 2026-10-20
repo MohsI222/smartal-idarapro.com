@@ -6597,7 +6597,13 @@ if (!process.env.VERCEL) {
       await migrateDeliveryHubStockFields();
       await migrateDeliveryHubStoreFields();
       await migratePosAgentCheckFields();
-      await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
+      // Initialize Supabase Storage (non-blocking - don't fail if it errors)
+      try {
+        await initializeSupabaseStorage();
+      } catch (error: any) {
+        // Silently ignore Supabase Storage errors - we're using Cloudinary now
+        console.warn("[Server] Supabase Storage initialization skipped (using Cloudinary instead)");
+      }
       app.listen(PORT, () => {
         console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
       });
@@ -6606,5 +6612,12 @@ if (!process.env.VERCEL) {
       process.exit(1);
     }
   })();
+} else {
+  // Vercel serverless: initialize on first request
+  initDatabase().catch(err => console.error("[Vercel] DB init failed:", err));
+  migrateDeliveryHubStockFields().catch(err => console.error("[Vercel] Migration failed:", err));
+  migrateDeliveryHubStoreFields().catch(err => console.error("[Vercel] Migration failed:", err));
+  migratePosAgentCheckFields().catch(err => console.error("[Vercel] Migration failed:", err));
+  // Skip Supabase Storage initialization on Vercel - using Cloudinary
 }
 export default app;

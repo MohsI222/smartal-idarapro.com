@@ -24,7 +24,7 @@ export const uploadToCloudinary = async (file: File, folder: string): Promise<st
     const base64 = await fileToBase64(file);
     
     // Upload via server API
-    const response = await api('/cloudinary/upload', {
+    const data = await api<{ url: string }>('/cloudinary/upload', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -37,12 +37,6 @@ export const uploadToCloudinary = async (file: File, folder: string): Promise<st
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || 'فشل رفع الصورة / Upload failed');
-    }
-
-    const data = await response.json();
     console.log('[Cloudinary Client] Upload success:', data.url);
     return data.url;
   } catch (error) {

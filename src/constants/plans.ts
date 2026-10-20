@@ -131,6 +131,15 @@ export const PLAN_OPTIONS: PlanOption[] = [
     modules: ["delivery_hub", "chat"],
   },
   {
+    id: "delivery_hub_starter",
+    labelKey: "plan.deliveryHubStarter",
+    blurbKey: "plan.deliveryHubStarter.blurb",
+    priceMonthlyDh: 100,
+    priceYearlyDh: 1200,
+    accent: "cyan",
+    modules: ["delivery_hub", "chat"],
+  },
+  {
     id: "institutes",
     labelKey: "plan.institutes",
     blurbKey: "plan.institutes.blurb",
