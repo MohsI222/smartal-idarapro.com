@@ -443,6 +443,9 @@ const authOriginGuard = createAuthOriginGuard();
 app.use("/api/auth", authOriginGuard);
 app.use(express.json({ limit: "50mb" }));
 
+// Cloudinary upload routes (after express.json to parse JSON body)
+app.use('/api/cloudinary', cloudinaryRoutes);
+
 // Register AI controller routes
 import aiRouter from "./controllers/ai.controller.js";
 app.use("/api/ai", aiRouter);
@@ -5918,9 +5921,6 @@ registerPosAgentRoutes(app, authMiddleware);
 initContractsTables().catch(err => console.error("[Server] Failed to initialize contracts tables:", err));
 app.use(contractsRoutes);
 
-// Cloudinary upload routes (no auth required for basic uploads, can add if needed)
-app.use('/api/cloudinary', cloudinaryRoutes);
-
 /** TTS API endpoint - using browser Web Speech API (client-side only) */
 app.post("/api/tts", async (_req, res) => {
   // TTS is now handled client-side using Web Speech API
@@ -6597,7 +6597,13 @@ if (!process.env.VERCEL) {
       await migrateDeliveryHubStockFields();
       await migrateDeliveryHubStoreFields();
       await migratePosAgentCheckFields();
-      await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
+      // Initialize Supabase Storage (non-blocking - don't fail if it errors)
+      try {
+        await initializeSupabaseStorage();
+      } catch (error: any) {
+        // Silently ignore Supabase Storage errors - we're using Cloudinary now
+        console.warn("[Server] Supabase Storage initialization skipped (using Cloudinary instead)");
+      }
       app.listen(PORT, () => {
         console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
       });
@@ -6606,5 +6612,12 @@ if (!process.env.VERCEL) {
       process.exit(1);
     }
   })();
+} else {
+  // Vercel serverless: initialize on first request
+  initDatabase().catch(err => console.error("[Vercel] DB init failed:", err));
+  migrateDeliveryHubStockFields().catch(err => console.error("[Vercel] Migration failed:", err));
+  migrateDeliveryHubStoreFields().catch(err => console.error("[Vercel] Migration failed:", err));
+  migratePosAgentCheckFields().catch(err => console.error("[Vercel] Migration failed:", err));
+  // Skip Supabase Storage initialization on Vercel - using Cloudinary
 }
 export default app;
