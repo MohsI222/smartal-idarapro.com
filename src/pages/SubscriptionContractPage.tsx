@@ -77,7 +77,7 @@ export function SubscriptionContractPage() {
       const clauses = getContractPdfClauses(locale);
       const rowLabels = getContractPdfRowLabels(locale);
       const pay = getContractPaymentNotes(locale);
-      const logoSrc = new URL("/logo.svg", window.location.origin).href;
+      const logoSrc = new URL("/logo.jpg", window.location.origin).href;
       const html = buildSubscriptionContractPdfHtml({
         logoSrc,
         clauses,
