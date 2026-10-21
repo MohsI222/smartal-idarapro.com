@@ -97,7 +97,7 @@ const LawyerPortalModule = lazy(() =>
   import("@/pages/modules/LawyerPortalModule").then((m) => ({ default: m.LawyerPortalModule }))
 );
 const ContractsModule = lazy(() =>
-  import("@/pages/modules/ContractsModule").then((m) => ({ default: m.ContractsModule }))
+  import("@/modules/ContractsModule").then((m) => ({ default: m.ContractsModule }))
 );
 const AutoRealEstateModule = lazy(() =>
   import("@/pages/modules/AutoRealEstateModule").then((m) => ({ default: m.default }))
