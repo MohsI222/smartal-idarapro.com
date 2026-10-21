@@ -38,6 +38,7 @@ import {
   resolveGeminiImageApiKey,
 } from "./aiImageGeneration.js";
 import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.js";
+import cloudinaryRouter from "./cloudinaryRoutes.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -5912,6 +5913,7 @@ registerBase44StudioRoutes(app, { authMiddleware, uploadDir, aiGenerateAllowed }
 registerBackendServices(app, authMiddleware);
 registerDeliveryHubRoutes(app, authMiddleware);
 registerPosAgentRoutes(app, authMiddleware);
+app.use("/api/cloudinary", cloudinaryRouter);
 
 // Initialize contracts tables and register routes
 initContractsTables().catch(err => console.error("[Server] Failed to initialize contracts tables:", err));

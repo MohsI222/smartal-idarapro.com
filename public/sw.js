@@ -2,7 +2,7 @@
  * Strategy: network-first for navigations so HTML is never stale,
  * cache-first for hashed/static assets. Manifests: network-only (no stale/401 cache).
  */
-const CACHE = "al-idara-v11-pwa-all-depts-ai-save-offline";
+const CACHE = "al-idara-v12-pwa-all-depts-ai-save-offline-new-logo";
 const PRECACHE = [
   "/manifest.webmanifest",
   "/manifest-tl-transport.webmanifest",
@@ -12,7 +12,7 @@ const PRECACHE = [
   "/manifest-tl-maintenance.webmanifest",
   "/manifest-tl-utilities.webmanifest",
   "/favicon.svg",
-  "/logo.svg",
+  "/logo.jpg",
   "/pwa-192.png",
   "/pwa-512.png",
 ];

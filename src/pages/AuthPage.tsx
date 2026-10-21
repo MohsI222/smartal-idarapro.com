@@ -43,7 +43,7 @@ const AuthBrandRow = memo(function AuthBrandRow() {
     <div className="w-full max-w-md flex justify-between items-center gap-3">
       <Link to="/" className="flex items-center gap-2 min-w-0 group">
         <img
-          src="/logo.svg"
+          src="/logo.jpg"
           alt=""
           width={40}
           height={40}

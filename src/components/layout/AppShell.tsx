@@ -612,7 +612,7 @@ function ShellNavLink({
   );
 }
 
-const DEFAULT_APP_LOGO = "/logo.svg";
+const DEFAULT_APP_LOGO = "/logo.jpg";
 
 function Brand({
   compact,

@@ -9,7 +9,7 @@ export const APP_BRANDING = {
   /** اسم قصير للجداول والملخصات */
   shortName: "Al-Idara",
   /** مسار الشعار الثابت في `public/` */
-  logoUrl: "/logo.svg",
+  logoUrl: "/logo.jpg",
   /** ألوان الهوية (Tailwind متوافقة مع الواجهة الحالية) */
   primaryHex: "#0052CC",
   secondaryHex: "#FF8C00",
