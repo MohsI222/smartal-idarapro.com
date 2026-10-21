@@ -7,7 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
-import { uploadFile as supabaseUploadFile } from "@/lib/supabaseClient";
+import { uploadToCloudinary } from "@/lib/cloudinaryClient";
 
 type MediaType = "youtube" | "external" | "video" | "image";
 
@@ -147,19 +147,12 @@ export function MediaLibraryManager() {
         console.log("[MediaLibrary] Compressed from", uploadFile.size, "to", fileToUpload.size, "bytes");
       }
 
-      // Upload directly to Supabase Storage from client
-      const uploadUserId = userId || localStorage.getItem("idara_user_id") || "unknown";
-      const ext = fileToUpload.name.split('.').pop() || "";
-      const timestamp = Date.now();
-      const randomSuffix = Math.round(Math.random() * 1E9);
-      const safeFileName = `${timestamp}-${randomSuffix}.${ext}`;
-      const storagePath = `media-library/${uploadUserId}/${safeFileName}`;
-      
-      console.log("[MediaLibrary] Uploading to Supabase:", storagePath);
+      // Upload to Cloudinary
+      console.log("[MediaLibrary] Uploading to Cloudinary:", fileToUpload.name);
       console.log("[MediaLibrary] File to upload:", fileToUpload.name, fileToUpload.size, fileToUpload.type);
       
-      const publicUrl = await supabaseUploadFile(fileToUpload, storagePath);
-      console.log("[MediaLibrary] Supabase upload successful:", publicUrl);
+      const publicUrl = await uploadToCloudinary(fileToUpload, 'media-library');
+      console.log("[MediaLibrary] Cloudinary upload successful:", publicUrl);
 
       // Send metadata to server (not the file itself)
       const body = JSON.stringify({

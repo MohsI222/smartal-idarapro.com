@@ -13,10 +13,9 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, FileText, Share2, Trash2, Eye, Copy, CheckCircle, ArrowLeft, Download } from "lucide-react";
 import { fetchContracts, createContract, updateContract, deleteContract, fetchTemplates, createTemplate, deleteTemplate, fetchContract } from "@/lib/contracts/api";
 import { CONTRACT_STATUS_LABELS, CONTRACT_TYPE_LABELS, type Contract, type ContractType } from "@/lib/contracts/types";
-import html2pdf from 'html2pdf.js';
 import { useI18n } from "@/i18n/I18nProvider";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
-import { uploadFile as supabaseUploadFile } from "@/lib/supabaseClient";
+import { uploadToCloudinary } from "@/lib/cloudinaryClient";
 
 export function ContractsModule() {
   const navigate = useNavigate();
@@ -138,7 +137,6 @@ export function ContractsModule() {
         description: "",
         contract_type: "custom",
         content: "",
-        parties: "",
         start_date: "",
         end_date: "",
         expires_at: "",
@@ -688,9 +686,8 @@ export function ContractsModule() {
                           const compressedBlob = await compressImageUnder100KB(file);
                           const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
 
-                          // Upload to Supabase Storage
-                          const fileName = `contract-logos/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
-                          const publicUrl = await supabaseUploadFile(compressedFile, fileName);
+                          // Upload to Cloudinary
+                          const publicUrl = await uploadToCloudinary(compressedFile, 'contract-logos');
                           setFormData({ ...formData, logo_url: publicUrl });
                         } catch (error) {
                           console.error("[ContractsModule] Error uploading logo:", error);
@@ -917,9 +914,8 @@ export function ContractsModule() {
                           const compressedBlob = await compressImageUnder100KB(file);
                           const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
 
-                          // Upload to Supabase Storage
-                          const fileName = `contract-logos/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
-                          const publicUrl = await supabaseUploadFile(compressedFile, fileName);
+                          // Upload to Cloudinary
+                          const publicUrl = await uploadToCloudinary(compressedFile, 'contract-logos');
                           setFormData({ ...formData, logo_url: publicUrl });
                         } catch (error) {
                           console.error("[ContractsModule] Error uploading logo:", error);
