@@ -4,7 +4,7 @@
  */
 
 import express from 'express';
-import { uploadToCloudinary as uploadToCloudinaryService } from './cloudinaryService';
+import { uploadToCloudinary as uploadToCloudinaryService } from './cloudinaryService.js';
 
 const router = express.Router();
 
