@@ -1,4 +1,4 @@
-import "./loadEnv.ts";
+import "./loadEnv.js";
 import "express-async-errors";
 import cors from "cors";
 import express from "express";
@@ -9,18 +9,18 @@ import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import sharp from "sharp";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { registerBackendServices } from "./backendServices.ts";
-import { registerBase44StudioRoutes } from "./base44Studio.ts";
-import { registerTlErpRoutes } from "./tlErpRoutes.ts";
-import { registerDeliveryHubRoutes } from "./deliveryHubRoutes.ts";
-import { registerPosAgentRoutes } from "./posAgentRoutes.ts";
-import contractsRoutes, { initContractsTables } from "./contractsRoutes.ts";
-import { getTlUploadRoot, getUploadDir } from "./paths.ts";
-import { getVisaRadarProService } from "./visaRadarPro.ts";
+import { registerBackendServices } from "./backendServices.js";
+import { registerBase44StudioRoutes } from "./base44Studio.js";
+import { registerTlErpRoutes } from "./tlErpRoutes.js";
+import { registerDeliveryHubRoutes } from "./deliveryHubRoutes.js";
+import { registerPosAgentRoutes } from "./posAgentRoutes.js";
+import contractsRoutes, { initContractsTables } from "./contractsRoutes.js";
+import { getTlUploadRoot, getUploadDir } from "./paths.js";
+import { getVisaRadarProService } from "./visaRadarPro.js";
 import { randomUUID } from "node:crypto";
-import { db, initDatabase } from "./db.ts";
-import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto.ts";
-import { ensureSuperAdmin, genReferralCode } from "./seed.ts";
+import { db, initDatabase } from "./db.js";
+import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto.js";
+import { ensureSuperAdmin, genReferralCode } from "./seed.js";
 import {
   applySecurityMiddleware,
   authAdminBootstrapLimiter,
