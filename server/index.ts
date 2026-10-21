@@ -6612,12 +6612,6 @@ if (!process.env.VERCEL) {
       process.exit(1);
     }
   })();
-} else {
-  // Vercel serverless: initialize on first request
-  initDatabase().catch(err => console.error("[Vercel] DB init failed:", err));
-  migrateDeliveryHubStockFields().catch(err => console.error("[Vercel] Migration failed:", err));
-  migrateDeliveryHubStoreFields().catch(err => console.error("[Vercel] Migration failed:", err));
-  migratePosAgentCheckFields().catch(err => console.error("[Vercel] Migration failed:", err));
-  // Skip Supabase Storage initialization on Vercel - using Cloudinary
 }
+
 export default app;
