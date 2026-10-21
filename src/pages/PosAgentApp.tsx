@@ -13,7 +13,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { BarcodeScannerHub } from "@/components/BarcodeScannerHub";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
-import { uploadToCloudinary } from "@/lib/cloudinaryClient";
+import { uploadFile } from "@/lib/supabaseClient";
 import * as XLSX from 'xlsx';
 
 type Employee = {
@@ -580,8 +580,9 @@ export function PosAgentApp() {
         reduction: Math.round((1 - compressedFile.size / file.size) * 100) + '%'
       });
 
-      // Upload to Cloudinary
-      const publicUrl = await uploadToCloudinary(compressedFile, 'pos-products');
+      // Upload to Supabase Storage
+      const fileName = `products/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+      const publicUrl = await uploadFile(compressedFile, fileName);
 
       setProductFormData(prev => ({ ...prev, image_url: publicUrl }));
       toast.success("تم رفع الصورة بنجاح");
@@ -774,21 +775,61 @@ export function PosAgentApp() {
     addToCart(product);
   };
 
-  const uploadFileToServer = async (file: File, folder: string): Promise<string> => {
+  const uploadFileToServer = async (file: File, path: string): Promise<string> => {
     try {
-      console.log("[PosAgentApp] Starting file upload:", { fileName: file.name, folder });
+      console.log("[PosAgentApp] Starting file upload:", { fileName: file.name, path, hasToken: !!sessionToken });
 
       // Compress image
       const compressedBlob = await compressImageUnder100KB(file);
-      const compressedFile = new File([compressedBlob], file.name, { type: "image/jpeg" });
+      
+      // Sanitize filename: remove Arabic characters and special chars, use only English letters, numbers, and underscores
+      const sanitizedFileName = file.name
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .replace(/^_+|_+$/g, '') || 'upload.jpg';
+      
+      const compressedFile = new File([compressedBlob], sanitizedFileName, {
+        type: "image/jpeg",
+      });
 
-      console.log("[PosAgentApp] File compressed, size:", compressedFile.size);
+      console.log("[PosAgentApp] File compressed, size:", compressedFile.size, "sanitized name:", sanitizedFileName);
 
-      // Upload to Cloudinary
-      const publicUrl = await uploadToCloudinary(compressedFile, folder);
+      // Convert to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(compressedFile);
+      });
+      const base64 = await base64Promise;
+      const base64Data = base64.split(',')[1];
 
-      console.log("[PosAgentApp] Upload SUCCESS:", publicUrl);
-      return publicUrl;
+      console.log("[PosAgentApp] Base64 converted, length:", base64Data.length);
+
+      // Update path with sanitized filename
+      const sanitizedPath = path.replace(/[^a-zA-Z0-9._/-]/g, '_');
+
+      // Upload to server - send token in both header and body for compatibility
+      const response = await api<{ success: boolean; public_url: string }>("/pos-agent/upload-file", {
+        method: "POST",
+        token: sessionToken, // Send token in headers via Authorization header
+        body: JSON.stringify({
+          token: sessionToken, // Also send token in body as fallback
+          file_data: base64Data,
+          file_name: compressedFile.name,
+          file_type: compressedFile.type,
+          file_path: sanitizedPath
+        }),
+      });
+
+      console.log("[PosAgentApp] Upload response:", response);
+
+      if (response.success) {
+        console.log("[PosAgentApp] Upload SUCCESS:", response.public_url);
+        return response.public_url;
+      } else {
+        console.error("[PosAgentApp] Upload failed: response.success is false");
+        throw new Error("Upload failed");
+      }
     } catch (error) {
       console.error("[PosAgentApp] Error uploading file:", error);
       throw error;
@@ -3121,7 +3162,8 @@ export function PosAgentApp() {
                             .replace(/[^a-zA-Z0-9._-]/g, '_')
                             .replace(/_{2,}/g, '_')
                             .replace(/^_+|_+$/g, '') || 'logo.jpg';
-                          const publicUrl = await uploadFileToServer(file, 'pos-logos');
+                          const fileName = `pos-logos/${Date.now()}-${sanitizedFileName}`;
+                          const publicUrl = await uploadFileToServer(file, fileName);
                           setCompanyLogo(publicUrl);
                           localStorage.setItem('pos_company_logo', publicUrl);
                           toast.success("تم رفع الشعار بنجاح");
@@ -3225,7 +3267,8 @@ export function PosAgentApp() {
                             .replace(/[^a-zA-Z0-9._-]/g, '_')
                             .replace(/_{2,}/g, '_')
                             .replace(/^_+|_+$/g, '') || 'qr.jpg';
-                          const publicUrl = await uploadFileToServer(file, 'pos-qr');
+                          const fileName = `pos-qr/${Date.now()}-${sanitizedFileName}`;
+                          const publicUrl = await uploadFileToServer(file, fileName);
                           setStoreQrCode(publicUrl);
                           localStorage.setItem('pos_store_qr_code', publicUrl);
                           toast.success("تم رفع QR Code بنجاح");

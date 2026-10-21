@@ -15,7 +15,7 @@ import { fetchContracts, createContract, updateContract, deleteContract, fetchTe
 import { CONTRACT_STATUS_LABELS, CONTRACT_TYPE_LABELS, type Contract, type ContractType } from "@/lib/contracts/types";
 import { useI18n } from "@/i18n/I18nProvider";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
-import { uploadToCloudinary } from "@/lib/cloudinaryClient";
+import { uploadFile as supabaseUploadFile } from "@/lib/supabaseClient";
 
 export function ContractsModule() {
   const navigate = useNavigate();
@@ -686,8 +686,9 @@ export function ContractsModule() {
                           const compressedBlob = await compressImageUnder100KB(file);
                           const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
 
-                          // Upload to Cloudinary
-                          const publicUrl = await uploadToCloudinary(compressedFile, 'contract-logos');
+                          // Upload to Supabase Storage
+                          const fileName = `contract-logos/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+                          const publicUrl = await supabaseUploadFile(compressedFile, fileName);
                           setFormData({ ...formData, logo_url: publicUrl });
                         } catch (error) {
                           console.error("[ContractsModule] Error uploading logo:", error);
@@ -914,8 +915,9 @@ export function ContractsModule() {
                           const compressedBlob = await compressImageUnder100KB(file);
                           const compressedFile = new File([compressedBlob], file.name, { type: 'image/jpeg' });
 
-                          // Upload to Cloudinary
-                          const publicUrl = await uploadToCloudinary(compressedFile, 'contract-logos');
+                          // Upload to Supabase Storage
+                          const fileName = `contract-logos/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+                          const publicUrl = await supabaseUploadFile(compressedFile, fileName);
                           setFormData({ ...formData, logo_url: publicUrl });
                         } catch (error) {
                           console.error("[ContractsModule] Error uploading logo:", error);
