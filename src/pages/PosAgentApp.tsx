@@ -71,7 +71,8 @@ export function PosAgentApp() {
   const { locale: globalLocale, isRtl } = useI18n();
   const [locale, setLocale] = useState(() => localStorage.getItem('pos_locale') || globalLocale || "ar");
   const urlToken = searchParams.get("token"); // Changed from "sessionToken" to "token"
-  const [sessionToken, setSessionToken] = useState(() => localStorage.getItem('pos_session_sessionToken') || urlToken || null);
+  // SECURITY FIX: Always prioritize URL token over localStorage to prevent cross-account access
+  const [sessionToken, setSessionToken] = useState(() => urlToken || localStorage.getItem('pos_session_sessionToken') || null);
 
   const [currentView, setCurrentView] = useState<AgentView>("login");
   const [loading, setLoading] = useState(true);
@@ -158,14 +159,25 @@ export function PosAgentApp() {
       }
 
       // SECURITY FIX: Clear all POS agent localStorage to prevent cross-account contamination
-      // This ensures we only use the token from the URL, not from a previous session
-      console.log("[PosAgentApp] SECURITY: Clearing all POS agent localStorage entries");
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('pos_agent_') || key.startsWith('pos_session_')) {
-          console.log("[PosAgentApp] SECURITY: Removing localStorage key:", key);
-          localStorage.removeItem(key);
-        }
-      });
+      // If URL token is present, clear ALL localStorage to prevent any data leakage
+      if (urlToken) {
+        console.log("[PosAgentApp] SECURITY: URL token present, clearing ALL POS agent localStorage");
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('pos_')) {
+            console.log("[PosAgentApp] SECURITY: Removing localStorage key:", key);
+            localStorage.removeItem(key);
+          }
+        });
+      } else {
+        // Only clear session keys if no URL token
+        console.log("[PosAgentApp] SECURITY: No URL token, clearing only session localStorage");
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('pos_agent_') || key.startsWith('pos_session_')) {
+            console.log("[PosAgentApp] SECURITY: Removing localStorage key:", key);
+            localStorage.removeItem(key);
+          }
+        });
+      }
 
       // SECURITY: Do NOT restore session from localStorage
       // This prevents users from accessing other accounts' employees via cached tokens
@@ -422,9 +434,12 @@ export function PosAgentApp() {
 
       if (response.success) {
         setCurrentEmployee(response.employee);
-        // Save session sessionToken to localStorage
-        setSessionToken(sessionToken);
-        localStorage.setItem('pos_session_sessionToken', sessionToken || '');
+        // SECURITY FIX: Only save sessionToken to localStorage if NOT using URL token
+        // This prevents cross-account contamination when using URL-based tokens
+        if (!urlToken) {
+          setSessionToken(sessionToken);
+          localStorage.setItem('pos_session_sessionToken', sessionToken || '');
+        }
         // Save employee data using sessionToken (not urlToken which might be undefined)
         localStorage.setItem(`pos_agent_${sessionToken}`, JSON.stringify({
           employee_id: selectedEmployeeId,
