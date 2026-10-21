@@ -38,6 +38,7 @@ import {
   resolveGeminiImageApiKey,
 } from "./aiImageGeneration.js";
 import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.js";
+import cloudinaryRoutes from "./cloudinaryRoutes.js";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -441,6 +442,9 @@ app.get("/api/health/db", async (_req, res, next) => {
 const authOriginGuard = createAuthOriginGuard();
 app.use("/api/auth", authOriginGuard);
 app.use(express.json({ limit: "50mb" }));
+
+// Cloudinary upload routes
+app.use('/api/cloudinary', cloudinaryRoutes);
 
 // Register AI controller routes
 import aiRouter from "./controllers/ai.controller.js";
@@ -6593,7 +6597,13 @@ if (!process.env.VERCEL) {
       await migrateDeliveryHubStockFields();
       await migrateDeliveryHubStoreFields();
       await migratePosAgentCheckFields();
-      await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
+      // Initialize Supabase Storage (non-blocking - don't fail if it errors)
+      try {
+        await initializeSupabaseStorage();
+      } catch (error: any) {
+        // Silently ignore Supabase Storage errors - we're using Cloudinary now
+        console.warn("[Server] Supabase Storage initialization skipped (using Cloudinary instead)");
+      }
       app.listen(PORT, () => {
         console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
       });
