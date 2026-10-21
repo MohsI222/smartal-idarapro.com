@@ -4,8 +4,8 @@
  *
  * deploy-bump: force Git/Vercel to pick up a fresh deployment (avoid stale Production pointer).
  */
-import { initDatabase } from "../server/db.js";
-import app from "../server/index.js";
+import { initDatabase } from "../server/db.ts";
+import app from "../server/index.ts";
 
 // Initialize database on Vercel (serverless)
 // initDatabase has internal promise caching to prevent multiple calls

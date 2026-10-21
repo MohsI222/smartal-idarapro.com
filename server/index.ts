@@ -1,4 +1,4 @@
-import "./loadEnv.js";
+import "./loadEnv.ts";
 import "express-async-errors";
 import cors from "cors";
 import express from "express";
@@ -9,18 +9,18 @@ import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import sharp from "sharp";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { registerBackendServices } from "./backendServices.js";
-import { registerBase44StudioRoutes } from "./base44Studio.js";
-import { registerTlErpRoutes } from "./tlErpRoutes.js";
-import { registerDeliveryHubRoutes } from "./deliveryHubRoutes.js";
-import { registerPosAgentRoutes } from "./posAgentRoutes.js";
-import contractsRoutes, { initContractsTables } from "./contractsRoutes.js";
-import { getTlUploadRoot, getUploadDir } from "./paths.js";
-import { getVisaRadarProService } from "./visaRadarPro.js";
+import { registerBackendServices } from "./backendServices.ts";
+import { registerBase44StudioRoutes } from "./base44Studio.ts";
+import { registerTlErpRoutes } from "./tlErpRoutes.ts";
+import { registerDeliveryHubRoutes } from "./deliveryHubRoutes.ts";
+import { registerPosAgentRoutes } from "./posAgentRoutes.ts";
+import contractsRoutes, { initContractsTables } from "./contractsRoutes.ts";
+import { getTlUploadRoot, getUploadDir } from "./paths.ts";
+import { getVisaRadarProService } from "./visaRadarPro.ts";
 import { randomUUID } from "node:crypto";
-import { db, initDatabase } from "./db.js";
-import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto.js";
-import { ensureSuperAdmin, genReferralCode } from "./seed.js";
+import { db, initDatabase } from "./db.ts";
+import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto.ts";
+import { ensureSuperAdmin, genReferralCode } from "./seed.ts";
 import {
   applySecurityMiddleware,
   authAdminBootstrapLimiter,
@@ -29,16 +29,16 @@ import {
   authSupabaseOauthLimiter,
   createAuthOriginGuard,
   createProductionCorsOptions,
-} from "./middleware.js";
-import { sanitizeEmail, sanitizeUserDisplayName } from "./stringUtil.js";
-import { paramString } from "./reqParams.js";
-import { vercelApiUrlRestore } from "./vercelUrlMiddleware.js";
-import { customDomainMiddleware } from "./customDomainMiddleware.js";
+} from "./middleware.ts";
+import { sanitizeEmail, sanitizeUserDisplayName } from "./stringUtil.ts";
+import { paramString } from "./reqParams.ts";
+import { vercelApiUrlRestore } from "./vercelUrlMiddleware.ts";
+import { customDomainMiddleware } from "./customDomainMiddleware.ts";
 import {
   resolveGeminiImageApiKey,
-} from "./aiImageGeneration.js";
-import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.js";
-import cloudinaryRoutes from "./cloudinaryRoutes.js";
+} from "./aiImageGeneration.ts";
+import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.ts";
+import cloudinaryRoutes from "./cloudinaryRoutes.ts";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -208,14 +208,14 @@ async function fetchSupabaseUserFromAccessToken(accessToken: string): Promise<{
 
 const REMEMBER_ME_MS =
   (Number(process.env.REMEMBER_ME_YEARS) || 5) * 365 * 864e5;
-import { buildAdminWhatsappUrl } from "./notify.js";
+import { buildAdminWhatsappUrl } from "./notify.ts";
 import {
   FULL_MODULES_JSON,
   isPrimaryAdminUser,
   PRIMARY_ADMIN_SESSION_MS,
   SUBSCRIPTION_PERIOD_DAYS,
   SUPER_ADMIN_EMAIL,
-} from "./admin-config.js";
+} from "./admin-config.ts";
 
 /** وحدات التجربة المجانية (5 أيام) — بدون رادار التأشيرة */
 const TRIAL_MODULE_IDS = new Set([
@@ -447,7 +447,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use('/api/cloudinary', cloudinaryRoutes);
 
 // Register AI controller routes
-import aiRouter from "./controllers/ai.controller.js";
+import aiRouter from "./controllers/ai.controller.ts";
 app.use("/api/ai", aiRouter);
 
 const upload = multer({ dest: uploadDir, limits: { fileSize: 8 * 1024 * 1024 } });
