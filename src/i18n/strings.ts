@@ -1073,8 +1073,6 @@ const arMA: Dict = {
   "tbl.subject": "المادة / Subject",
   "tbl.level": "المستوى / Level",
 
-  "brand.tagline": "SaaS احترافي — تأشيرات، خدمات، تدريب، وأدوات أعمال",
-
   "shell.navGroup.platform": "المنصة / Platform",
   "shell.searchPlaceholder": "بحث في الوحدات والخدمات…",
   "shell.collapseSidebar": "طي القائمة",
@@ -3242,8 +3240,6 @@ const en: Dict = {
   "tbl.time": "Time",
   "tbl.subject": "Subject",
   "tbl.level": "Level",
-
-  "brand.tagline": "Professional SaaS — visas, services, training & business tools",
 
   "shell.navGroup.platform": "Platform",
   "shell.searchPlaceholder": "Search modules and services…",
