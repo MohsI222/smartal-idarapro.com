@@ -1301,10 +1301,10 @@ router.post("/upload-file", async (req, res) => {
     const buffer = Buffer.from(file_data, 'base64');
     console.log("[POS Agent] Buffer created, size:", buffer.length);
 
-    // Upload to Supabase Storage
-    const { uploadFile } = await import('./supabaseStorage.js');
-    console.log("[POS Agent] Uploading to:", file_path);
-    const publicUrl = await uploadFile(buffer, file_path || 'unknown', file_type || 'application/octet-stream');
+    // Upload to Cloudinary
+    const { uploadToCloudinary } = await import('./cloudinaryService.js');
+    console.log("[POS Agent] Uploading to Cloudinary:", file_path);
+    const publicUrl = await uploadToCloudinary(buffer, 'pos-agent', file_name, file_type || 'application/octet-stream');
     console.log("[POS Agent] Upload SUCCESS, URL:", publicUrl);
 
     res.json({

@@ -217,8 +217,8 @@ export function OrdersTab({
             {columns[status].length === 0 && (
               <p className="text-center text-xs text-slate-600 py-6">لا توجد طلبات</p>
             )}
-            {columns[status].map((order) => (
-              <div key={order.id} className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 space-y-2">
+            {columns[status].map((order, index) => (
+              <div key={`${order.id}-${index}`} className="rounded-xl border border-slate-800 bg-slate-950/50 p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="font-semibold text-white">{order.customer_name}</p>
                   <span className="text-xs text-slate-500">{(order.total_amount || 0).toFixed(2)} DH</span>
