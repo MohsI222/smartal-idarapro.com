@@ -16,6 +16,7 @@ type Dict = Record<string, string>;
 /** عربية فصحى + إنجليزي للتسميات الثابتة */
 const arMA: Dict = {
   brand: "الإدارة برو",
+  "brand.tagline": "SaaS احترافي — تأشيرات، خدمات، تدريب، وأدوات أعمال",
 
   "nav.home": "الرئيسية / Home",
   "nav.reminders": "التذكيرات / Reminders",
@@ -4166,6 +4167,7 @@ const frTbl: Dict = {
 const fr: Dict = {
   ...en,
   brand: "Smart Al-Idara Pro",
+  "brand.tagline": "SaaS professionnel — visas, services, formation et outils d'affaires",
   "nav.home": "Accueil",
   "nav.reminders": "Rappels",
   "nav.devices": "Appareils (DRM)",
@@ -5063,6 +5065,7 @@ const esTbl: Dict = {
 const es: Dict = {
   ...en,
   brand: "Smart Al-Idara Pro",
+  "brand.tagline": "SaaS profesional — visas, servicios, formación y herramientas de negocios",
   "nav.home": "Inicio",
   "nav.reminders": "Recordatorios",
   "nav.devices": "Dispositivos (DRM)",

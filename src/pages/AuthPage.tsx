@@ -513,10 +513,6 @@ export function AuthPage() {
           />
         </div>
 
-        <div className="w-full max-w-2xl">
-          <PublicMediaGallery />
-        </div>
-
         <AuthFooterLinks t={t} />
       </div>
     </div>
