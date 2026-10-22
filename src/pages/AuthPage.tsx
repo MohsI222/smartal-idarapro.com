@@ -51,7 +51,7 @@ const AuthBrandRow = memo(function AuthBrandRow() {
         />
         <div className="min-w-0 text-start">
           <span className="block font-black text-lg sm:text-xl bg-gradient-to-l from-[#FF8C00] via-[#ffa033] to-[#0052CC] bg-clip-text text-transparent leading-tight truncate">
-            سمارت الإدارة برو
+            {t("brand")}
           </span>
           <span className="block text-[10px] text-slate-500 truncate">{t("brand.tagline")}</span>
         </div>
