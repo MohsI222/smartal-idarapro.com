@@ -209,7 +209,7 @@ export function Landing() {
 
         <div className="rounded-2xl overflow-hidden border border-slate-800 shadow-2xl shadow-orange-500/10 mb-10 max-w-5xl mx-auto">
           <img
-            src="/hero-team.png"
+            src="/registration-hero.jpg"
             alt={t("landing.heroAlt")}
             className="w-full h-auto object-cover max-h-[420px] object-center"
             loading="eager"
