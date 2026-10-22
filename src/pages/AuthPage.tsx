@@ -505,6 +505,14 @@ export function AuthPage() {
           </CardContent>
         </Card>
 
+        <div className="w-full max-w-2xl rounded-2xl overflow-hidden border border-slate-800 shadow-2xl shadow-orange-500/10">
+          <img
+            src="/registration-hero.jpg"
+            alt="Smart Al-Idara Pro"
+            className="w-full h-auto"
+          />
+        </div>
+
         <div className="w-full max-w-2xl">
           <PublicMediaGallery />
         </div>
