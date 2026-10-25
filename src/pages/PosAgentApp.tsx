@@ -2857,12 +2857,6 @@ export function PosAgentApp() {
         "fr": "Vérifier les points",
         "es": "Verificar puntos"
       },
-      "deleteSelected": {
-        "ar": "حذف المحدد",
-        "en": "Delete Selected",
-        "fr": "Supprimer la sélection",
-        "es": "Eliminar seleccionados"
-      },
       "selectAll": {
         "ar": "تحديد الكل",
         "en": "Select All",

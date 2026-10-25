@@ -2134,7 +2134,7 @@ router.post("/cash-drawer-summary", async (req, res) => {
         opening_balance: opening_balance || 0,
         total_sales: totalSales,
         total_expenses: totalExpenses,
-        expected_cash,
+        expectedCash,
         actual_cash: actual_cash || null,
         difference
       }
@@ -2147,28 +2147,28 @@ router.post("/cash-drawer-summary", async (req, res) => {
 
 export function registerPosAgentRoutes(app: express.Express, authMiddleware: (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<void>) {
   // Handle OPTIONS preflight requests for DELETE methods
-  app.options("/api/pos-agent/expense/:id", (req, res) => {
+  app.options("/api/pos-agent/expense/:id", (_req, res) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.status(200).end();
   });
 
-  app.options("/api/pos-agent/expenses/bulk-delete", (req, res) => {
+  app.options("/api/pos-agent/expenses/bulk-delete", (_req, res) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.status(200).end();
   });
 
-  app.options("/api/pos-agent/standalone-sales/:id", (req, res) => {
+  app.options("/api/pos-agent/standalone-sales/:id", (_req, res) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.status(200).end();
   });
 
-  app.options("/api/pos-agent/standalone-sales/bulk-delete", (req, res) => {
+  app.options("/api/pos-agent/standalone-sales/bulk-delete", (_req, res) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
