@@ -353,6 +353,9 @@ CREATE TABLE IF NOT EXISTS tl_workers (
   hierarchy_role TEXT NOT NULL DEFAULT 'employee',
   reports_to_worker_id TEXT,
   magic_token TEXT UNIQUE,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  location_updated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -484,6 +487,92 @@ CREATE INDEX IF NOT EXISTS idx_production_requests_user ON production_requests (
 CREATE INDEX IF NOT EXISTS idx_logistics_queue_user ON logistics_queue (user_id);
 
 ALTER TABLE tl_messages ADD COLUMN IF NOT EXISTS attachment_data BYTEA;
+
+-- GPS Location Tracking Table
+CREATE TABLE IF NOT EXISTS worker_location_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  worker_id TEXT NOT NULL REFERENCES tl_workers (id) ON DELETE CASCADE,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  accuracy DOUBLE PRECISION,
+  timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  source TEXT NOT NULL DEFAULT 'manual' -- 'manual', 'auto', 'sale', 'delivery'
+);
+
+CREATE INDEX IF NOT EXISTS idx_worker_location_logs_worker ON worker_location_logs(worker_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_worker_location_logs_user ON worker_location_logs(user_id, timestamp DESC);
+
+-- Visit Verification Table
+CREATE TABLE IF NOT EXISTS visit_verifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  worker_id TEXT NOT NULL REFERENCES tl_workers (id) ON DELETE CASCADE,
+  customer_id TEXT,
+  customer_name TEXT,
+  customer_latitude DOUBLE PRECISION,
+  customer_longitude DOUBLE PRECISION,
+  worker_latitude DOUBLE PRECISION NOT NULL,
+  worker_longitude DOUBLE PRECISION NOT NULL,
+  distance_meters DOUBLE PRECISION,
+  is_verified BOOLEAN NOT NULL DEFAULT false,
+  visit_type TEXT NOT NULL, -- 'sale', 'delivery', 'visit'
+  visit_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_visit_verifications_worker ON visit_verifications(worker_id, visit_date DESC);
+CREATE INDEX IF NOT EXISTS idx_visit_verifications_user ON visit_verifications(user_id, visit_date DESC);
+
+-- Customer Loyalty Table
+CREATE TABLE IF NOT EXISTS customer_loyalty (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  phone_number TEXT NOT NULL,
+  customer_name TEXT,
+  points INTEGER NOT NULL DEFAULT 0,
+  total_purchases DOUBLE PRECISION NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, phone_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_loyalty_user ON customer_loyalty(user_id);
+CREATE INDEX IF NOT EXISTS idx_customer_loyalty_phone ON customer_loyalty(phone_number);
+
+-- Expenses Table
+CREATE TABLE IF NOT EXISTS cash_expenses (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  employee_id TEXT,
+  amount DOUBLE PRECISION NOT NULL,
+  category TEXT NOT NULL, -- 'supplies', 'transport', 'misc', 'withdrawal'
+  description TEXT,
+  expense_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cash_expenses_user ON cash_expenses(user_id, expense_date DESC);
+CREATE INDEX IF NOT EXISTS idx_cash_expenses_employee ON cash_expenses(employee_id, expense_date DESC);
+
+-- Cash Drawer Summary Table
+CREATE TABLE IF NOT EXISTS cash_drawer_summaries (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  employee_id TEXT,
+  summary_date DATE NOT NULL,
+  opening_balance DOUBLE PRECISION NOT NULL DEFAULT 0,
+  total_sales DOUBLE PRECISION NOT NULL DEFAULT 0,
+  total_expenses DOUBLE PRECISION NOT NULL DEFAULT 0,
+  expected_cash DOUBLE PRECISION NOT NULL DEFAULT 0,
+  actual_cash DOUBLE PRECISION,
+  difference DOUBLE PRECISION,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cash_drawer_summaries_user ON cash_drawer_summaries(user_id, summary_date DESC);
+CREATE INDEX IF NOT EXISTS idx_cash_drawer_summaries_employee ON cash_drawer_summaries(employee_id, summary_date DESC);
 
 CREATE TABLE IF NOT EXISTS media_library (
   id TEXT PRIMARY KEY,
@@ -640,6 +729,7 @@ CREATE TABLE IF NOT EXISTS pos_agent_sales (
   check_number TEXT,
   check_holder_name TEXT,
   check_holder_cin TEXT,
+  tpe_transaction_id TEXT,
   sale_date TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -650,6 +740,9 @@ CREATE INDEX IF NOT EXISTS idx_pos_agent_sales_employee_id ON pos_agent_sales(em
 ALTER TABLE pos_agent_sales ADD COLUMN IF NOT EXISTS check_number TEXT;
 ALTER TABLE pos_agent_sales ADD COLUMN IF NOT EXISTS check_holder_name TEXT;
 ALTER TABLE pos_agent_sales ADD COLUMN IF NOT EXISTS check_holder_cin TEXT;
+
+-- Add TPE payment field to pos_agent_sales table
+ALTER TABLE pos_agent_sales ADD COLUMN IF NOT EXISTS tpe_transaction_id TEXT;
 
 -- POS Agent Sales Lines Table
 CREATE TABLE IF NOT EXISTS pos_agent_sales_lines (

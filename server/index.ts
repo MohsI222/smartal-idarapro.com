@@ -166,6 +166,150 @@ async function migratePosAgentCheckFields() {
     } else {
       console.log("[Migration] Check payment fields already exist");
     }
+
+    // Add TPE transaction ID field
+    try {
+      await db.prepare(`
+        ALTER TABLE pos_agent_sales
+        ADD COLUMN IF NOT EXISTS tpe_transaction_id TEXT
+      `).run();
+      console.log("[Migration] TPE transaction ID field added successfully");
+    } catch (error: any) {
+      if (error.message.includes('already exists')) {
+        console.log("[Migration] TPE transaction ID field already exists");
+      } else {
+        console.error("[Migration] Error migrating TPE field:", error.message);
+      }
+    }
+
+    // Add GPS location fields to tl_workers
+    try {
+      await db.prepare(`
+        ALTER TABLE tl_workers
+        ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION
+      `).run();
+      await db.prepare(`
+        ALTER TABLE tl_workers
+        ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION
+      `).run();
+      await db.prepare(`
+        ALTER TABLE tl_workers
+        ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMPTZ
+      `).run();
+      console.log("[Migration] GPS location fields added to tl_workers");
+    } catch (error: any) {
+      if (error.message.includes('already exists')) {
+        console.log("[Migration] GPS location fields already exist in tl_workers");
+      } else {
+        console.error("[Migration] Error migrating GPS fields:", error.message);
+      }
+    }
+
+    // Create worker_location_logs table
+    try {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS worker_location_logs (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+          worker_id TEXT NOT NULL REFERENCES tl_workers (id) ON DELETE CASCADE,
+          latitude DOUBLE PRECISION NOT NULL,
+          longitude DOUBLE PRECISION NOT NULL,
+          accuracy DOUBLE PRECISION,
+          timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          source TEXT NOT NULL DEFAULT 'manual'
+        )
+      `).run();
+      console.log("[Migration] worker_location_logs table created");
+    } catch (error: any) {
+      console.error("[Migration] Error creating worker_location_logs table:", error.message);
+    }
+
+    // Create visit_verifications table
+    try {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS visit_verifications (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+          worker_id TEXT NOT NULL REFERENCES tl_workers (id) ON DELETE CASCADE,
+          customer_id TEXT,
+          customer_name TEXT,
+          customer_latitude DOUBLE PRECISION,
+          customer_longitude DOUBLE PRECISION,
+          worker_latitude DOUBLE PRECISION NOT NULL,
+          worker_longitude DOUBLE PRECISION NOT NULL,
+          distance_meters DOUBLE PRECISION,
+          is_verified BOOLEAN NOT NULL DEFAULT false,
+          visit_type TEXT NOT NULL,
+          visit_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          notes TEXT
+        )
+      `).run();
+      console.log("[Migration] visit_verifications table created");
+    } catch (error: any) {
+      console.error("[Migration] Error creating visit_verifications table:", error.message);
+    }
+
+    // Create customer_loyalty table
+    try {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS customer_loyalty (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+          phone_number TEXT NOT NULL,
+          customer_name TEXT,
+          points INTEGER NOT NULL DEFAULT 0,
+          total_purchases DOUBLE PRECISION NOT NULL DEFAULT 0,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (user_id, phone_number)
+        )
+      `).run();
+      console.log("[Migration] customer_loyalty table created");
+    } catch (error: any) {
+      console.error("[Migration] Error creating customer_loyalty table:", error.message);
+    }
+
+    // Create cash_expenses table
+    try {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS cash_expenses (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+          employee_id TEXT,
+          amount DOUBLE PRECISION NOT NULL,
+          category TEXT NOT NULL,
+          description TEXT,
+          expense_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `).run();
+      console.log("[Migration] cash_expenses table created");
+    } catch (error: any) {
+      console.error("[Migration] Error creating cash_expenses table:", error.message);
+    }
+
+    // Create cash_drawer_summaries table
+    try {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS cash_drawer_summaries (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+          employee_id TEXT,
+          summary_date DATE NOT NULL,
+          opening_balance DOUBLE PRECISION NOT NULL DEFAULT 0,
+          total_sales DOUBLE PRECISION NOT NULL DEFAULT 0,
+          total_expenses DOUBLE PRECISION NOT NULL DEFAULT 0,
+          expected_cash DOUBLE PRECISION NOT NULL DEFAULT 0,
+          actual_cash DOUBLE PRECISION,
+          difference DOUBLE PRECISION,
+          notes TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `).run();
+      console.log("[Migration] cash_drawer_summaries table created");
+    } catch (error: any) {
+      console.error("[Migration] Error creating cash_drawer_summaries table:", error.message);
+    }
   } catch (error: any) {
     console.error("[Migration] Error migrating pos agent check fields:", error.message);
     // Don't throw - allow app to start even if migration fails
@@ -5842,38 +5986,86 @@ app.delete("/api/inventory/activity-logs/:id", authMiddleware, async (req, res) 
 
 // Exported Documents API - Server-side storage with user isolation
 app.get("/api/exported-documents", authMiddleware, async (req, res) => {
-  const userId = (req as express.Request & { userId: string }).userId;
-  const { kind } = req.query;
-  let query = "SELECT * FROM exported_documents WHERE user_id = ?";
-  const params: any[] = [userId];
-  
-  if (kind) {
-    query += " AND document_kind = ?";
-    params.push(String(kind));
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const { kind } = req.query;
+
+    // Check if table exists (PostgreSQL syntax)
+    const tableCheck = await db.prepare(
+      `SELECT table_name FROM information_schema.tables WHERE table_name = 'exported_documents'`
+    ).get();
+
+    if (!tableCheck) {
+      // Create table if it doesn't exist
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS exported_documents (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          document_kind TEXT NOT NULL,
+          title TEXT NOT NULL,
+          filename TEXT NOT NULL,
+          file_size INTEGER,
+          export_timestamp TEXT NOT NULL,
+          metadata TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run();
+    }
+
+    let query = "SELECT * FROM exported_documents WHERE user_id = ?";
+    const params: any[] = [userId];
+
+    if (kind) {
+      query += " AND document_kind = ?";
+      params.push(String(kind));
+    }
+
+    query += " ORDER BY export_timestamp DESC LIMIT 100";
+
+    const rows = await db.prepare(query).all(...params);
+    res.json({ documents: rows });
+  } catch (error) {
+    console.error("[Server] Error listing exported documents:", error);
+    res.status(500).json({ error: "Failed to list exported documents" });
   }
-  
-  query += " ORDER BY export_timestamp DESC LIMIT 100";
-  
-  const rows = await db.prepare(query).all(...params);
-  res.json({ documents: rows });
 });
 
 app.post("/api/exported-documents", authMiddleware, async (req, res) => {
-  const userId = (req as express.Request & { userId: string }).userId;
-  const { document_kind, title, filename, file_size, export_timestamp, metadata } = req.body;
-  
-  if (!document_kind || !title || !filename || !export_timestamp) {
-    res.status(400).json({ error: "Missing required fields: document_kind, title, filename, export_timestamp" });
-    return;
+  try {
+    const userId = (req as express.Request & { userId: string }).userId;
+    const { document_kind, title, filename, file_size, export_timestamp, metadata } = req.body;
+
+    if (!document_kind || !title || !filename || !export_timestamp) {
+      res.status(400).json({ error: "Missing required fields: document_kind, title, filename, export_timestamp" });
+      return;
+    }
+
+    // Ensure table exists
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS exported_documents (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        document_kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        file_size INTEGER,
+        export_timestamp TEXT NOT NULL,
+        metadata TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+
+    const id = randomUUID();
+    await db.prepare(
+      `INSERT INTO exported_documents (id, user_id, document_kind, title, filename, file_size, export_timestamp, metadata, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+    ).run(id, userId, String(document_kind), String(title), String(filename), file_size || null, String(export_timestamp), metadata ? JSON.stringify(metadata) : '{}');
+
+    res.json({ id, message: "Exported document recorded successfully" });
+  } catch (error) {
+    console.error("[Server] Error saving exported document:", error);
+    res.status(500).json({ error: "Failed to save exported document" });
   }
-  
-  const id = randomUUID();
-  await db.prepare(
-    `INSERT INTO exported_documents (id, user_id, document_kind, title, filename, file_size, export_timestamp, metadata, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-  ).run(id, userId, String(document_kind), String(title), String(filename), file_size || null, String(export_timestamp), metadata ? JSON.stringify(metadata) : '{}');
-  
-  res.json({ id, message: "Exported document recorded successfully" });
 });
 
 app.delete("/api/exported-documents/:id", authMiddleware, async (req, res) => {

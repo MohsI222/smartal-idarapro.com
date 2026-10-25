@@ -53,6 +53,7 @@ type Sale = {
   check_number?: string;
   check_holder_name?: string;
   check_holder_cin?: string;
+  tpe_transaction_id?: string;
   sale_date: string;
   lines: SaleLine[];
 };
@@ -89,10 +90,11 @@ export function PosAgentApp() {
   const [cart, setCart] = useState<SaleLine[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [paidAmount, setPaidAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "check">("cash");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "check" | "tpe">("cash");
   const [checkNumber, setCheckNumber] = useState("");
   const [checkHolderName, setCheckHolderName] = useState("");
   const [checkHolderCin, setCheckHolderCin] = useState("");
+  const [tpeTransactionId, setTpeTransactionId] = useState("");
   const [sales, setSales] = useState<Sale[]>([]);
   const [attendance, setAttendance] = useState<Attendance | null>(null);
   const [isClockingIn, setIsClockingIn] = useState(false);
@@ -126,6 +128,24 @@ export function PosAgentApp() {
   const [storeQrCode, setStoreQrCode] = useState<string>("");
   const [appDownloadLink, setAppDownloadLink] = useState<string>("");
   const [uploading, setUploading] = useState(false);
+  const [rfidMode, setRfidMode] = useState(false);
+  const [rfidCodes, setRfidCodes] = useState("");
+  const [detectingRfid, setDetectingRfid] = useState(false);
+  const [rfidConnected, setRfidConnected] = useState(false);
+  const [rfidPort, setRfidPort] = useState<any>(null);
+  const [gpsLocation, setGpsLocation] = useState<{ latitude: number; longitude: number; accuracy: number; address?: string } | null>(null);
+  const [gpsEnabled, setGpsEnabled] = useState(false);
+  const [loyaltyPoints, setLoyaltyPoints] = useState<number>(0);
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [showLoyaltyDialog, setShowLoyaltyDialog] = useState(false);
+  const [showExpensesDialog, setShowExpensesDialog] = useState(false);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [selectedExpenses, setSelectedExpenses] = useState<Set<string>>(new Set());
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState("misc");
+  const [expenseDescription, setExpenseDescription] = useState("");
+  const [rfidSimulationMode, setRfidSimulationMode] = useState(false);
+  const [rfidSimulationCode, setRfidSimulationCode] = useState("");
 
   // Load company logo and store settings from localStorage on mount
   useEffect(() => {
@@ -561,6 +581,411 @@ export function PosAgentApp() {
     }
   };
 
+  const handleRfidDetect = async () => {
+    if (!rfidCodes.trim()) {
+      toast.error("يرجى إدخال أكواد RFID أو SKU");
+      return;
+    }
+
+    setDetectingRfid(true);
+    try {
+      const codes = rfidCodes.split(/[\n,;]+/).map(c => c.trim()).filter(c => c.length > 0);
+      console.log("[PosAgentApp] Detecting RFID codes:", codes);
+
+      const response = await api<{ success: boolean; products: Product[]; detected_count: number; total_codes: number }>("/pos-agent/rfid-detect", {
+        method: "POST",
+        body: JSON.stringify({ token: sessionToken, codes }),
+      });
+
+      if (response.success && response.products.length > 0) {
+        toast.success(`تم الكشف عن ${response.detected_count} منتج من ${response.total_codes}`);
+        // Add all detected products to cart
+        response.products.forEach(product => {
+          addToCart(product);
+        });
+        setRfidCodes("");
+        setRfidMode(false);
+      } else {
+        toast.error("لم يتم العثور على منتجات مطابقة");
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error detecting RFID:", error);
+      toast.error("فشل الكشف عن المنتجات");
+    } finally {
+      setDetectingRfid(false);
+    }
+  };
+
+  // RFID Reader Integration using Web Serial API
+  const connectRfidReader = async () => {
+    try {
+      if (!navigator.serial) {
+        toast.error("المتصفح لا يدعم Web Serial API");
+        return;
+      }
+
+      const port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 9600 });
+
+      setRfidPort(port);
+      setRfidConnected(true);
+      toast.success("تم توصيل قارئ RFID بنجاح");
+
+      // Start reading from RFID reader
+      const reader = port.readable.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete lines (RFID codes usually end with newline)
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+          for (const line of lines) {
+            const code = line.trim();
+            if (code.length > 0) {
+              console.log("[PosAgentApp] RFID code received:", code);
+              // Detect and add product automatically
+              await detectAndAddRfidCode(code);
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error connecting RFID reader:", error);
+      toast.error("فشل توصيل قارئ RFID");
+      setRfidConnected(false);
+    }
+  };
+
+  const disconnectRfidReader = async () => {
+    if (rfidPort) {
+      try {
+        await rfidPort.close();
+        setRfidPort(null);
+        setRfidConnected(false);
+        toast.success("تم فصل قارئ RFID");
+      } catch (error) {
+        console.error("[PosAgentApp] Error disconnecting RFID reader:", error);
+      }
+    }
+  };
+
+  const detectAndAddRfidCode = async (code: string) => {
+    try {
+      const response = await api<{ success: boolean; products: Product[]; detected_count: number; total_codes: number }>("/pos-agent/rfid-detect", {
+        method: "POST",
+        body: JSON.stringify({ token: sessionToken, codes: [code] }),
+      });
+
+      if (response.success && response.products.length > 0) {
+        response.products.forEach(product => {
+          addToCart(product);
+        });
+        toast.success(`تم إضافة: ${response.products.map(p => p.name).join(", ")}`);
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error detecting RFID code:", error);
+    }
+  };
+
+  // GPS Location Tracking
+  const getCurrentLocation = (): Promise<GeolocationPosition> => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Geolocation not supported"));
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => resolve(position),
+        (error) => reject(error),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  };
+
+  // Reverse Geocoding - Convert coordinates to address
+  const reverseGeocode = async (latitude: number, longitude: number): Promise<string> => {
+    try {
+      // Using OpenStreetMap Nominatim API (free, no API key required)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=${agentLocale}`
+      );
+      const data = await response.json();
+      
+      if (data.error) {
+        return "Unknown location";
+      }
+
+      const addr = data.address;
+      const city = addr.city || addr.town || addr.village || addr.hamlet || "";
+      const street = addr.road || addr.street || "";
+      const building = addr.building || "";
+      
+      const addressParts = [building, street, city].filter(Boolean);
+      return addressParts.length > 0 ? addressParts.join(", ") : "Unknown location";
+    } catch (error) {
+      console.error("[PosAgentApp] Error reverse geocoding:", error);
+      return "Unknown location";
+    }
+  };
+
+  const updateGpsLocation = async () => {
+    try {
+      const position = await getCurrentLocation();
+      const { latitude, longitude, accuracy } = position.coords;
+      
+      // Get address from coordinates
+      const address = await reverseGeocode(latitude, longitude);
+      
+      setGpsLocation({ latitude, longitude, accuracy: accuracy || 0, address });
+      setGpsEnabled(true);
+    } catch (error) {
+      console.error("[PosAgentApp] Error getting GPS location:", error);
+      setGpsEnabled(false);
+    }
+  };
+
+  const logGpsLocation = async (source: string = 'manual') => {
+    if (!currentEmployee?.employee_id) return;
+
+    try {
+      const position = await getCurrentLocation();
+      const { latitude, longitude, accuracy } = position.coords;
+
+      // Get address from coordinates
+      const address = await reverseGeocode(latitude, longitude);
+
+      setGpsLocation({ latitude, longitude, accuracy: accuracy || 0, address });
+
+      const response = await api<{ success: boolean; message: string }>("/pos-agent/gps-location", {
+        method: "POST",
+        body: JSON.stringify({
+          token: sessionToken,
+          employee_id: currentEmployee.employee_id,
+          latitude,
+          longitude,
+          accuracy,
+          source
+        }),
+      });
+
+      if (response.success) {
+        console.log("[PosAgentApp] GPS location logged successfully");
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error logging GPS location:", error);
+    }
+  };
+
+  const verifyVisit = async (customerData?: { id?: string; name?: string; latitude?: number; longitude?: number }) => {
+    if (!currentEmployee?.employee_id) return;
+
+    try {
+      const position = await getCurrentLocation();
+      const { latitude, longitude } = position.coords;
+
+      const response = await api<{ success: boolean; is_verified: boolean; distance_meters: number | null; message: string }>("/pos-agent/verify-visit", {
+        method: "POST",
+        body: JSON.stringify({
+          token: sessionToken,
+          employee_id: currentEmployee.employee_id,
+          customer_id: customerData?.id,
+          customer_name: customerData?.name,
+          customer_latitude: customerData?.latitude,
+          customer_longitude: customerData?.longitude,
+          worker_latitude: latitude,
+          worker_longitude: longitude,
+          visit_type: 'sale',
+          notes: ''
+        }),
+      });
+
+      if (response.success) {
+        toast.success(response.message);
+        return response.is_verified;
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error verifying visit:", error);
+      toast.error("فشل التحقق من الموقع");
+    }
+    return false;
+  };
+
+  // Auto-log location on checkout
+  const handleCheckoutWithGps = async () => {
+    await logGpsLocation('sale');
+    
+    // Add loyalty points if customer phone provided
+    if (customerPhone.trim()) {
+      await addLoyaltyPoints();
+    }
+    
+    await handleCheckout();
+  };
+
+  // Loyalty Points Functions
+  const checkLoyaltyPoints = async (phone: string) => {
+    try {
+      const response = await api<{ success: boolean; points: number; total_purchases: number; customer_name: string | null }>(
+        `/pos-agent/loyalty-points?token=${sessionToken}&phone=${phone}`
+      );
+      
+      if (response.success) {
+        setLoyaltyPoints(response.points);
+        return response;
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error checking loyalty points:", error);
+    }
+    return null;
+  };
+
+  const addLoyaltyPoints = async () => {
+    if (!customerPhone.trim() || cartTotal === 0) return;
+
+    try {
+      const pointsToAdd = Math.floor(cartTotal); // 1 point per currency unit
+      const response = await api<{ success: boolean; message: string }>("/pos-agent/loyalty-add", {
+        method: "POST",
+        body: JSON.stringify({
+          token: sessionToken,
+          phone: customerPhone,
+          customer_name: customerName || null,
+          purchase_amount: cartTotal,
+          points_to_add: pointsToAdd
+        }),
+      });
+
+      if (response.success) {
+        console.log("[PosAgentApp] Loyalty points added successfully");
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error adding loyalty points:", error);
+    }
+  };
+
+  // Expenses Functions
+  const loadExpenses = async () => {
+    try {
+      const response = await api<{ success: boolean; expenses: any[] }>(
+        `/pos-agent/expenses?token=${sessionToken}&employee_id=${currentEmployee?.employee_id}`
+      );
+      
+      if (response.success) {
+        setExpenses(response.expenses);
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error loading expenses:", error);
+    }
+  };
+
+  const addExpense = async () => {
+    if (!expenseAmount || parseFloat(expenseAmount) <= 0) {
+      toast.error("يرجى إدخال المبلغ");
+      return;
+    }
+
+    try {
+      const response = await api<{ success: boolean; message: string }>("/pos-agent/expense", {
+        method: "POST",
+        body: JSON.stringify({
+          token: sessionToken,
+          employee_id: currentEmployee?.employee_id,
+          amount: parseFloat(expenseAmount),
+          category: expenseCategory,
+          description: expenseDescription
+        }),
+      });
+
+      if (response.success) {
+        toast.success("تم إضافة المصروف بنجاح");
+        setExpenseAmount("");
+        setExpenseDescription("");
+        await loadExpenses();
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error adding expense:", error);
+      toast.error("فشل إضافة المصروف");
+    }
+  };
+
+  const deleteExpense = async (expenseId: string) => {
+    try {
+      const response = await api<{ success: boolean; message: string }>(`/pos-agent/expense/${expenseId}`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          token: sessionToken,
+          employee_id: currentEmployee?.employee_id
+        }),
+      });
+
+      if (response.success) {
+        toast.success("تم حذف المصروف بنجاح");
+        await loadExpenses();
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error deleting expense:", error);
+      toast.error("فشل حذف المصروف");
+    }
+  };
+
+  const deleteSelectedExpenses = async () => {
+    if (selectedExpenses.size === 0) {
+      toast.error("يرجى تحديد مصروف للحذف");
+      return;
+    }
+
+    try {
+      const response = await api<{ success: boolean; message: string }>("/pos-agent/expenses/bulk-delete", {
+        method: "DELETE",
+        body: JSON.stringify({
+          token: sessionToken,
+          employee_id: currentEmployee?.employee_id,
+          expense_ids: Array.from(selectedExpenses)
+        }),
+      });
+
+      if (response.success) {
+        toast.success(`تم حذف ${selectedExpenses.size} مصروف بنجاح`);
+        setSelectedExpenses(new Set());
+        await loadExpenses();
+      }
+    } catch (error) {
+      console.error("[PosAgentApp] Error deleting expenses:", error);
+      toast.error("فشل حذف المصاريف");
+    }
+  };
+
+  const toggleExpenseSelection = (expenseId: string) => {
+    setSelectedExpenses(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(expenseId)) {
+        newSet.delete(expenseId);
+      } else {
+        newSet.add(expenseId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAllExpenses = () => {
+    if (selectedExpenses.size === expenses.length) {
+      setSelectedExpenses(new Set());
+    } else {
+      setSelectedExpenses(new Set(expenses.map(e => e.id)));
+    }
+  };
+
   const handleImageUpload = async (file: File) => {
     const MAX_IMAGE_MB = 10;
 
@@ -897,7 +1322,7 @@ export function PosAgentApp() {
       const response = await api<{ success: boolean; message: string }>("/pos-agent/standalone-returns", {
         method: "POST",
         body: JSON.stringify({
-          sessionToken,
+          token: sessionToken,
           employee_id: currentEmployee?.employee_id,
           lines: returnCart,
           total_amount: returnCart.reduce((sum, line) => sum + line.line_total, 0)
@@ -958,6 +1383,15 @@ export function PosAgentApp() {
       }
     }
 
+    // Validate TPE transaction ID if payment method is TPE
+    if (paymentMethod === "tpe") {
+      if (!tpeTransactionId.trim()) {
+        toast.error("رقم العملية TPE مطلوب");
+        setLoading(false);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const response = await api<{ success: boolean; sale: Sale; message: string }>("/pos-agent/standalone-sales", {
@@ -973,7 +1407,8 @@ export function PosAgentApp() {
           payment_method: paymentMethod,
           check_number: paymentMethod === "check" ? checkNumber : null,
           check_holder_name: paymentMethod === "check" ? checkHolderName : null,
-          check_holder_cin: paymentMethod === "check" ? checkHolderCin : null
+          check_holder_cin: paymentMethod === "check" ? checkHolderCin : null,
+          tpe_transaction_id: paymentMethod === "tpe" ? tpeTransactionId : null
         }),
       });
 
@@ -998,6 +1433,7 @@ export function PosAgentApp() {
         setCheckNumber("");
         setCheckHolderName("");
         setCheckHolderCin("");
+        setTpeTransactionId("");
         // Reload sales to ensure persistence
         await loadSales();
         // Refresh stock
@@ -1239,6 +1675,15 @@ export function PosAgentApp() {
             <span>${sale.check_holder_cin ? sale.check_holder_cin.substring(0, 3) + '***' + sale.check_holder_cin.substring(sale.check_holder_cin.length - 2) : '-'}</span>
           </div>
           ` : ''}
+          ${sale.payment_method === 'tpe' ? `
+          <div class="info-row" style="background: #dbeafe; padding: 8px; margin-top: 10px; border-radius: 4px;">
+            <span style="color: #1e40af; font-weight: bold;">${locale === 'ar' ? 'طريقة الدفع: TPE / بطاقة بنكية' : locale === 'fr' ? 'Paiement: TPE / Carte' : locale === 'es' ? 'Pago: TPE / Tarjeta' : locale === 'en' ? 'Payment: TPE / Card' : 'طريقة الدفع: TPE / بطاقة بنكية'}</span>
+          </div>
+          <div class="info-row">
+            <span>${locale === 'ar' ? 'رقم العملية' : locale === 'fr' ? 'N° Transaction' : locale === 'es' ? 'N° Transacción' : locale === 'en' ? 'Transaction ID' : 'رقم العملية'}:</span>
+            <span>${sale.tpe_transaction_id || '-'}</span>
+          </div>
+          ` : ''}
         </div>
 
         <table>
@@ -1334,10 +1779,11 @@ export function PosAgentApp() {
         "التاريخ": saleDate.toLocaleDateString(isArabic ? "ar-EG" : "en-US", { numberingSystem: 'latn' }),
         "الوقت": saleDate.toLocaleTimeString(isArabic ? "ar-EG" : "en-US", { hour: '2-digit', minute: '2-digit', hour12: false, numberingSystem: 'latn' }),
         "اسم العميل": sale.customer_name,
-        "طريقة الدفع": sale.payment_method === 'check' ? 'شيك' : 'نقدي',
+        "طريقة الدفع": sale.payment_method === 'check' ? 'شيك' : sale.payment_method === 'tpe' ? 'TPE / بطاقة' : 'نقدي',
         "رقم الشيك": sale.check_number || '-',
         "صاحب الشيك": sale.check_holder_name || '-',
         "رقم البطاقة الوطنية": sale.check_holder_cin || '-',
+        "رقم العملية TPE": sale.tpe_transaction_id || '-',
         "الإجمالي": sale.total_amount,
         "المدفوع": sale.paid_amount,
         "الديون": sale.credit_amount,
@@ -1382,13 +1828,19 @@ export function PosAgentApp() {
 
     const tableRows = sales.map(sale => {
       const saleDate = new Date(sale.sale_date);
+      const paymentDisplay = sale.payment_method === 'check'
+        ? `<span style="color: #d97706; font-weight: bold;">${isArabic ? 'شيك' : locale === 'fr' ? 'Chèque' : locale === 'es' ? 'Cheque' : locale === 'en' ? 'Check' : 'شيك'}</span>`
+        : sale.payment_method === 'tpe'
+        ? `<span style="color: #2563eb; font-weight: bold;">${isArabic ? 'TPE / بطاقة' : locale === 'fr' ? 'TPE / Carte' : locale === 'es' ? 'TPE / Tarjeta' : locale === 'en' ? 'TPE / Card' : 'TPE / بطاقة'}</span>`
+        : isArabic ? 'نقدي' : locale === 'fr' ? 'Espèces' : locale === 'es' ? 'Efectivo' : locale === 'en' ? 'Cash' : 'نقدي';
       return `
         <tr>
           <td>${saleDate.toLocaleDateString(isArabic ? "ar-EG" : locale === 'fr' ? "fr-FR" : locale === 'es' ? "es-ES" : "en-US", { numberingSystem: 'latn' })}</td>
           <td>${saleDate.toLocaleTimeString(isArabic ? "ar-EG" : locale === 'fr' ? "fr-FR" : locale === 'es' ? "es-ES" : "en-US", { hour: '2-digit', minute: '2-digit', hour12: false, numberingSystem: 'latn' })}</td>
           <td>${sale.customer_name}</td>
-          <td>${sale.payment_method === 'check' ? `<span style="color: #d97706; font-weight: bold;">${isArabic ? 'شيك' : locale === 'fr' ? 'Chèque' : locale === 'es' ? 'Cheque' : locale === 'en' ? 'Check' : 'شيك'}</span>` : isArabic ? 'نقدي' : locale === 'fr' ? 'Espèces' : locale === 'es' ? 'Efectivo' : locale === 'en' ? 'Cash' : 'نقدي'}</td>
+          <td>${paymentDisplay}</td>
           ${sale.payment_method === 'check' ? `<td>${sale.check_number || '-'}</td><td>${sale.check_holder_name || '-'}</td>` : ''}
+          ${sale.payment_method === 'tpe' ? `<td>${sale.tpe_transaction_id || '-'}</td>` : ''}
           <td>${sale.total_amount.toFixed(2)} ${getText("currency")}</td>
           <td>${sale.paid_amount.toFixed(2)} ${getText("currency")}</td>
           <td>${sale.credit_amount.toFixed(2)} ${getText("currency")}</td>
@@ -1460,6 +1912,7 @@ export function PosAgentApp() {
               <th>${isArabic ? 'العميل' : locale === 'fr' ? 'Client' : locale === 'es' ? 'Cliente' : locale === 'en' ? 'Customer' : 'العميل'}</th>
               <th>${isArabic ? 'طريقة الدفع' : locale === 'fr' ? 'Paiement' : locale === 'es' ? 'Pago' : locale === 'en' ? 'Payment' : 'طريقة الدفع'}</th>
               ${sales.some(s => s.payment_method === 'check') ? `<th>${isArabic ? 'رقم الشيك' : locale === 'fr' ? 'N° Chèque' : locale === 'es' ? 'N° Cheque' : locale === 'en' ? 'Check No' : 'رقم الشيك'}</th><th>${isArabic ? 'صاحب الشيك' : locale === 'fr' ? 'Titulaire' : locale === 'es' ? 'Titular' : locale === 'en' ? 'Holder' : 'صاحب الشيك'}</th>` : ''}
+              ${sales.some(s => s.payment_method === 'tpe') ? `<th>${isArabic ? 'رقم العملية' : locale === 'fr' ? 'N° Transaction' : locale === 'es' ? 'N° Transacción' : locale === 'en' ? 'Transaction ID' : 'رقم العملية'}</th>` : ''}
               <th>${isArabic ? 'الإجمالي' : locale === 'fr' ? 'Total' : locale === 'es' ? 'Total' : locale === 'en' ? 'Total' : 'الإجمالي'}</th>
               <th>${isArabic ? 'المدفوع' : locale === 'fr' ? 'Payé' : locale === 'es' ? 'Pagado' : locale === 'en' ? 'Paid' : 'المدفوع'}</th>
               <th>${isArabic ? 'الديون' : locale === 'fr' ? 'Crédit' : locale === 'es' ? 'Crédito' : locale === 'en' ? 'Credit' : 'الديون'}</th>
@@ -1471,7 +1924,7 @@ export function PosAgentApp() {
           </tbody>
           <tfoot>
             <tr class="total-row">
-              <td colspan="${sales.some(s => s.payment_method === 'check') ? 9 : 7}">${isArabic ? 'المجموع' : 'Total'}</td>
+              <td colspan="${7 + (sales.some(s => s.payment_method === 'check') ? 2 : 0) + (sales.some(s => s.payment_method === 'tpe') ? 1 : 0)}">${isArabic ? 'المجموع' : 'Total'}</td>
               <td>${sales.reduce((sum, s) => sum + s.total_amount, 0).toFixed(2)} ${getText("currency")}</td>
             </tr>
           </tfoot>
@@ -1494,12 +1947,14 @@ export function PosAgentApp() {
 
     const isArabic = locale.startsWith("ar");
     const hasCheckSales = sales.some(s => s.payment_method === 'check');
+    const hasTpeSales = sales.some(s => s.payment_method === 'tpe');
     const headers = [
       getText("date"),
       getText("time"),
       getText("customer"),
       "طريقة الدفع",
       ...(hasCheckSales ? ["رقم الشيك", "صاحب الشيك", "رقم البطاقة الوطنية"] : []),
+      ...(hasTpeSales ? ["رقم العملية TPE"] : []),
       getText("total"),
       getText("paid"),
       getText("credit"),
@@ -1512,8 +1967,9 @@ export function PosAgentApp() {
         saleDate.toLocaleDateString(isArabic ? "ar-EG" : "en-US", { numberingSystem: 'latn' }),
         saleDate.toLocaleTimeString(isArabic ? "ar-EG" : "en-US", { hour: '2-digit', minute: '2-digit', hour12: false, numberingSystem: 'latn' }),
         sale.customer_name,
-        sale.payment_method === 'check' ? 'شيك' : 'نقدي',
+        sale.payment_method === 'check' ? 'شيك' : sale.payment_method === 'tpe' ? 'TPE / بطاقة' : 'نقدي',
         ...(hasCheckSales ? [sale.check_number || '', sale.check_holder_name || '', sale.check_holder_cin || ''] : []),
+        ...(hasTpeSales ? [sale.tpe_transaction_id || ''] : []),
         sale.total_amount.toFixed(2),
         sale.paid_amount.toFixed(2),
         sale.credit_amount.toFixed(2),
@@ -1555,7 +2011,7 @@ export function PosAgentApp() {
     try {
       const response = await api<{ success: boolean; message: string }>(`/pos-agent/standalone-sales/${saleId}`, {
         method: "DELETE",
-        body: JSON.stringify({ sessionToken, employee_id: currentEmployee?.employee_id }),
+        body: JSON.stringify({ token: sessionToken, employee_id: currentEmployee?.employee_id }),
       });
 
       if (response.success) {
@@ -1576,9 +2032,9 @@ export function PosAgentApp() {
 
     try {
       const response = await api<{ success: boolean; message: string }>("/pos-agent/standalone-sales/bulk-delete", {
-        method: "POST",
+        method: "DELETE",
         body: JSON.stringify({
-          sessionToken,
+          token: sessionToken,
           employee_id: currentEmployee?.employee_id,
           sale_ids: Array.from(selectedSales)
         }),
@@ -2262,6 +2718,156 @@ export function PosAgentApp() {
         "en": "piece",
         "fr": "pièce",
         "es": "pieza"
+      },
+      "rfidConnected": {
+        "ar": "قارئ RFID متصل",
+        "en": "RFID Reader Connected",
+        "fr": "Lecteur RFID connecté",
+        "es": "Lector RFID conectado"
+      },
+      "rfidDisconnected": {
+        "ar": "قارئ RFID غير متصل",
+        "en": "RFID Reader Disconnected",
+        "fr": "Lecteur RFID déconnecté",
+        "es": "Lector RFID desconectado"
+      },
+      "connectRfid": {
+        "ar": "توصيل قارئ RFID",
+        "en": "Connect RFID Reader",
+        "fr": "Connecter le lecteur RFID",
+        "es": "Conectar lector RFID"
+      },
+      "disconnectRfid": {
+        "ar": "فصل قارئ RFID",
+        "en": "Disconnect RFID Reader",
+        "fr": "Déconnecter le lecteur RFID",
+        "es": "Desconectar lector RFID"
+      },
+      "rfidReady": {
+        "ar": "جاهز للقراءة: ضع المنتجات على القارئ لإضافتها تلقائياً للسلة",
+        "en": "Ready to scan: Place products on reader to add to cart automatically",
+        "fr": "Prêt à scanner: Placez les produits sur le lecteur pour les ajouter au panier",
+        "es": "Listo para escanear: Coloque los productos en el lector para agregarlos al carrito"
+      },
+      "rfidConnectPrompt": {
+        "ar": "اضغط على توصيل لربط قارئ RFID بالجهاز",
+        "en": "Click connect to pair RFID reader with device",
+        "fr": "Cliquez sur connecter pour associer le lecteur RFID",
+        "es": "Haga clic en conectar para emparejar el lector RFID"
+      },
+      "loyaltyTitle": {
+        "ar": "نظام الولاء والنقاط",
+        "en": "Loyalty Program",
+        "fr": "Programme de fidélité",
+        "es": "Programa de fidelidad"
+      },
+      "customerPhone": {
+        "ar": "رقم هاتف الزبون",
+        "en": "Customer Phone Number",
+        "fr": "Numéro de téléphone du client",
+        "es": "Número de teléfono del cliente"
+      },
+      "loyaltyPoints": {
+        "ar": "رصيد النقاط",
+        "en": "Loyalty Points",
+        "fr": "Points de fidélité",
+        "es": "Puntos de fidelidad"
+      },
+      "expensesTitle": {
+        "ar": "صندوق المصاريف الصغرى",
+        "en": "Cash Expenses",
+        "fr": "Dépenses de caisse",
+        "es": "Gastos de caja"
+      },
+      "addExpense": {
+        "ar": "إضافة مصروف جديد",
+        "en": "Add Expense",
+        "fr": "Ajouter une dépense",
+        "es": "Agregar gasto"
+      },
+      "amount": {
+        "ar": "المبلغ",
+        "en": "Amount",
+        "fr": "Montant",
+        "es": "Monto"
+      },
+      "category": {
+        "ar": "التصنيف",
+        "en": "Category",
+        "fr": "Catégorie",
+        "es": "Categoría"
+      },
+      "supplies": {
+        "ar": "لوازم",
+        "en": "Supplies",
+        "fr": "Fournitures",
+        "es": "Suministros"
+      },
+      "transport": {
+        "ar": "نقل",
+        "en": "Transport",
+        "fr": "Transport",
+        "es": "Transporte"
+      },
+      "misc": {
+        "ar": "أخرى",
+        "en": "Misc",
+        "fr": "Autres",
+        "es": "Otros"
+      },
+      "withdrawal": {
+        "ar": "سحب",
+        "en": "Withdrawal",
+        "fr": "Retrait",
+        "es": "Retiro"
+      },
+      "description": {
+        "ar": "الوصف",
+        "en": "Description",
+        "fr": "Description",
+        "es": "Descripción"
+      },
+      "todaysExpenses": {
+        "ar": "المصاريف اليومية",
+        "en": "Today's Expenses",
+        "fr": "Dépenses du jour",
+        "es": "Gastos de hoy"
+      },
+      "noExpenses": {
+        "ar": "لا توجد مصاريف اليوم",
+        "en": "No expenses today",
+        "fr": "Aucune dépense aujourd'hui",
+        "es": "Sin gastos hoy"
+      },
+      "totalExpenses": {
+        "ar": "إجمالي المصاريف",
+        "en": "Total Expenses",
+        "fr": "Total des dépenses",
+        "es": "Total gastos"
+      },
+      "noDescription": {
+        "ar": "بدون وصف",
+        "en": "No description",
+        "fr": "Sans description",
+        "es": "Sin descripción"
+      },
+      "checkPoints": {
+        "ar": "التحقق من النقاط",
+        "en": "Check Points",
+        "fr": "Vérifier les points",
+        "es": "Verificar puntos"
+      },
+      "deleteSelected": {
+        "ar": "حذف المحدد",
+        "en": "Delete Selected",
+        "fr": "Supprimer la sélection",
+        "es": "Eliminar seleccionados"
+      },
+      "selectAll": {
+        "ar": "تحديد الكل",
+        "en": "Select All",
+        "fr": "Tout sélectionner",
+        "es": "Seleccionar todo"
       }
     };
 
@@ -2370,6 +2976,53 @@ export function PosAgentApp() {
             <Button
               variant="ghost"
               size="sm"
+              onClick={() => setRfidMode(!rfidMode)}
+              className={`text-white ${rfidMode ? "bg-green-500/20 border-green-500" : ""}`}
+              title="RFID Detection"
+            >
+              <Scan className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={updateGpsLocation}
+              className={`text-white ${gpsEnabled ? "bg-green-500/20 border-green-500" : ""}`}
+              title="GPS Location"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowLoyaltyDialog(true)}
+              className="text-white"
+              title="Customer Loyalty"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+              </svg>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setShowExpensesDialog(true);
+                loadExpenses();
+              }}
+              className="text-white"
+              title="Cash Expenses"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="5" width="20" height="14" rx="2"/>
+                <line x1="2" y1="10" x2="22" y2="10"/>
+              </svg>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setCurrentView("dashboard")}
               className={`text-white ${currentView === "dashboard" ? "bg-white/20" : ""}`}
               title={getText("dashboard")}
@@ -2440,6 +3093,96 @@ export function PosAgentApp() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {gpsLocation && (
+                    <div className="mb-4 bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                          <span className="text-white text-sm font-medium">
+                            {gpsLocation.address || `${gpsLocation.latitude.toFixed(6)}, ${gpsLocation.longitude.toFixed(6)}`}
+                          </span>
+                        </div>
+                        <span className="text-white/70 text-xs">
+                          ±{gpsLocation.accuracy.toFixed(0)}m
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {rfidMode && (
+                    <div className="mb-4 bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-white font-semibold flex items-center gap-2">
+                          <Scan className="w-4 h-4" />
+                          {rfidConnected ? getText("rfidConnected") : getText("rfidDisconnected")}
+                        </h3>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setRfidMode(false)}
+                          className="text-white hover:text-red-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <div className="space-y-3">
+                        {!rfidConnected ? (
+                          <>
+                            <Button
+                              onClick={connectRfidReader}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                              {getText("connectRfid")}
+                            </Button>
+                            <div className="flex items-center gap-2 mt-2">
+                              <input
+                                type="checkbox"
+                                id="rfid-simulation"
+                                checked={rfidSimulationMode}
+                                onChange={(e) => setRfidSimulationMode(e.target.checked)}
+                                className="rounded"
+                              />
+                              <label htmlFor="rfid-simulation" className="text-white/70 text-sm">
+                                وضع المحاكاة (بدون جهاز)
+                              </label>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              onClick={disconnectRfidReader}
+                              className="w-full bg-red-600 hover:bg-red-700 text-white"
+                            >
+                              {getText("disconnectRfid")}
+                            </Button>
+                            {rfidSimulationMode && (
+                              <div className="mt-2 space-y-2">
+                                <Input
+                                  placeholder="أدخل كود SKU للمحاكاة"
+                                  value={rfidSimulationCode}
+                                  onChange={(e) => setRfidSimulationCode(e.target.value)}
+                                  className="bg-white/10 border-white/20 text-white"
+                                />
+                                <Button
+                                  onClick={() => {
+                                    if (rfidSimulationCode.trim()) {
+                                      detectAndAddRfidCode(rfidSimulationCode);
+                                      setRfidSimulationCode("");
+                                    }
+                                  }}
+                                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                  محاكاة قراءة
+                                </Button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                        <p className="text-white/70 text-sm">
+                          {rfidConnected ? getText("rfidReady") : getText("rfidConnectPrompt")}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   {showBarcodeScanner && (
                     <div className="mb-4">
                       <BarcodeScannerHub
@@ -2647,11 +3390,12 @@ export function PosAgentApp() {
                           <div className="flex gap-2">
                             <select
                               value={paymentMethod}
-                              onChange={(e) => setPaymentMethod(e.target.value as "cash" | "check")}
+                              onChange={(e) => setPaymentMethod(e.target.value as "cash" | "check" | "tpe")}
                               className="flex-1 bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white"
                             >
-                              <option value="cash">نقدي</option>
-                              <option value="check">شيك</option>
+                              <option value="cash">{agentLocale === 'ar' ? 'نقدي / Cash' : agentLocale === 'fr' ? 'Espèces / Cash' : agentLocale === 'es' ? 'Efectivo / Cash' : 'Cash / Espèces'}</option>
+                              <option value="check">{agentLocale === 'ar' ? 'شيك / Check' : agentLocale === 'fr' ? 'Chèque / Check' : agentLocale === 'es' ? 'Cheque / Check' : 'Check / Chèque'}</option>
+                              <option value="tpe">{agentLocale === 'ar' ? 'TPE / بطاقة' : agentLocale === 'fr' ? 'TPE / Carte' : agentLocale === 'es' ? 'TPE / Tarjeta' : 'TPE / Card'}</option>
                             </select>
                           </div>
                           {paymentMethod === "check" && (
@@ -2676,10 +3420,36 @@ export function PosAgentApp() {
                               />
                             </div>
                           )}
+                          {paymentMethod === "tpe" && (
+                            <div className="space-y-2">
+                              <Input
+                                placeholder={agentLocale === 'ar' ? 'رقم العملية / TPE Transaction ID' : agentLocale === 'fr' ? 'N° Transaction / TPE ID' : agentLocale === 'es' ? 'N° Transacción / TPE ID' : 'Transaction ID / TPE ID'}
+                                value={tpeTransactionId}
+                                onChange={(e) => setTpeTransactionId(e.target.value)}
+                                className="bg-white/10 border border-white/20 text-white placeholder-white/50"
+                              />
+                            </div>
+                          )}
                           <Input
                             placeholder={getText("customerName")}
                             value={customerName}
                             onChange={(e) => setCustomerName(e.target.value)}
+                            className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
+                          />
+                          <Input
+                            placeholder="رقم هاتف الزبون (للولاء)"
+                            value={customerPhone}
+                            onChange={async (e) => {
+                              setCustomerPhone(e.target.value);
+                              if (e.target.value.trim()) {
+                                const result = await checkLoyaltyPoints(e.target.value);
+                                if (result) {
+                                  setLoyaltyPoints(result.points);
+                                }
+                              } else {
+                                setLoyaltyPoints(0);
+                              }
+                            }}
                             className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
                           />
                           <Input
@@ -2689,9 +3459,15 @@ export function PosAgentApp() {
                             onChange={(e) => setPaidAmount(e.target.value)}
                             className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
                           />
+                          {loyaltyPoints > 0 && (
+                            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-2 flex items-center justify-between">
+                              <span className="text-white/70 text-xs">نقاط الزبون:</span>
+                              <span className="text-yellow-400 font-bold text-sm">{loyaltyPoints}</span>
+                            </div>
+                          )}
                         </div>
                         <Button
-                          onClick={handleCheckout}
+                          onClick={handleCheckoutWithGps}
                           disabled={loading}
                           className="w-full bg-green-600 hover:bg-green-700 text-white"
                         >
@@ -3680,6 +4456,205 @@ export function PosAgentApp() {
                 <X className="w-4 h-4 mr-2" />
                 إلغاء
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Loyalty Dialog */}
+      <Dialog open={showLoyaltyDialog} onOpenChange={setShowLoyaltyDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">
+              <div className="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                </svg>
+                {agentLocale === 'fr' ? 'Programme de fidélité' : agentLocale === 'en' ? 'Loyalty Program' : agentLocale === 'es' ? 'Programa de fidelidad' : 'نظام الولاء والنقاط'}
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-white">{getText("customerPhone")}</Label>
+              <Input
+                value={customerPhone}
+                onChange={async (e) => {
+                  setCustomerPhone(e.target.value);
+                  if (e.target.value.trim()) {
+                    const result = await checkLoyaltyPoints(e.target.value);
+                    if (result) {
+                      setLoyaltyPoints(result.points);
+                    }
+                  } else {
+                    setLoyaltyPoints(0);
+                  }
+                }}
+                className="bg-white/10 border-white/20 text-white"
+                placeholder={agentLocale === 'fr' ? 'Entrez le numéro' : agentLocale === 'en' ? 'Enter phone number' : agentLocale === 'es' ? 'Ingrese el número' : 'أدخل رقم الهاتف'}
+              />
+            </div>
+            <Button
+              onClick={async () => {
+                if (customerPhone.trim()) {
+                  const result = await checkLoyaltyPoints(customerPhone);
+                  if (result) {
+                    toast.success(`${getText("loyaltyPoints")}: ${result.points} | ${agentLocale === 'fr' ? 'Achats totaux' : agentLocale === 'en' ? 'Total purchases' : agentLocale === 'es' ? 'Compras totales' : 'إجمالي المشتريات'}: ${result.total_purchases.toFixed(2)}`);
+                  }
+                }
+              }}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              {getText("checkPoints")}
+            </Button>
+            {loyaltyPoints > 0 && (
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
+                <p className="text-white text-sm">{getText("loyaltyPoints")}: <span className="font-bold text-green-400">{loyaltyPoints}</span></p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Expenses Dialog */}
+      <Dialog open={showExpensesDialog} onOpenChange={setShowExpensesDialog}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">
+              <div className="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="5" width="20" height="14" rx="2"/>
+                  <line x1="2" y1="10" x2="22" y2="10"/>
+                </svg>
+                صندوق المصاريف الصغرى
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Add Expense Form */}
+            <div className="bg-white/5 border border-white/10 rounded-lg p-4">
+              <h3 className="text-white font-semibold mb-3">{getText("addExpense")}</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label className="text-white">{getText("amount")}</Label>
+                  <Input
+                    type="number"
+                    value={expenseAmount}
+                    onChange={(e) => setExpenseAmount(e.target.value)}
+                    className="bg-white/10 border-white/20 text-white"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white">{getText("category")}</Label>
+                  <select
+                    value={expenseCategory}
+                    onChange={(e) => setExpenseCategory(e.target.value)}
+                    className="bg-white/10 border-white/20 rounded-lg px-3 py-2 text-white"
+                  >
+                    <option value="supplies">{getText("supplies")}</option>
+                    <option value="transport">{getText("transport")}</option>
+                    <option value="misc">{getText("misc")}</option>
+                    <option value="withdrawal">{getText("withdrawal")}</option>
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white">{getText("description")}</Label>
+                <Input
+                  value={expenseDescription}
+                  onChange={(e) => setExpenseDescription(e.target.value)}
+                  className="bg-white/10 border-white/20 text-white"
+                  placeholder={agentLocale === 'fr' ? 'Description de la dépense' : agentLocale === 'en' ? 'Expense description' : agentLocale === 'es' ? 'Descripción del gasto' : 'وصف المصروف'}
+                />
+              </div>
+              <Button
+                onClick={addExpense}
+                className="w-full bg-red-600 hover:bg-red-700 text-white"
+              >
+                {agentLocale === 'fr' ? 'Ajouter' : agentLocale === 'en' ? 'Add' : agentLocale === 'es' ? 'Agregar' : 'إضافة المصروف'}
+              </Button>
+            </div>
+
+            {/* Expenses List */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <h3 className="text-white font-semibold">{getText("todaysExpenses")}</h3>
+                {expenses.length > 0 && (
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={toggleSelectAllExpenses}
+                      variant="outline"
+                      size="sm"
+                      className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                    >
+                      {selectedExpenses.size === expenses.length ? agentLocale === 'fr' ? 'Tout désélectionner' : agentLocale === 'en' ? 'Deselect All' : agentLocale === 'es' ? 'Deseleccionar todo' : 'إلغاء تحديد الكل' : getText("selectAll")}
+                    </Button>
+                    {selectedExpenses.size > 0 && (
+                      <Button
+                        onClick={deleteSelectedExpenses}
+                        variant="destructive"
+                        size="sm"
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        {getText("deleteSelected")} ({selectedExpenses.size})
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="max-h-48 overflow-y-auto space-y-2">
+                {expenses.length === 0 ? (
+                  <p className="text-white/50 text-center py-4">{getText("noExpenses")}</p>
+                ) : (
+                  expenses.map((expense: any) => (
+                    <div
+                      key={expense.id}
+                      className={`bg-white/5 border ${selectedExpenses.has(expense.id) ? 'border-blue-500' : 'border-white/10'} rounded-lg p-3 flex justify-between items-center cursor-pointer hover:bg-white/10`}
+                      onClick={() => toggleExpenseSelection(expense.id)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedExpenses.has(expense.id)}
+                          onChange={() => toggleExpenseSelection(expense.id)}
+                          className="rounded"
+                        />
+                        <div>
+                          <p className="text-white font-medium">{expense.amount.toFixed(2)} {getText("currency")}</p>
+                          <p className="text-white/70 text-sm">{expense.category} - {expense.description || getText("noDescription")}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-white/50 text-xs">
+                          {new Date(expense.expense_date).toLocaleTimeString(agentLocale === 'fr' ? 'fr-FR' : agentLocale === 'es' ? 'es-ES' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteExpense(expense.id);
+                          }}
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Total */}
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+              <div className="flex justify-between">
+                <span className="text-white">{getText("totalExpenses")}:</span>
+                <span className="text-red-400 font-bold">
+                  {expenses.reduce((sum, e) => sum + e.amount, 0).toFixed(2)} {getText("currency")}
+                </span>
+              </div>
             </div>
           </div>
         </DialogContent>

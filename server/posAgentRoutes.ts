@@ -411,7 +411,7 @@ router.post("/session", async (req, res) => {
 // POST /api/pos-agent/sales - Create a new sale
 router.post("/sales", async (req, res) => {
   try {
-    const { token, employee_id, customer_name, lines, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin } = req.body as {
+    const { token, employee_id, customer_name, lines, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin, tpe_transaction_id } = req.body as {
       token?: string;
       employee_id?: string;
       customer_name?: string;
@@ -423,6 +423,7 @@ router.post("/sales", async (req, res) => {
       check_number?: string;
       check_holder_name?: string;
       check_holder_cin?: string;
+      tpe_transaction_id?: string;
     };
 
     if (!token || !employee_id || !lines || lines.length === 0) {
@@ -452,9 +453,9 @@ router.post("/sales", async (req, res) => {
 
     // Insert sale
     await db.prepare(
-      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin, sale_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash", check_number || null, check_holder_name || null, check_holder_cin || null);
+      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin, tpe_transaction_id, sale_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash", check_number || null, check_holder_name || null, check_holder_cin || null, tpe_transaction_id || null);
 
     // Insert sale lines and update inventory
     for (const line of lines) {
@@ -861,7 +862,7 @@ router.post("/standalone-sales", async (req, res) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   try {
-    const { token, employee_id, customer_name, lines, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin } = req.body as {
+    const { token, employee_id, customer_name, lines, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin, tpe_transaction_id } = req.body as {
       token?: string;
       employee_id?: string;
       customer_name?: string;
@@ -873,6 +874,7 @@ router.post("/standalone-sales", async (req, res) => {
       check_number?: string;
       check_holder_name?: string;
       check_holder_cin?: string;
+      tpe_transaction_id?: string;
     };
 
     if (!token || !employee_id || !lines || lines.length === 0) {
@@ -902,9 +904,9 @@ router.post("/standalone-sales", async (req, res) => {
 
     // Insert sale
     await db.prepare(
-      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin, sale_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
-    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash", check_number || null, check_holder_name || null, check_holder_cin || null);
+      `INSERT INTO pos_agent_sales (id, user_id, employee_id, customer_name, total_amount, paid_amount, credit_amount, payment_method, check_number, check_holder_name, check_holder_cin, tpe_transaction_id, sale_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`
+    ).run(saleId, (tokenData as any).user_id, employee_id, customer_name || "عميل نقدي", total_amount, paid_amount, credit_amount, payment_method || "cash", check_number || null, check_holder_name || null, check_holder_cin || null, tpe_transaction_id || null);
 
     // Insert sale lines and update inventory
     for (const line of lines) {
@@ -1176,10 +1178,10 @@ router.delete("/standalone-sales/:id", async (req, res) => {
   }
 });
 
-// POST /api/pos-agent/standalone-sales/bulk-delete - Bulk delete sales (public, token-based)
-router.post("/standalone-sales/bulk-delete", async (req, res) => {
+// DELETE /api/pos-agent/standalone-sales/bulk-delete - Bulk delete sales (public, token-based)
+router.delete("/standalone-sales/bulk-delete", async (req, res) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   try {
@@ -1188,6 +1190,8 @@ router.post("/standalone-sales/bulk-delete", async (req, res) => {
       employee_id?: string;
       sale_ids?: string[];
     };
+
+    console.log("[POS Agent] Bulk delete sales request:", { token, employee_id, sale_ids });
 
     if (!token || !employee_id || !sale_ids || sale_ids.length === 0) {
       res.status(400).json({ error: "Token, employee_id, and sale_ids are required" });
@@ -1223,10 +1227,72 @@ router.post("/standalone-sales/bulk-delete", async (req, res) => {
       `DELETE FROM pos_agent_sales WHERE id IN (${placeholders}) AND employee_id = ?`
     ).run(...sale_ids, employee_id);
 
+    console.log("[POS Agent] Bulk delete sales result:", { changes: result.changes });
+
     res.json({ success: true, message: `Deleted ${result.changes} sales successfully` });
   } catch (error) {
     console.error("[POS Agent] Error bulk deleting sales:", error);
     res.status(500).json({ error: "Failed to bulk delete sales" });
+  }
+});
+
+// POST /api/pos-agent/rfid-detect - Detect products by RFID/SKU codes (bulk detection)
+router.post("/rfid-detect", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { token, codes } = req.body as {
+      token?: string;
+      codes?: string[]; // Array of RFID codes or SKUs
+    };
+
+    if (!token || !codes || codes.length === 0) {
+      res.status(400).json({ error: "Token and codes are required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    // Check if token is expired
+    if (tokenData.expires_at && typeof tokenData.expires_at === 'string' && new Date(tokenData.expires_at) < new Date()) {
+      res.status(401).json({ error: "Token expired" });
+      return;
+    }
+
+    const userId = (tokenData as any).user_id;
+
+    // Match codes with products (by SKU or RFID if exists)
+    const placeholders = codes.map(() => '?').join(',');
+    const products = await db.prepare(
+      `SELECT id, name, sku, unit_price, stock_pieces, unit_kind, pieces_per_carton, image_url
+       FROM inventory_products
+       WHERE user_id = ? AND (sku IN (${placeholders}) OR id IN (${placeholders}))
+       AND stock_pieces > 0`
+    ).all(userId, ...codes, ...codes);
+
+    console.log("[POS Agent] RFID detection - matched products:", products.length, "of", codes.length);
+
+    res.json({
+      success: true,
+      products: products || [],
+      detected_count: products.length,
+      total_codes: codes.length
+    });
+  } catch (error) {
+    console.error("[POS Agent] Error detecting RFID products:", error);
+    res.status(500).json({ error: "Failed to detect products" });
   }
 });
 
@@ -1560,13 +1626,561 @@ router.delete("/standalone-products/:id", async (req, res) => {
   }
 });
 
+// POST /api/pos-agent/gps-location - Log GPS location for worker
+router.post("/gps-location", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { token, employee_id, latitude, longitude, accuracy, source } = req.body as {
+      token?: string;
+      employee_id?: string;
+      latitude?: number;
+      longitude?: number;
+      accuracy?: number;
+      source?: string;
+    };
+
+    if (!token || !employee_id || latitude === undefined || longitude === undefined) {
+      res.status(400).json({ error: "Token, employee_id, latitude, and longitude are required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    // Log location
+    const logId = randomUUID();
+    await db.prepare(
+      `INSERT INTO worker_location_logs (id, user_id, worker_id, latitude, longitude, accuracy, timestamp, source)
+       VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)`
+    ).run(logId, (tokenData as any).user_id, employee_id, latitude, longitude, accuracy || null, source || 'manual');
+
+    // Update worker's current location
+    await db.prepare(
+      `UPDATE tl_workers
+       SET latitude = ?, longitude = ?, location_updated_at = NOW()
+       WHERE employee_id = ? AND user_id = ?`
+    ).run(latitude, longitude, employee_id, (tokenData as any).user_id);
+
+    res.json({ success: true, message: "Location logged successfully" });
+  } catch (error) {
+    console.error("[POS Agent] Error logging GPS location:", error);
+    res.status(500).json({ error: "Failed to log location" });
+  }
+});
+
+// POST /api/pos-agent/verify-visit - Verify worker visit to customer location
+router.post("/verify-visit", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { token, employee_id, customer_id, customer_name, customer_latitude, customer_longitude, worker_latitude, worker_longitude, visit_type, notes } = req.body as {
+      token?: string;
+      employee_id?: string;
+      customer_id?: string;
+      customer_name?: string;
+      customer_latitude?: number;
+      customer_longitude?: number;
+      worker_latitude?: number;
+      worker_longitude?: number;
+      visit_type?: string;
+      notes?: string;
+    };
+
+    if (!token || !employee_id || worker_latitude === undefined || worker_longitude === undefined) {
+      res.status(400).json({ error: "Token, employee_id, and worker location are required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    // Calculate distance if customer location is provided
+    let distanceMeters = null;
+    let isVerified = false;
+
+    if (customer_latitude !== undefined && customer_longitude !== undefined) {
+      // Haversine formula to calculate distance
+      const R = 6371000; // Earth's radius in meters
+      const lat1Rad = (worker_latitude * Math.PI) / 180;
+      const lat2Rad = (customer_latitude * Math.PI) / 180;
+      const deltaLat = ((customer_latitude - worker_latitude) * Math.PI) / 180;
+      const deltaLon = ((customer_longitude - worker_longitude) * Math.PI) / 180;
+
+      const a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+                Math.cos(lat1Rad) * Math.cos(lat2Rad) *
+                Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+      distanceMeters = R * c;
+
+      // Consider verified if within 100 meters
+      isVerified = distanceMeters <= 100;
+    }
+
+    // Log visit verification
+    const visitId = randomUUID();
+    await db.prepare(
+      `INSERT INTO visit_verifications (id, user_id, worker_id, customer_id, customer_name, customer_latitude, customer_longitude, worker_latitude, worker_longitude, distance_meters, is_verified, visit_type, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(visitId, (tokenData as any).user_id, employee_id, customer_id || null, customer_name || null, customer_latitude || null, customer_longitude || null, worker_latitude, worker_longitude, distanceMeters, isVerified, visit_type || 'visit', notes || null);
+
+    res.json({
+      success: true,
+      is_verified: isVerified,
+      distance_meters: distanceMeters,
+      message: isVerified ? "Visit verified within acceptable range" : "Visit outside acceptable range"
+    });
+  } catch (error) {
+    console.error("[POS Agent] Error verifying visit:", error);
+    res.status(500).json({ error: "Failed to verify visit" });
+  }
+});
+
+// GET /api/pos-agent/loyalty-points - Get customer loyalty points by phone
+router.get("/loyalty-points", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { token, phone } = req.query as { token?: string; phone?: string };
+
+    if (!token || !phone) {
+      res.status(400).json({ error: "Token and phone are required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    const userId = (tokenData as any).user_id;
+
+    const loyalty = await db.prepare(
+      `SELECT * FROM customer_loyalty
+       WHERE user_id = ? AND phone_number = ?`
+    ).get(userId, phone);
+
+    res.json({
+      success: true,
+      points: loyalty?.points || 0,
+      total_purchases: loyalty?.total_purchases || 0,
+      customer_name: loyalty?.customer_name || null
+    });
+  } catch (error) {
+    console.error("[POS Agent] Error fetching loyalty points:", error);
+    res.status(500).json({ error: "Failed to fetch loyalty points" });
+  }
+});
+
+// POST /api/pos-agent/loyalty-add - Add loyalty points for customer
+router.post("/loyalty-add", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { token, phone, customer_name, purchase_amount, points_to_add } = req.body as {
+      token?: string;
+      phone?: string;
+      customer_name?: string;
+      purchase_amount?: number;
+      points_to_add?: number;
+    };
+
+    if (!token || !phone || purchase_amount === undefined) {
+      res.status(400).json({ error: "Token, phone, and purchase_amount are required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    const userId = (tokenData as any).user_id;
+
+    // Check if customer exists
+    const existing = await db.prepare(
+      `SELECT * FROM customer_loyalty
+       WHERE user_id = ? AND phone_number = ?`
+    ).get(userId, phone);
+
+    if (existing) {
+      // Update existing customer
+      await db.prepare(
+        `UPDATE customer_loyalty
+         SET points = points + ?, total_purchases = total_purchases + ?, customer_name = ?, updated_at = NOW()
+         WHERE id = ?`
+      ).run(points_to_add || Math.floor(purchase_amount), purchase_amount, customer_name || existing.customer_name, existing.id);
+    } else {
+      // Create new customer
+      const loyaltyId = randomUUID();
+      await db.prepare(
+        `INSERT INTO customer_loyalty (id, user_id, phone_number, customer_name, points, total_purchases)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).run(loyaltyId, userId, phone, customer_name || null, points_to_add || Math.floor(purchase_amount), purchase_amount);
+    }
+
+    res.json({ success: true, message: "Loyalty points added successfully" });
+  } catch (error) {
+    console.error("[POS Agent] Error adding loyalty points:", error);
+    res.status(500).json({ error: "Failed to add loyalty points" });
+  }
+});
+
+// POST /api/pos-agent/expense - Add cash expense
+router.post("/expense", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { token, employee_id, amount, category, description } = req.body as {
+      token?: string;
+      employee_id?: string;
+      amount?: number;
+      category?: string;
+      description?: string;
+    };
+
+    if (!token || !amount || !category) {
+      res.status(400).json({ error: "Token, amount, and category are required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    const userId = (tokenData as any).user_id;
+    const expenseId = randomUUID();
+
+    await db.prepare(
+      `INSERT INTO cash_expenses (id, user_id, employee_id, amount, category, description, expense_date)
+       VALUES (?, ?, ?, ?, ?, ?, NOW())`
+    ).run(expenseId, userId, employee_id || null, amount, category, description || null);
+
+    res.json({ success: true, message: "Expense added successfully" });
+  } catch (error) {
+    console.error("[POS Agent] Error adding expense:", error);
+    res.status(500).json({ error: "Failed to add expense" });
+  }
+});
+
+// GET /api/pos-agent/expenses - Get expenses for current day
+router.get("/expenses", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { token, employee_id } = req.query as { token?: string; employee_id?: string };
+
+    if (!token) {
+      res.status(400).json({ error: "Token is required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    const userId = (tokenData as any).user_id;
+
+    const expenses = await db.prepare(
+      `SELECT * FROM cash_expenses
+       WHERE user_id = ? AND DATE(expense_date) = CURRENT_DATE
+       ${employee_id ? 'AND employee_id = ?' : ''}
+       ORDER BY expense_date DESC`
+    ).all(userId, employee_id || null);
+
+    res.json({ success: true, expenses: expenses || [] });
+  } catch (error) {
+    console.error("[POS Agent] Error fetching expenses:", error);
+    res.status(500).json({ error: "Failed to fetch expenses" });
+  }
+});
+
+// DELETE /api/pos-agent/expense/:id - Delete single expense
+router.delete("/expense/:id", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { id } = req.params;
+    const { token, employee_id } = req.body as { token?: string; employee_id?: string };
+
+    if (!token) {
+      res.status(400).json({ error: "Token is required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    const userId = (tokenData as any).user_id;
+
+    // Delete expense (ensure it belongs to the user)
+    const result = await db.prepare(
+      `DELETE FROM cash_expenses
+       WHERE id = ? AND user_id = ? ${employee_id ? 'AND employee_id = ?' : ''}`
+    ).run(id, userId, employee_id || null);
+
+    if (result.changes === 0) {
+      res.status(404).json({ error: "Expense not found" });
+      return;
+    }
+
+    res.json({ success: true, message: "Expense deleted successfully" });
+  } catch (error) {
+    console.error("[POS Agent] Error deleting expense:", error);
+    res.status(500).json({ error: "Failed to delete expense" });
+  }
+});
+
+// DELETE /api/pos-agent/expenses/bulk-delete - Delete multiple expenses
+router.delete("/expenses/bulk-delete", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { token, employee_id, expense_ids } = req.body as {
+      token?: string;
+      employee_id?: string;
+      expense_ids?: string[];
+    };
+
+    console.log("[POS Agent] Bulk delete request:", { token, employee_id, expense_ids });
+
+    if (!token) {
+      res.status(400).json({ error: "Token is required" });
+      return;
+    }
+
+    if (!expense_ids || expense_ids.length === 0) {
+      res.status(400).json({ error: "Expense IDs are required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    const userId = (tokenData as any).user_id;
+
+    // Delete expenses (ensure they belong to the user)
+    const placeholders = expense_ids.map(() => '?').join(',');
+    const params = [...expense_ids, userId];
+    if (employee_id) params.push(employee_id);
+
+    const result = await db.prepare(
+      `DELETE FROM cash_expenses
+       WHERE id IN (${placeholders}) AND user_id = ? ${employee_id ? 'AND employee_id = ?' : ''}`
+    ).run(...params);
+
+    console.log("[POS Agent] Bulk delete result:", { changes: result.changes });
+
+    res.json({
+      success: true,
+      message: `${result.changes} expenses deleted successfully`,
+      deleted_count: result.changes
+    });
+  } catch (error) {
+    console.error("[POS Agent] Error bulk deleting expenses:", error);
+    res.status(500).json({ error: "Failed to delete expenses" });
+  }
+});
+
+// POST /api/pos-agent/cash-drawer-summary - Create daily cash drawer summary
+router.post("/cash-drawer-summary", async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  try {
+    const { token, employee_id, opening_balance, actual_cash, notes } = req.body as {
+      token?: string;
+      employee_id?: string;
+      opening_balance?: number;
+      actual_cash?: number;
+      notes?: string;
+    };
+
+    if (!token) {
+      res.status(400).json({ error: "Token is required" });
+      return;
+    }
+
+    // Validate token
+    const tokenData = await db.prepare(
+      `SELECT id, user_id, is_active, expires_at
+       FROM pos_agent_tokens
+       WHERE token = ? AND is_active = 1`
+    ).get(token);
+
+    if (!tokenData) {
+      res.status(404).json({ error: "Invalid or inactive token" });
+      return;
+    }
+
+    const userId = (tokenData as any).user_id;
+
+    // Calculate today's sales
+    const salesResult = await db.prepare(
+      `SELECT COALESCE(SUM(paid_amount), 0) as total_sales
+       FROM pos_agent_sales
+       WHERE user_id = ? AND DATE(sale_date) = CURRENT_DATE
+       ${employee_id ? 'AND employee_id = ?' : ''}`
+    ).get(userId, employee_id || null);
+
+    const totalSales = (salesResult as any)?.total_sales || 0;
+
+    // Calculate today's expenses
+    const expensesResult = await db.prepare(
+      `SELECT COALESCE(SUM(amount), 0) as total_expenses
+       FROM cash_expenses
+       WHERE user_id = ? AND DATE(expense_date) = CURRENT_DATE
+       ${employee_id ? 'AND employee_id = ?' : ''}`
+    ).get(userId, employee_id || null);
+
+    const totalExpenses = (expensesResult as any)?.total_expenses || 0;
+
+    const expectedCash = (opening_balance || 0) + totalSales - totalExpenses;
+    const difference = actual_cash !== undefined ? actual_cash - expectedCash : null;
+
+    const summaryId = randomUUID();
+    await db.prepare(
+      `INSERT INTO cash_drawer_summaries (id, user_id, employee_id, summary_date, opening_balance, total_sales, total_expenses, expected_cash, actual_cash, difference, notes)
+       VALUES (?, ?, ?, CURRENT_DATE, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(summaryId, userId, employee_id || null, opening_balance || 0, totalSales, totalExpenses, expectedCash, actual_cash || null, difference, notes || null);
+
+    res.json({
+      success: true,
+      summary: {
+        opening_balance: opening_balance || 0,
+        total_sales: totalSales,
+        total_expenses: totalExpenses,
+        expected_cash,
+        actual_cash: actual_cash || null,
+        difference
+      }
+    });
+  } catch (error) {
+    console.error("[POS Agent] Error creating cash drawer summary:", error);
+    res.status(500).json({ error: "Failed to create cash drawer summary" });
+  }
+});
+
 export function registerPosAgentRoutes(app: express.Express, authMiddleware: (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<void>) {
-  // Apply auth middleware to all routes except validate, standalone, session, attendance, upload-file, and standalone-products routes
+  // Handle OPTIONS preflight requests for DELETE methods
+  app.options("/api/pos-agent/expense/:id", (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(200).end();
+  });
+
+  app.options("/api/pos-agent/expenses/bulk-delete", (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(200).end();
+  });
+
+  app.options("/api/pos-agent/standalone-sales/:id", (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(200).end();
+  });
+
+  app.options("/api/pos-agent/standalone-sales/bulk-delete", (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.status(200).end();
+  });
+
+  // Apply auth middleware to all routes except validate, standalone, session, attendance, upload-file, standalone-products, loyalty, expenses, and cash-drawer routes
   app.use("/api/pos-agent", (req, res, next) => {
     const path = req.path;
-    // Allow public access to validate, standalone, session, attendance, upload-file, and standalone-products routes
-    // Also allow standalone-sales (POST for creating sales)
-    if (path.startsWith("/validate") || path.startsWith("/standalone") || path.startsWith("/session") || path.startsWith("/attendance") || path.startsWith("/upload-file")) {
+    // Allow public access to validate, standalone, session, attendance, upload-file, standalone-products, loyalty, expenses, and cash-drawer routes
+    // These routes use their own token validation via pos_agent_tokens table
+    if (path.startsWith("/validate") || path.startsWith("/standalone") || path.startsWith("/session") || path.startsWith("/attendance") || path.startsWith("/upload-file") || path.startsWith("/loyalty") || path.startsWith("/expense") || path.startsWith("/expenses") || path.startsWith("/cash-drawer") || path.startsWith("/rfid") || path.startsWith("/gps")) {
       next();
     } else {
       authMiddleware(req, res, next);
