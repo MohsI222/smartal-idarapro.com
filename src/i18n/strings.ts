@@ -2462,17 +2462,6 @@ const en: Dict = {
   "contracts.smartContracts": "Smart Contracts Management",
   "contracts.createdElectronically": "This contract was created electronically on",
 
-  "contracts.form.title": "Contract title",
-  "contracts.form.description": "Description",
-  "contracts.form.type": "Contract type",
-  "contracts.form.content": "Contract content",
-  "contracts.form.startDate": "Start date",
-  "contracts.form.endDate": "End date",
-  "contracts.form.expiresAt": "Signature expiry date",
-  "contracts.form.logo": "Company logo (optional)",
-  "contracts.form.useTemplate": "Use template",
-  "contracts.form.selectTemplate": "Select a template",
-
   "contracts.status.draft": "Draft 📝",
   "contracts.status.pending": "Pending signature ✍️",
   "contracts.status.signed": "Signed ✅",
