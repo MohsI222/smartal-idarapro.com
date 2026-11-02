@@ -271,7 +271,7 @@ export function StoreFront() {
           )}
           <h1 className="text-3xl font-extrabold">{store.name}</h1>
           {store.tagline && <p className="text-white/90">{store.tagline}</p>}
-          <Badge className="bg-emerald-500/90 text-white border-none">مفتوح للطلبات الآن 🟢</Badge>
+          <Badge className="bg-emerald-500/90 text-white border-none">{t("store.openForOrders") || "مفتوح للطلبات الآن 🟢"}</Badge>
           {store.promo_video_url && (
             <div className="mx-auto mt-4 max-w-md overflow-hidden rounded-xl border border-white/20 aspect-video">
               {videoError ? (

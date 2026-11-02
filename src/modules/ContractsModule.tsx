@@ -879,8 +879,8 @@ export function ContractsModule() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span>قوالب العقود الخاصة بك</span>
-                  <Badge variant="outline">{templates.filter(t => !t.is_public).length} قالب</Badge>
+                  <span>{t("contracts.templatesTitle")}</span>
+                  <Badge variant="outline">{templates.filter(t => !t.is_public).length} {t("contracts.templateCount")}</Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -909,33 +909,33 @@ export function ContractsModule() {
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 ml-2" />
-                عقد جديد
+                {t("contracts.newContract")}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>إنشاء عقد جديد</DialogTitle>
+                <DialogTitle>{t("contracts.createContractTitle")}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label>عنوان العقد</Label>
+                  <Label>{t("contracts.form.title")}</Label>
                   <Input
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    placeholder="مثال: عقد إيجار شقة"
+                    placeholder={t("contracts.form.titlePlaceholder")}
                   />
                 </div>
                 <div>
-                  <Label>الوصف</Label>
+                  <Label>{t("contracts.form.description")}</Label>
                   <Textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="وصف مختصر للعقد..."
+                    placeholder={t("contracts.form.descriptionPlaceholder")}
                     rows={2}
                   />
                 </div>
                 <div>
-                  <Label>نوع العقد</Label>
+                  <Label>{t("contracts.form.type")}</Label>
                   <Select
                     value={formData.contract_type}
                     onValueChange={(value) => setFormData({ ...formData, contract_type: value as ContractType })}
@@ -954,7 +954,7 @@ export function ContractsModule() {
                 </div>
                 {templates.filter(t => !t.is_public).length > 0 && (
                   <div>
-                    <Label>استخدم قالب</Label>
+                    <Label>{t("contracts.form.useTemplate")}</Label>
                     <Select
                       onValueChange={(templateId) => {
                         const template = templates.find((t) => t.id === templateId);
@@ -969,7 +969,7 @@ export function ContractsModule() {
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="اختر قالباً" />
+                        <SelectValue placeholder={t("contracts.form.selectTemplate")} />
                       </SelectTrigger>
                       <SelectContent>
                         {templates.filter(t => !t.is_public).map((template) => (
@@ -982,17 +982,17 @@ export function ContractsModule() {
                   </div>
                 )}
                 <div>
-                  <Label>محتوى العقد</Label>
+                  <Label>{t("contracts.form.content")}</Label>
                   <Textarea
                     value={formData.content}
                     onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                    placeholder="اكتب محتوى العقد هنا..."
+                    placeholder={t("contracts.form.contentPlaceholder")}
                     rows={12}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label>تاريخ البدء</Label>
+                    <Label>{t("contracts.form.startDate")}</Label>
                     <Input
                       type="date"
                       value={formData.start_date}
@@ -1000,7 +1000,7 @@ export function ContractsModule() {
                     />
                   </div>
                   <div>
-                    <Label>تاريخ الانتهاء</Label>
+                    <Label>{t("contracts.form.endDate")}</Label>
                     <Input
                       type="date"
                       value={formData.end_date}
@@ -1009,7 +1009,7 @@ export function ContractsModule() {
                   </div>
                 </div>
                 <div>
-                  <Label>تاريخ انتهاء صلاحية التوقيع</Label>
+                  <Label>{t("contracts.form.expiresAt")}</Label>
                   <Input
                     type="date"
                     value={formData.expires_at}
@@ -1017,7 +1017,7 @@ export function ContractsModule() {
                   />
                 </div>
                 <div>
-                  <Label>شعار الشركة (اختياري)</Label>
+                  <Label>{t("contracts.form.logo")}</Label>
                   <Input
                     type="file"
                     accept="image/*"
@@ -1048,7 +1048,7 @@ export function ContractsModule() {
                   )}
                 </div>
                 <Button onClick={handleCreateContract} className="w-full">
-                  إنشاء العقد
+                  {t("contracts.form.create")}
                 </Button>
               </div>
             </DialogContent>
@@ -1063,7 +1063,7 @@ export function ContractsModule() {
             <p className="text-slate-400 mb-4">لا توجد عقود بعد</p>
             <Button onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 ml-2" />
-              إنشاء عقد جديد
+              {t("contracts.createContractTitle")}
             </Button>
           </CardContent>
         </Card>

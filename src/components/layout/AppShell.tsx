@@ -73,8 +73,8 @@ export function AppShell() {
   useGlobalDomDigitLatinize(true);
 
   useEffect(() => {
-    document.title = "سمارت الإدارة برو";
-  }, []);
+    document.title = t("brand");
+  }, [t]);
 
   useEffect(() => {
     if (!token) {
@@ -677,7 +677,7 @@ function Brand({
               compact ? "text-base" : "text-lg"
             )}
           >
-            سمارت الإدارة برو
+            {t("brand")}
           </span>
           {tagline && (
             <span
