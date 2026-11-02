@@ -625,6 +625,7 @@ function Brand({
   tagline?: string;
   logoUrl?: string | null;
 }) {
+  const { t } = useI18n();
   const branded = Boolean(logoUrl?.startsWith("data:image"));
   const imgSrc = branded ? logoUrl! : DEFAULT_APP_LOGO;
 
