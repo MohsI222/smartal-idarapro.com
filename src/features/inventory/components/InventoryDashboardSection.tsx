@@ -1,4 +1,5 @@
 import type { ChangeEvent, RefObject } from "react";
+import { useState } from "react";
 import { Download, FileSpreadsheet, FileText, Plus, Upload, Edit, Trash2, Save, X } from "lucide-react";
 import { InventoryAiDocScannerButton } from "@/components/InventoryAiDocScannerButton";
 import { Button } from "@/components/ui/button";
@@ -141,6 +142,33 @@ export function InventoryDashboardSection({
   onDeleteSelectedProducts,
 }: InventoryDashboardSectionProps) {
   const safeProducts = products || [];
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Smart search filter: matches name, barcode, first 2 chars, or last chars
+  const filteredProducts = searchQuery
+    ? safeProducts.filter((product) => {
+        const query = searchQuery.toLowerCase().trim();
+        const name = (product.name || "").toLowerCase();
+        const barcode = (product.barcode || "").toLowerCase();
+
+        // Exact match
+        if (name.includes(query) || barcode.includes(query)) {
+          return true;
+        }
+
+        // First 2 chars match
+        if (query.length <= 2 && name.startsWith(query)) {
+          return true;
+        }
+
+        // Last chars match
+        if (name.endsWith(query)) {
+          return true;
+        }
+
+        return false;
+      })
+    : safeProducts;
 
   return (
     <div className="space-y-6">
@@ -445,17 +473,36 @@ export function InventoryDashboardSection({
       </Card>
 
       <Card className="border-slate-800 bg-[#0a1628]/90">
-        <CardHeader className="border-b border-slate-800 flex flex-row items-center justify-between">
-          <p className="font-black text-white">{t("inv.stockTable")}</p>
-          {selectedProductIds.size > 0 && (
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={() => void onDeleteSelectedProducts()}
-            >
-              {t("inv.deleteSelected")} ({selectedProductIds.size})
-            </Button>
-          )}
+        <CardHeader className="border-b border-slate-800 flex flex-col gap-3">
+          <div className="flex flex-row items-center justify-between">
+            <p className="font-black text-white">{t("inv.stockTable")}</p>
+            {selectedProductIds.size > 0 && (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => void onDeleteSelectedProducts()}
+              >
+                {t("inv.deleteSelected")} ({selectedProductIds.size})
+              </Button>
+            )}
+          </div>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder={t("inv.searchPlaceholder") || "ابحث بالاسم، الرمز، أو أول/آخر حرفين..."}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full px-4 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#0052CC]/50"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="pt-4 overflow-x-auto">
           <div
@@ -489,7 +536,7 @@ export function InventoryDashboardSection({
               </tr>
             </thead>
             <tbody>
-              {safeProducts.map((product, index) => {
+              {filteredProducts.map((product, index) => {
                 const isEditing = editingProductId === product.id;
                 const isFocused = index === inventoryListIndex && !isEditing;
                 const currentData = isEditing ? editingProductData : product;
@@ -699,6 +746,13 @@ export function InventoryDashboardSection({
                   </tr>
                 );
               })}
+              {filteredProducts.length === 0 && (
+                <tr>
+                  <td colSpan={13} className="py-8 text-center text-slate-400">
+                    {t("inv.noResults")}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
           </div>

@@ -30,7 +30,7 @@ interface InventoryItem {
   expiryDate?: string;
   createdAt: string;
   image?: string;
-  
+
   // Car Specs
   color?: string;
   fuel?: string;
@@ -38,6 +38,8 @@ interface InventoryItem {
   defects?: string;
   rentStart?: string;
   rentEnd?: string;
+  insuranceExpiry?: string;
+  taxExpiry?: string;
 
   // Property Specs
   propType?: PropType;
@@ -47,10 +49,14 @@ interface InventoryItem {
   bathrooms?: number;
   amenities?: string[];
   commercialType?: CommercialType;
+  insuranceExpiry?: string;
+  taxExpiry?: string;
 
   // Land Specs
   zoning?: string;
   sqm?: number;
+  insuranceExpiry?: string;
+  taxExpiry?: string;
 }
 
 interface ActionLog {
@@ -620,23 +626,50 @@ export default function AutoRealEstateModule() {
   }, [inventory]);
 
   const activeAlerts = useMemo(() => {
-    const alerts: { id: string, title: string, daysLeft: number, urgency: 'warning'|'danger' }[] = [];
+    const alerts: { id: string, title: string, daysLeft: number, urgency: 'warning'|'danger', type: 'rent'|'insurance'|'tax' }[] = [];
     const today = new Date();
-    
+
     inventory.forEach(item => {
+      // Rental expiry alerts
       if (item.status === 'Rented' && item.rentEnd) {
         const endDate = new Date(item.rentEnd);
         const diffTime = endDate.getTime() - today.getTime();
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
+
         if (diffDays <= 7 && diffDays >= 0) {
-          alerts.push({ id: item.id, title: `${item.brandOrTitle} - ${item.plateOrAddress}`, daysLeft: diffDays, urgency: 'warning' });
+          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (كراء)`, daysLeft: diffDays, urgency: 'warning', type: 'rent' });
         } else if (diffDays < 0) {
-          alerts.push({ id: item.id, title: `${item.brandOrTitle} - ${item.plateOrAddress}`, daysLeft: diffDays, urgency: 'danger' });
+          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (كراء)`, daysLeft: diffDays, urgency: 'danger', type: 'rent' });
+        }
+      }
+
+      // Insurance expiry alerts
+      if (item.insuranceExpiry) {
+        const insuranceDate = new Date(item.insuranceExpiry);
+        const diffTime = insuranceDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays <= 30 && diffDays >= 0) {
+          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (تأمين)`, daysLeft: diffDays, urgency: 'warning', type: 'insurance' });
+        } else if (diffDays < 0) {
+          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (تأمين)`, daysLeft: diffDays, urgency: 'danger', type: 'insurance' });
+        }
+      }
+
+      // Tax expiry alerts
+      if (item.taxExpiry) {
+        const taxDate = new Date(item.taxExpiry);
+        const diffTime = taxDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays <= 30 && diffDays >= 0) {
+          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (ضريبة)`, daysLeft: diffDays, urgency: 'warning', type: 'tax' });
+        } else if (diffDays < 0) {
+          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (ضريبة)`, daysLeft: diffDays, urgency: 'danger', type: 'tax' });
         }
       }
     });
-    return alerts;
+    return alerts.sort((a, b) => a.daysLeft - b.daysLeft);
   }, [inventory]);
 
   const filteredInventory = useMemo(() => inventory.filter(item => {
@@ -1060,22 +1093,39 @@ export default function AutoRealEstateModule() {
               
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-6 flex flex-col h-full overflow-hidden">
-                  <h3 className="flex items-center gap-2 font-bold text-lg mb-4 text-white"><Bell size={20} className="text-rose-400" /> تنبيهات انتهاء الكراء</h3>
+                  <h3 className="flex items-center gap-2 font-bold text-lg mb-4 text-white"><Bell size={20} className="text-rose-400" /> تنبيهات التأمين والضرائب</h3>
                   {activeAlerts.length === 0 ? (
-                    <p className="text-slate-500 text-sm text-center py-6">No pending alerts</p>
+                    <p className="text-slate-500 text-sm text-center py-6">لا توجد تنبيهات</p>
                   ) : (
                     <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 pr-1">
-                      {activeAlerts.map(alert => (
-                        <div key={alert.id} className={`p-3 rounded-xl border ${alert.urgency === 'danger' ? 'bg-rose-950/30 border-rose-900/50' : 'bg-amber-950/30 border-amber-900/50'}`}>
-                          <div className="flex justify-between items-start mb-1">
-                            <span className={`text-sm font-bold ${alert.urgency === 'danger' ? 'text-rose-400' : 'text-amber-400'}`}>{alert.title}</span>
-                            <Clock size={16} className={alert.urgency === 'danger' ? 'text-rose-500 animate-pulse' : 'text-amber-500'} />
+                      {activeAlerts.map(alert => {
+                        const typeColors = {
+                          rent: alert.urgency === 'danger' ? 'bg-rose-950/30 border-rose-900/50' : 'bg-amber-950/30 border-amber-900/50',
+                          insurance: alert.urgency === 'danger' ? 'bg-red-950/30 border-red-900/50' : 'bg-orange-950/30 border-orange-900/50',
+                          tax: alert.urgency === 'danger' ? 'bg-purple-950/30 border-purple-900/50' : 'bg-indigo-950/30 border-indigo-900/50'
+                        };
+                        const typeTextColors = {
+                          rent: alert.urgency === 'danger' ? 'text-rose-400' : 'text-amber-400',
+                          insurance: alert.urgency === 'danger' ? 'text-red-400' : 'text-orange-400',
+                          tax: alert.urgency === 'danger' ? 'text-purple-400' : 'text-indigo-400'
+                        };
+                        const typeIconColors = {
+                          rent: alert.urgency === 'danger' ? 'text-rose-500' : 'text-amber-500',
+                          insurance: alert.urgency === 'danger' ? 'text-red-500' : 'text-orange-500',
+                          tax: alert.urgency === 'danger' ? 'text-purple-500' : 'text-indigo-500'
+                        };
+                        return (
+                          <div key={alert.id} className={`p-3 rounded-xl border ${typeColors[alert.type]}`}>
+                            <div className="flex justify-between items-start mb-1">
+                              <span className={`text-sm font-bold ${typeTextColors[alert.type]}`}>{alert.title}</span>
+                              <Clock size={16} className={`${typeIconColors[alert.type]} ${alert.urgency === 'danger' ? 'animate-pulse' : ''}`} />
+                            </div>
+                            <p className="text-xs text-slate-400">
+                              {alert.daysLeft < 0 ? `انتهى منذ ${Math.abs(alert.daysLeft)} أيام!` : alert.daysLeft === 0 ? 'ينتهي اليوم!' : `ينتهي بعد ${alert.daysLeft} أيام`}
+                            </p>
                           </div>
-                          <p className="text-xs text-slate-400">
-                            {alert.daysLeft < 0 ? `انتهى منذ ${Math.abs(alert.daysLeft)} أيام!` : alert.daysLeft === 0 ? 'ينتهي اليوم!' : `ينتهي بعد ${alert.daysLeft} أيام`}
-                          </p>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
