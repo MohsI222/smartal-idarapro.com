@@ -256,11 +256,12 @@ export function registerTlErpRoutes(
 
     const { token, department, vehicle_id, driver_name, driver_phone, driver_id_doc, vehicle_kind,
             expected_entry_at, entry_at, exit_at, passenger_count, seat_count, cargo_count, box_count,
-            marked_success, notes, worker_id } = req.body as {
+            marked_success, notes, worker_id, latitude, longitude } = req.body as {
       token?: string; department?: string; vehicle_id?: string; driver_name?: string; driver_phone?: string;
       driver_id_doc?: string; vehicle_kind?: string; expected_entry_at?: string; entry_at?: string;
       exit_at?: string; passenger_count?: number; seat_count?: number; cargo_count?: number;
       box_count?: number; marked_success?: boolean; notes?: string; worker_id?: string;
+      latitude?: number | null; longitude?: number | null;
     };
 
     if (!token) {
@@ -292,8 +293,8 @@ export function registerTlErpRoutes(
         `INSERT INTO tl_vehicle_logs (
           id, user_id, department, worker_id, vehicle_id, driver_name, driver_phone, driver_id_doc, vehicle_kind,
           expected_entry_at, entry_at, exit_at, passenger_count, seat_count, cargo_count, box_count,
-          marked_success, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          marked_success, notes, latitude, longitude
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         id,
         w.user_id,
@@ -312,7 +313,9 @@ export function registerTlErpRoutes(
         cargo_count != null ? Number(cargo_count) : null,
         box_count != null ? Number(box_count) : null,
         success,
-        notes != null ? String(notes) : null
+        notes != null ? String(notes) : null,
+        latitude != null ? Number(latitude) : null,
+        longitude != null ? Number(longitude) : null
       );
 
       // Recalculate alert level
@@ -677,8 +680,8 @@ export function registerTlErpRoutes(
       `INSERT INTO tl_vehicle_logs (
         id, user_id, department, worker_id, vehicle_id, driver_name, driver_phone, driver_id_doc, vehicle_kind,
         expected_entry_at, entry_at, exit_at, passenger_count, seat_count, cargo_count, box_count,
-        marked_success, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        marked_success, notes, latitude, longitude
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       userId,
@@ -697,7 +700,9 @@ export function registerTlErpRoutes(
       b.cargo_count != null ? Number(b.cargo_count) : null,
       b.box_count != null ? Number(b.box_count) : null,
       marked_success,
-      b.notes != null ? String(b.notes) : null
+      b.notes != null ? String(b.notes) : null,
+      b.latitude != null ? Number(b.latitude) : null,
+      b.longitude != null ? Number(b.longitude) : null
     );
     await recalcVehicleRow(userId, id, {
       expected_entry_at,
@@ -729,7 +734,7 @@ export function registerTlErpRoutes(
       `UPDATE tl_vehicle_logs SET
         vehicle_id = ?, driver_name = ?, driver_phone = ?, driver_id_doc = ?, vehicle_kind = ?,
         expected_entry_at = ?, entry_at = ?, exit_at = ?, passenger_count = ?, seat_count = ?,
-        cargo_count = ?, box_count = ?, marked_success = ?, notes = ?
+        cargo_count = ?, box_count = ?, marked_success = ?, notes = ?, latitude = ?, longitude = ?
        WHERE id = ? AND user_id = ?`
     ).run(
       b.vehicle_id !== undefined ? String(b.vehicle_id).trim() : String(cur.vehicle_id),
@@ -746,6 +751,8 @@ export function registerTlErpRoutes(
       b.box_count !== undefined ? (b.box_count == null ? null : Number(b.box_count)) : (cur.box_count as number | null),
       b.marked_success !== undefined ? (b.marked_success ? 1 : 0) : Number(cur.marked_success),
       b.notes !== undefined ? (b.notes == null ? null : String(b.notes)) : (cur.notes as string | null),
+      b.latitude !== undefined ? (b.latitude == null ? null : Number(b.latitude)) : (cur.latitude as number | null),
+      b.longitude !== undefined ? (b.longitude == null ? null : Number(b.longitude)) : (cur.longitude as number | null),
       id,
       userId
     );

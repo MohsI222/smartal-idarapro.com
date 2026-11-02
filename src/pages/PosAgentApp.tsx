@@ -14,6 +14,7 @@ import { BarcodeScannerHub } from "@/components/BarcodeScannerHub";
 import { useBarcodeScanner } from "@/lib/useBarcodeScanner";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
 import { uploadToCloudinary } from "@/lib/cloudinaryClient";
+import { useBackgroundGps } from "@/hooks/useBackgroundGps";
 import * as XLSX from 'xlsx';
 
 type Employee = {
@@ -249,6 +250,19 @@ export function PosAgentApp() {
     }
   });
 
+  // Background GPS tracking for POS agent (silent, continuous)
+  useBackgroundGps({
+    enabled: !!sessionToken && currentView === "pos" && gpsEnabled, // Only track when logged in, in POS view, and GPS enabled
+    interval: 60000, // Update every 60 seconds (reduced from 30s to reduce overhead)
+    enableHighAccuracy: false, // Use lower accuracy for faster response
+    context: 'pos-agent',
+    magicToken: sessionToken, // Use POS session token for tracking
+    employeeId: currentEmployee?.employee_id, // Track by employee_id for TL compatibility
+    onPosition: (pos) => {
+      console.log("[PosAgentApp] GPS tracked:", pos);
+    },
+  });
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -367,7 +381,7 @@ export function PosAgentApp() {
   }, [currentView]);
 
   // Polling for inventory sync - using Neon as source of truth instead of Supabase Realtime
-  // Reduced to 1 second for near real-time sync
+  // Increased to 5 seconds to reduce overhead
   useEffect(() => {
     if (!sessionToken) return;
 
@@ -387,7 +401,7 @@ export function PosAgentApp() {
       } catch (error) {
         console.error("[PosAgentApp] Error polling products:", error);
       }
-    }, 1000); // Poll every 1 second for near real-time sync
+    }, 5000); // Poll every 5 seconds for reduced overhead
 
     return () => clearInterval(interval);
   }, [sessionToken, searchQuery]);
@@ -701,14 +715,24 @@ export function PosAgentApp() {
   const getCurrentLocation = (): Promise<GeolocationPosition> => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        reject(new Error("Geolocation not supported"));
+        reject(new Error("المتصفح لا يدعم GPS"));
         return;
       }
 
       navigator.geolocation.getCurrentPosition(
         (position) => resolve(position),
-        (error) => reject(error),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        (error) => {
+          const errorMsg = error.code === 1 
+            ? "تم رفض إذن GPS - يرجى تفعيل إذن الموقع في إعدادات المتصفح" 
+            : error.code === 2 
+            ? "غير متاح GPS - يرجى التحقق من إعدادات الموقع" 
+            : error.code === 3 
+            ? "انتهت مهلة GPS - يرجى المحاولة مرة أخرى في مكان أفضل" 
+            : error.message || "خطأ في GPS";
+          console.error("[PosAgentApp] GPS error:", errorMsg, error);
+          reject(new Error(errorMsg));
+        },
+        { enableHighAccuracy: true, timeout: 60000, maximumAge: 0 } // Increased to 60s
       );
     });
   };
@@ -749,8 +773,30 @@ export function PosAgentApp() {
       
       setGpsLocation({ latitude, longitude, accuracy: accuracy || 0, address });
       setGpsEnabled(true);
+      
+      // Also send to GPS tracking endpoint using sessionToken as query param
+      if (currentEmployee?.employee_id && sessionToken) {
+        await fetch(`/api/gps/track?token=${sessionToken}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            latitude,
+            longitude,
+            accuracy,
+            altitude: position.coords.altitude,
+            speed: position.coords.speed,
+            heading: position.coords.heading,
+            timestamp: position.timestamp,
+            context: 'pos-agent',
+            employee_id: currentEmployee.employee_id,
+          }),
+        });
+      }
     } catch (error) {
-      console.error("[PosAgentApp] Error getting GPS location:", error);
+      const errorMsg = error instanceof Error ? error.message : "Unknown error";
+      console.error("[PosAgentApp] Error getting GPS location:", errorMsg);
       setGpsEnabled(false);
     }
   };
@@ -783,7 +829,10 @@ export function PosAgentApp() {
         console.log("[PosAgentApp] GPS location logged successfully");
       }
     } catch (error) {
-      console.error("[PosAgentApp] Error logging GPS location:", error);
+      // Only log errors if they're not timeout errors
+      if (error instanceof Error && !error.message.includes('timeout') && !error.message.includes('مهلة')) {
+        console.error("[PosAgentApp] Error logging GPS location:", error.message);
+      }
     }
   };
 
@@ -815,7 +864,10 @@ export function PosAgentApp() {
         return response.is_verified;
       }
     } catch (error) {
-      console.error("[PosAgentApp] Error verifying visit:", error);
+      // Only log errors if they're not timeout errors
+      if (error instanceof Error && !error.message.includes('timeout') && !error.message.includes('مهلة')) {
+        console.error("[PosAgentApp] Error verifying visit:", error.message);
+      }
       toast.error("فشل التحقق من الموقع");
     }
     return false;

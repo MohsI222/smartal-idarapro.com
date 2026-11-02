@@ -15,6 +15,7 @@ import { registerTlErpRoutes } from "./tlErpRoutes.js";
 import { registerDeliveryHubRoutes } from "./deliveryHubRoutes.js";
 import { registerPosAgentRoutes } from "./posAgentRoutes.js";
 import contractsRoutes, { initContractsTables } from "./contractsRoutes.js";
+import gpsRoutes from "./gpsRoutes.js";
 import { getTlUploadRoot, getUploadDir } from "./paths.js";
 import { getVisaRadarProService } from "./visaRadarPro.js";
 import { randomUUID } from "node:crypto";
@@ -224,6 +225,88 @@ async function migratePosAgentCheckFields() {
       console.error("[Migration] Error creating worker_location_logs table:", error.message);
     }
 
+    // Create gps_tracking_logs table (for continuous background GPS tracking)
+    try {
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS gps_tracking_logs (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          latitude DOUBLE PRECISION NOT NULL,
+          longitude DOUBLE PRECISION NOT NULL,
+          accuracy REAL,
+          altitude REAL,
+          speed REAL,
+          heading REAL,
+          timestamp BIGINT NOT NULL,
+          context TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run();
+      console.log("[Migration] gps_tracking_logs table created");
+    } catch (error: any) {
+      console.error("[Migration] Error creating gps_tracking_logs table:", error.message);
+    }
+
+    // Drop and recreate table to remove foreign key constraint
+    try {
+      await db.prepare(`DROP TABLE IF EXISTS gps_tracking_logs`).run();
+      await db.prepare(`
+        CREATE TABLE gps_tracking_logs (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          employee_id TEXT,
+          latitude DOUBLE PRECISION NOT NULL,
+          longitude DOUBLE PRECISION NOT NULL,
+          accuracy REAL,
+          altitude REAL,
+          speed REAL,
+          heading REAL,
+          timestamp BIGINT NOT NULL,
+          context TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run();
+      console.log("[Migration] gps_tracking_logs table recreated without foreign key");
+    } catch (error: any) {
+      console.log("[Migration] Recreate check:", error.message);
+    }
+
+    // Add employee_id column if it doesn't exist (for existing databases)
+    try {
+      await db.prepare(`
+        ALTER TABLE gps_tracking_logs ADD COLUMN IF NOT EXISTS employee_id TEXT
+      `).run();
+      console.log("[Migration] employee_id column added to gps_tracking_logs");
+    } catch (error: any) {
+      console.log("[Migration] employee_id column check:", error.message);
+    }
+
+    // Add phone_number column for delivery hub order tracking
+    try {
+      await db.prepare(`
+        ALTER TABLE gps_tracking_logs ADD COLUMN IF NOT EXISTS phone_number TEXT
+      `).run();
+      console.log("[Migration] phone_number column added to gps_tracking_logs");
+    } catch (error: any) {
+      console.log("[Migration] phone_number column check:", error.message);
+    }
+
+    // Add GPS columns to users table for quick access
+    try {
+      await db.prepare(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_latitude DOUBLE PRECISION
+      `).run();
+      await db.prepare(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_longitude DOUBLE PRECISION
+      `).run();
+      await db.prepare(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_gps_time TEXT
+      `).run();
+      console.log("[Migration] GPS columns added to users table");
+    } catch (error: any) {
+      console.log("[Migration] GPS columns check:", error.message);
+    }
+
     // Create visit_verifications table
     try {
       await db.prepare(`
@@ -247,6 +330,23 @@ async function migratePosAgentCheckFields() {
       console.log("[Migration] visit_verifications table created");
     } catch (error: any) {
       console.error("[Migration] Error creating visit_verifications table:", error.message);
+    }
+
+    // Add GPS location fields to tl_vehicle_logs
+    try {
+      await db.prepare(`
+        ALTER TABLE tl_vehicle_logs ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+      `).run();
+      await db.prepare(`
+        ALTER TABLE tl_vehicle_logs ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+      `).run();
+      console.log("[Migration] GPS location fields added to tl_vehicle_logs");
+    } catch (error: any) {
+      if (error.message.includes('already exists')) {
+        console.log("[Migration] GPS location fields already exist in tl_vehicle_logs");
+      } else {
+        console.error("[Migration] Error migrating GPS fields to tl_vehicle_logs:", error.message);
+      }
     }
 
     // Create customer_loyalty table
@@ -675,6 +775,8 @@ async function authMiddleware(req: express.Request, res: express.Response, next:
     next(e);
   }
 }
+
+export { authMiddleware };
 
 async function platformSettingsEditor(req: express.Request, res: express.Response, next: express.NextFunction) {
   const role = (req as express.Request & { role: string }).role;
@@ -6105,6 +6207,7 @@ registerBase44StudioRoutes(app, { authMiddleware, uploadDir, aiGenerateAllowed }
 registerBackendServices(app, authMiddleware);
 registerDeliveryHubRoutes(app, authMiddleware);
 registerPosAgentRoutes(app, authMiddleware);
+app.use("/api/gps", gpsRoutes);
 app.use("/api/cloudinary", cloudinaryRouter);
 
 // Initialize contracts tables and register routes

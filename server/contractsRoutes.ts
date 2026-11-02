@@ -443,32 +443,40 @@ router.post("/api/contracts/:id/sign", async (req, res) => {
   try {
     const contractId = req.params.id;
     const { signer_name, signer_email, signer_phone, signature_data } = req.body;
-    
+
+    console.log("[Contracts] Received signature request:", {
+      contractId,
+      signer_name,
+      signer_email,
+      signer_phone,
+      signature_data_length: signature_data?.length,
+    });
+
     if (!signer_name || !signer_email || !signature_data) {
       res.status(400).json({ error: "البيانات المطلوبة ناقصة" });
       return;
     }
-    
+
     // Verify contract exists and is pending
     const contract = await db.prepare(`
       SELECT id, status FROM public.contracts WHERE id = ?
     `).get(contractId);
-    
+
     if (!contract) {
       res.status(404).json({ error: "العقد غير موجود" });
       return;
     }
-    
+
     if (contract.status !== 'pending_signature') {
       res.status(400).json({ error: "العقد ليس في حالة انتظار التوقيع" });
       return;
     }
-    
+
     const signatureId = randomUUID();
     const ip = req.ip || req.headers['x-forwarded-for'] as string || 'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
 
-    console.log("[Contracts] Saving signature, signature_data length:", signature_data?.length);
+    console.log("[Contracts] Saving signature, signer_phone:", signer_phone, "signature_data length:", signature_data?.length);
 
     await db.prepare(`
       INSERT INTO public.contract_signatures (
@@ -486,7 +494,7 @@ router.post("/api/contracts/:id/sign", async (req, res) => {
       userAgent
     );
 
-    console.log("[Contracts] Signature saved successfully, ID:", signatureId);
+    console.log("[Contracts] Signature saved successfully, ID:", signatureId, "phone:", signer_phone);
     
     // Update contract status to signed
     await db.prepare(`

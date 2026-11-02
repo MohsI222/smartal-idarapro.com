@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Copy, Link2, Loader2, Search, Trash2, UserPlus, Wand2, X } from "lucide-react";
+import { ArrowLeft, Copy, Loader2, MapPin, Search, Trash2, Upload, UserPlus, Wand2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { GpsDashboard } from "@/components/GpsDashboard";
 import {
   TL_DEPT_SLUGS,
   tlCreateWorker,
@@ -16,6 +18,7 @@ import {
   tlDeleteWorker,
   tlIncidents,
   tlOps,
+  tlPatchVehicle,
   tlPatchWorker,
   tlRegenerateMagic,
   tlVehicleDeps,
@@ -42,6 +45,9 @@ export function TransportLogisticsAdmin() {
   const [selectedOps, setSelectedOps] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState<string | null>(null);
+  const [selectedWorkerForGps, setSelectedWorkerForGps] = useState<TlWorker | null>(null);
+  const [gpsDialogOpen, setGpsDialogOpen] = useState(false);
   const [form, setForm] = useState({
     full_name: "",
     employee_id: "",
@@ -149,12 +155,12 @@ export function TransportLogisticsAdmin() {
   /** رابط مباشر للقسم مع الرمز السحري — يفتح مباشرة بدون طلب تسجيل الدخول */
   const magicLoginUrl = (w: TlWorker) => {
     const base = typeof window !== 'undefined' ? window.location.origin : getPublicOrigin();
-    return `${base}/dept/${w.department}?magic=${encodeURIComponent(w.magic_token ?? "")}&pwa=1`;
+    return `${base}/dept/${w.department}?magic=${encodeURIComponent(w.magic_token || "")}&pwa=1`;
   };
 
   const magicRegisterUrl = (w: TlWorker) => {
     const base = typeof window !== 'undefined' ? window.location.origin : getPublicOrigin();
-    return `${base}/dept/${w.department}?magic=${encodeURIComponent(w.magic_token ?? "")}&pwa=1`;
+    return `${base}/dept/${w.department}?magic=${encodeURIComponent(w.magic_token || "")}&pwa=1`;
   };
 
   const copyMagic = async (w: TlWorker) => {
@@ -177,6 +183,47 @@ export function TransportLogisticsAdmin() {
       void reload();
     } catch {
       toast.error(t("tl.saveErr"));
+    }
+  };
+
+  const openGoogleMaps = (lat: number | null, lon: number | null) => {
+    if (lat && lon) {
+      window.open(`https://www.google.com/maps?q=${lat},${lon}`, "_blank");
+    }
+  };
+
+  const captureGpsForVehicle = async (vehicleId: string) => {
+    if (!navigator.geolocation) {
+      toast.error(t("tl.gpsNotSupported"));
+      return;
+    }
+
+    setGpsLoading(vehicleId);
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        });
+      });
+
+      const { latitude, longitude } = position.coords;
+      
+      // Update vehicle log with GPS coordinates
+      if (!token) return;
+      await tlPatchVehicle(token, vehicleId, {
+        latitude,
+        longitude,
+      });
+      
+      toast.success(t("tl.gpsCaptured"));
+      void reload();
+    } catch (error) {
+      console.error("[Admin] GPS capture failed", error);
+      toast.error(t("tl.gpsFailed"));
+    } finally {
+      setGpsLoading(null);
     }
   };
 
@@ -320,7 +367,7 @@ export function TransportLogisticsAdmin() {
     if (!confirm(t("tl.confirmDelete"))) return;
     try {
       for (const id of selectedVehicles) {
-        await tlDeleteVehicle(token, id);
+        if (token) await tlDeleteVehicle(token, id);
       }
       setSelectedVehicles(new Set());
       toast.success(`تم حذف ${selectedVehicles.size} سجل`);
@@ -356,7 +403,7 @@ export function TransportLogisticsAdmin() {
     if (!confirm(t("tl.confirmDelete"))) return;
     try {
       for (const id of selectedOps) {
-        await tlDeleteOps(token, id);
+        if (token) await tlDeleteOps(token, id);
       }
       setSelectedOps(new Set());
       toast.success(`تم حذف ${selectedOps.size} عملية`);
@@ -637,6 +684,77 @@ export function TransportLogisticsAdmin() {
         )}
       </section>
 
+      <section className="rounded-2xl border border-emerald-500/25 bg-emerald-950/10 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-bold text-emerald-200">{t("tl.gpsTrackingTitle")}</h2>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void reload()}
+          >
+            <Loader2 className="size-4 mr-2" />
+            {t("tl.refresh")}
+          </Button>
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          {t("tl.gpsTrackingDesc")}
+        </p>
+        {loading ? (
+          <Loader2 className="size-8 animate-spin text-slate-500" />
+        ) : (
+          <div className="space-y-2">
+            {workers.slice(0, 10).map((w) => (
+              <div
+                key={w.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-3"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white text-sm">{w.full_name}</p>
+                  <p className="text-xs text-slate-400">{w.employee_id} · {t(`tl.dept.${w.department}`)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-emerald-400">
+                    {t("tl.gpsActive")}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1 text-[10px]"
+                    onClick={() => {
+                      setSelectedWorkerForGps(w);
+                      setGpsDialogOpen(true);
+                    }}
+                  >
+                    <MapPin className="size-3" />
+                    {t("tl.viewLastLocation")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* GPS Dialog */}
+      <Dialog open={gpsDialogOpen} onOpenChange={setGpsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border-emerald-500/50">
+          <DialogHeader>
+            <DialogTitle className="text-emerald-200">
+              {t("tl.gpsTrackingTitle")} - {selectedWorkerForGps?.full_name}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedWorkerForGps && (
+            <GpsDashboard
+              workerId={selectedWorkerForGps.id}
+              context="magic-link-tl"
+              token={token}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <section className="rounded-2xl border border-cyan-500/25 bg-cyan-950/15 p-6 space-y-10 overflow-x-auto">
         <h2 className="text-lg font-bold text-cyan-200">{t("tl.isolatedReportsTitle")}</h2>
         {loading ? (
@@ -683,6 +801,7 @@ export function TransportLogisticsAdmin() {
                           <th className="p-2">{t("tl.pdf.colPhone")}</th>
                           <th className="p-2">{t("tl.pdf.colExpected")}</th>
                           <th className="p-2">{t("tl.pdf.colEntry")}</th>
+                          <th className="p-2">{t("tl.gpsLocation")}</th>
                           <th className="p-2">{t("tl.pdf.colStatus")}</th>
                           <th className="p-2">{t("tl.pdf.colDelay")}</th>
                           <th className="p-2" />
@@ -691,7 +810,7 @@ export function TransportLogisticsAdmin() {
                       <tbody>
                         {vRows.length === 0 ? (
                           <tr>
-                            <td className="p-3 text-slate-500 font-sans" colSpan={9}>
+                            <td className="p-3 text-slate-500 font-sans" colSpan={10}>
                               {normalisedQuery ? t("tl.searchNoResults") : t("tl.reportNoRows")}
                             </td>
                           </tr>
@@ -707,6 +826,32 @@ export function TransportLogisticsAdmin() {
                               <td className="p-2 whitespace-nowrap">{ensureLatinDigitsInString(r.expected_entry_at)}</td>
                               <td className="p-2 whitespace-nowrap">
                                 {r.entry_at ? ensureLatinDigitsInString(r.entry_at) : "—"}
+                              </td>
+                              <td className="p-2">
+                                {r.latitude && r.longitude ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="gap-1 text-[10px]"
+                                    onClick={() => openGoogleMaps(r.latitude, r.longitude)}
+                                  >
+                                    <MapPin className="size-3" />
+                                    {t("tl.openGoogleMaps")}
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={gpsLoading === r.id}
+                                    onClick={() => void captureGpsForVehicle(r.id)}
+                                    className="gap-1 text-[10px]"
+                                  >
+                                    {gpsLoading === r.id ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />}
+                                    {t("tl.captureGps")}
+                                  </Button>
+                                )}
                               </td>
                               <td className="p-2 font-sans">{r.alert_level}</td>
                               <td className="p-2">{ensureLatinDigitsInString(String(r.delay_minutes))}</td>

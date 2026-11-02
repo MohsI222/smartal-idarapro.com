@@ -18,6 +18,7 @@ import {
   Video,
   LifeBuoy,
   Truck,
+  MapPin,
   type LucideIcon,
 } from "lucide-react";
 
@@ -44,6 +45,7 @@ export const PLATFORM_NAV: AppNavItem[] = [
   { to: "/app/tl", icon: Train, labelKey: "nav.transportLogistics", permission: "can_access_transport_logistics" },
   { to: "/app/delivery-hub", icon: Truck, labelKey: "nav.deliveryHub", emphasize: true, permission: "can_access_delivery" },
   { to: "/app/contracts", icon: FileText, labelKey: "nav.contracts", emphasize: true, permission: "can_access_contracts" },
+  { to: "/app/gps", icon: MapPin, labelKey: "nav.gpsTracking", emphasize: true },
   { to: "/app/auto-real-estate", icon: HousePlus, labelKey: "nav.autoRealEstate", emphasize: true },
   { to: "/app/company?sector=commercial-industrial", icon: Building2, labelKey: "nav.commercialCompany" },
   { to: "/app/academy", icon: Video, labelKey: "nav.corporateAcademy" },

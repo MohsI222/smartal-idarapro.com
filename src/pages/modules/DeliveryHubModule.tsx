@@ -2,16 +2,18 @@
 import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Loader2, Radio, LayoutTemplate, QrCode, BarChart3, Lock } from "lucide-react";
+import { Loader2, Radio, LayoutTemplate, QrCode, BarChart3, Lock, MapPin, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useBackgroundGps } from "@/hooks/useBackgroundGps";
 import { ensureStoreForUser, fetchProductsFromBackend, fetchOrders } from "@/lib/deliveryHub/api";
 import type { Order, Product, Store } from "@/lib/deliveryHub/types";
 import { OrdersTab } from "./deliveryHub/OrdersTab";
 import { CatalogTab } from "./deliveryHub/CatalogTab";
 import { QrTab } from "./deliveryHub/QrTab";
 import { StatsTab } from "./deliveryHub/StatsTab";
+import { GpsDashboard } from "@/components/GpsDashboard";
 
 export function DeliveryHubModule() {
   const { token, isAdmin, isApproved, approvedModules } = useAuth();
@@ -23,6 +25,14 @@ export function DeliveryHubModule() {
   const [orders, setOrders] = useState<Order[]>([]);
 
   const deliveryHubAllowed = isAdmin || (isApproved && approvedModules.includes("delivery_hub"));
+
+  // Background GPS tracking for delivery hub (silent, continuous)
+  useBackgroundGps({
+    enabled: !!token && deliveryHubAllowed, // Only track when logged in and allowed
+    interval: 30000, // Update every 30 seconds
+    enableHighAccuracy: true,
+    context: 'delivery-hub',
+  });
 
   // Memoized callbacks to prevent re-renders
   const handleProductsChange = useCallback((newProducts: Product[]) => {
@@ -142,6 +152,26 @@ export function DeliveryHubModule() {
         <h1 className="text-2xl font-bold text-white">{t("deliveryHub.title")}</h1>
         <p className="text-sm text-slate-400">{store.name} — {t("deliveryHub.subtitle")}</p>
       </div>
+
+      {/* GPS Tracking Section - Admin Only */}
+      {isAdmin && store && (
+        <div className="rounded-2xl border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-950/30 to-slate-900 p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h2 className="text-lg font-bold text-emerald-200 flex items-center gap-2">
+              <MapPin className="size-5" />
+              {t("tl.gpsTrackingTitle")} - {store.name}
+            </h2>
+          </div>
+          <p className="text-xs text-slate-400 mb-4">
+            {t("tl.gpsTrackingDesc")}
+          </p>
+          <GpsDashboard
+            publicLinkId={store.slug}
+            context="public-store"
+            token={token}
+          />
+        </div>
+      )}
 
       <Tabs defaultValue="orders" dir="rtl">
         <TabsList className="flex-wrap h-auto">

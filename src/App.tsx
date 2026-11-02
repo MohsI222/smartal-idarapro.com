@@ -99,6 +99,9 @@ const LawyerPortalModule = lazy(() =>
 const ContractsModule = lazy(() =>
   import("@/modules/ContractsModule").then((m) => ({ default: m.ContractsModule }))
 );
+const GpsPage = lazy(() =>
+  import("@/pages/GpsPage").then((m) => ({ default: m.GpsPage }))
+);
 const AutoRealEstateModule = lazy(() =>
   import("@/pages/modules/AutoRealEstateModule").then((m) => ({ default: m.default }))
 );
@@ -280,6 +283,7 @@ function AppRoutes() {
         <Route path="delivery-hub" element={<DeliveryHubModule />} />
         <Route path="contracts" element={<ContractsModule />} />
         <Route path="contracts/:id" element={<ContractsModule />} />
+        <Route path="gps" element={<GpsPage />} />
         <Route 
           path="ai-design-studio" 
           element={

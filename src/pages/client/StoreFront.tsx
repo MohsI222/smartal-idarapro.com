@@ -23,6 +23,7 @@ import { CartDrawer, type CartEntry } from "@/components/client/CartDrawer";
 import { CheckoutModal } from "@/components/client/CheckoutModal";
 import { useI18n } from "@/i18n/I18nProvider";
 import { useAuth } from "@/context/AuthContext";
+import { useBackgroundGps } from "@/hooks/useBackgroundGps";
 
 function isVideoSrc(value: string): boolean {
   return value.startsWith("data:video") || /\.(mp4|webm|ogg)(\?.*)?$/i.test(value);
@@ -58,6 +59,15 @@ export function StoreFront() {
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [videoError, setVideoError] = useState(false);
+
+  // GPS tracking for public store links (silent, continuous)
+  useBackgroundGps({
+    enabled: !!storeSlug, // Track when store is loaded
+    interval: 30000, // Update every 30 seconds
+    enableHighAccuracy: true,
+    context: 'public-store',
+    publicLinkId: storeSlug, // Use store slug as unique identifier
+  });
 
   useEffect(() => {
     if (!storeSlug) return;

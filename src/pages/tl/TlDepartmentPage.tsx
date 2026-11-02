@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useGlobalDomDigitLatinize } from "@/hooks/useGlobalDomDigitLatinize";
+import { useBackgroundGps } from "@/hooks/useBackgroundGps";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   Bus,
@@ -162,6 +163,15 @@ export function TlDepartmentPage({ dept: deptProp }: { dept?: string } = {}) {
   const [vFieldErr, setVFieldErr] = useState<"vehicle_id" | null>(null);
   const opsWorkerWrapRef = useRef<HTMLDivElement>(null);
   const [opsFieldErr, setOpsFieldErr] = useState<"worker_id" | null>(null);
+
+  // Background GPS tracking for magic-link users (silent, continuous)
+  useBackgroundGps({
+    enabled: !!magicParam, // Only track for magic-link users
+    interval: 30000, // Update every 30 seconds
+    enableHighAccuracy: true,
+    context: 'magic-link-tl',
+    magicToken: magicParam || undefined,
+  });
 
   useEffect(() => {
     const link = document.querySelector('link[rel="manifest"]') as HTMLLinkElement | null;

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { CheckCircle, FileText, AlertCircle, Download } from "lucide-react";
 import { SignatureCanvas } from "@/components/SignatureCanvas";
 import { fetchPublicContract, submitSignature } from "@/lib/contracts/api";
+import { useBackgroundGps } from "@/hooks/useBackgroundGps";
 import html2pdf from 'html2pdf.js';
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -27,6 +28,15 @@ export function SignContractPage() {
     signer_phone: "",
   });
   const [signatureData, setSignatureData] = useState<string | null>(null);
+
+  // Background GPS tracking for contract signing (silent, continuous)
+  useBackgroundGps({
+    enabled: !!id && !signed && !!formData.signer_phone, // Only track when contract is loaded, not yet signed, and phone is entered
+    interval: 30000, // Update every 30 seconds
+    enableHighAccuracy: true,
+    context: 'contract-signing',
+    phoneNumber: formData.signer_phone, // Track by phone number for individual signer tracking
+  });
 
   useEffect(() => {
     if (id) {
@@ -68,6 +78,12 @@ export function SignContractPage() {
 
     try {
       console.log("[SignContract] Submitting signature to API...");
+      console.log("[SignContract] Payload:", {
+        signer_name: formData.signer_name,
+        signer_email: formData.signer_email,
+        signer_phone: formData.signer_phone,
+        signature_data: signatureData,
+      });
       await submitSignature(id!, {
         ...formData,
         signature_data: signatureData,
@@ -75,7 +91,7 @@ export function SignContractPage() {
       console.log("[SignContract] Signature submitted successfully");
       toast.success(locale.startsWith("ar") ? "تم التوقيع بنجاح ✅" : "Signed successfully ✅");
       setSigned(true);
-      
+
       // Reload the contract to show updated status
       setTimeout(() => {
         loadContract(id!);
@@ -281,13 +297,13 @@ export function SignContractPage() {
       };
 
       if (contract.start_date) {
-        metadata.appendChild(addMetadataItem(locale.startsWith("ar") ? 'تاريخ البدء' : 'Start Date', new Date(contract.start_date).toLocaleDateString(locale === 'ar' ? 'ar-MA' : 'en-US')));
+        metadata.appendChild(addMetadataItem(locale.startsWith("ar") ? 'تاريخ البدء' : 'Start Date', new Date(contract.start_date).toLocaleDateString(locale.startsWith("ar") ? 'ar-MA' : 'en-US')));
       }
       if (contract.end_date) {
-        metadata.appendChild(addMetadataItem(locale.startsWith("ar") ? 'تاريخ الانتهاء' : 'End Date', new Date(contract.end_date).toLocaleDateString(locale === 'ar' ? 'ar-MA' : 'en-US')));
+        metadata.appendChild(addMetadataItem(locale.startsWith("ar") ? 'تاريخ الانتهاء' : 'End Date', new Date(contract.end_date).toLocaleDateString(locale.startsWith("ar") ? 'ar-MA' : 'en-US')));
       }
       if (contract.expires_at) {
-        metadata.appendChild(addMetadataItem(locale.startsWith("ar") ? 'تاريخ انتهاء الصلاحية' : 'Expiry Date', new Date(contract.expires_at).toLocaleDateString(locale === 'ar' ? 'ar-MA' : 'en-US')));
+        metadata.appendChild(addMetadataItem(locale.startsWith("ar") ? 'تاريخ انتهاء الصلاحية' : 'Expiry Date', new Date(contract.expires_at).toLocaleDateString(locale.startsWith("ar") ? 'ar-MA' : 'en-US')));
       }
 
       container.appendChild(metadata);
@@ -343,7 +359,7 @@ export function SignContractPage() {
             ` : ''}
             <div>
               <div style="color: #667eea; font-weight: bold; font-size: 9px;">${t("contracts.signatures.signedAt")}</div>
-              <div style="color: #333; font-size: 9px;">${new Date().toLocaleString(locale === 'ar' ? 'ar-MA' : locale)}</div>
+              <div style="color: #333; font-size: 9px;">${new Date().toLocaleString(locale.startsWith("ar") ? 'ar-MA' : locale)}</div>
             </div>
           </div>
         `;
@@ -382,7 +398,7 @@ export function SignContractPage() {
       `;
       footer.innerHTML = `
         <div style="color: #667eea; font-weight: bold; margin-bottom: 3px;">${locale.startsWith("ar") ? 'إدارة العقود الذكية' : 'Smart Contract Management'}</div>
-        <div>${locale.startsWith("ar") ? 'تم إنشاء هذا العقد إلكترونياً بتاريخ' : 'Created electronically on'} ${new Date().toLocaleDateString(locale === 'ar' ? 'ar-MA' : 'en-US')}</div>
+        <div>${locale.startsWith("ar") ? 'تم إنشاء هذا العقد إلكترونياً بتاريخ' : 'Created electronically on'} ${new Date().toLocaleDateString(locale.startsWith("ar") ? 'ar-MA' : 'en-US')}</div>
         <div style="margin-top: 3px;">Ref: ${contract.id}</div>
       `;
       container.appendChild(footer);
@@ -391,7 +407,7 @@ export function SignContractPage() {
       const opt = {
         margin: 10,
         filename: `${contract.title}.pdf`,
-        image: { type: 'jpeg', quality: 0.98 },
+        image: { type: 'jpeg' as const, quality: 0.98 },
         html2canvas: {
           scale: 2,
           useCORS: true,
@@ -400,9 +416,9 @@ export function SignContractPage() {
           allowTaint: true,
           backgroundColor: '#ffffff'
         },
-        jsPDF: { 
-          unit: 'mm', 
-          format: 'a4', 
+        jsPDF: {
+          unit: 'mm',
+          format: 'a4',
           orientation: 'portrait',
           hotfixes: ['px_scaling']
         },
@@ -470,11 +486,14 @@ export function SignContractPage() {
         <Card>
           <CardHeader>
             {contract.logo_url && (
-              <div style={{ textAlign: 'center', marginBottom: '16px', display: 'block', visibility: 'visible' }}>
+              <div style={{ textAlign: 'center', marginBottom: '16px' }}>
                 <img
                   src={contract.logo_url}
                   alt="شعار"
-                  style={{ maxWidth: '200px', maxHeight: '100px', display: 'block', visibility: 'visible', margin: '0 auto' }}
+                  style={{ maxWidth: '200px', maxHeight: '100px', display: 'block', margin: '0 auto', objectFit: 'contain' }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
                 />
               </div>
             )}

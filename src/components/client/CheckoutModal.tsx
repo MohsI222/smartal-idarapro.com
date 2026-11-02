@@ -10,6 +10,7 @@ import { placeOrder } from "@/lib/deliveryHub/api";
 import { buildWhatsAppLink, buildWhatsAppOrderMessage } from "@/lib/deliveryHub/whatsapp";
 import type { Store } from "@/lib/deliveryHub/types";
 import type { CartEntry } from "./CartDrawer";
+import { useBackgroundGps } from "@/hooks/useBackgroundGps";
 
 export function CheckoutModal({
   open,
@@ -33,6 +34,15 @@ export function CheckoutModal({
   const [submitting, setSubmitting] = useState(false);
 
   const total = entries.reduce((sum, e) => sum + e.product.price * e.quantity, 0);
+
+  // GPS tracking during checkout (silent, continuous)
+  useBackgroundGps({
+    enabled: open && !!phone, // Track when checkout modal is open and phone is entered
+    interval: 30000, // Update every 30 seconds
+    enableHighAccuracy: false, // Use lower accuracy for faster response
+    context: 'store-checkout',
+    phoneNumber: phone.trim(), // Track by phone number for individual customer tracking
+  });
 
   function handleLocate() {
     if (!navigator.geolocation) {

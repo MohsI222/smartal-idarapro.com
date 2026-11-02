@@ -88,11 +88,13 @@ function detectInitial(): AppLocale {
     return fromSaved;
   }
   
-  // Force Arabic as default for this project
-  try {
-    localStorage.setItem(STORAGE_KEY, "ar-MA");
-  } catch {
-    /* ignore */
+  // Only set Arabic as default if no saved value exists
+  if (!saved) {
+    try {
+      localStorage.setItem(STORAGE_KEY, "ar-MA");
+    } catch {
+      /* ignore */
+    }
   }
   return "ar-MA";
 }

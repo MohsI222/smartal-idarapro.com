@@ -34,6 +34,8 @@ export type TlVehicleLog = {
   alert_level: string;
   delay_minutes: number;
   notes: string | null;
+  latitude: number | null;
+  longitude: number | null;
   created_at: string;
 };
 

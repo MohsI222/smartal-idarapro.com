@@ -380,6 +380,8 @@ CREATE TABLE IF NOT EXISTS tl_vehicle_logs (
   alert_level TEXT NOT NULL DEFAULT 'none',
   delay_minutes INTEGER NOT NULL DEFAULT 0,
   notes TEXT,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -502,6 +504,24 @@ CREATE TABLE IF NOT EXISTS worker_location_logs (
 
 CREATE INDEX IF NOT EXISTS idx_worker_location_logs_worker ON worker_location_logs(worker_id, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_worker_location_logs_user ON worker_location_logs(user_id, timestamp DESC);
+
+-- Background GPS Tracking Table (for continuous tracking)
+CREATE TABLE IF NOT EXISTS gps_tracking_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  accuracy REAL,
+  altitude REAL,
+  speed REAL,
+  heading REAL,
+  timestamp BIGINT NOT NULL,
+  context TEXT, -- 'pos-agent', 'delivery-hub', 'magic-link', 'contracts', etc.
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_gps_tracking_logs_user ON gps_tracking_logs(user_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_gps_tracking_logs_context ON gps_tracking_logs(context, timestamp DESC);
 
 -- Visit Verification Table
 CREATE TABLE IF NOT EXISTS visit_verifications (

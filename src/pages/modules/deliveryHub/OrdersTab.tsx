@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, MessageCircle, Phone, MapPin, ArrowRight, MessageSquare, X, Trash2 } from "lucide-react";
 import {
   fetchOrders,
@@ -15,6 +16,8 @@ import {
 import { playNewOrderChime } from "@/lib/deliveryHub/chime";
 import { ORDER_STATUS_FLOW, ORDER_STATUS_LABELS, type Order, type OrderStatus } from "@/lib/deliveryHub/types";
 import { OrderChatModal } from "./ChatModal";
+import { GpsDashboard } from "@/components/GpsDashboard";
+import { useAuth } from "@/context/AuthContext";
 
 const NEXT_ACTION_LABEL: Record<OrderStatus, string> = {
   pending: "تأكيد الطلب",
@@ -74,9 +77,12 @@ export function OrdersTab({
   products: any[];
   onProductsChange: (products: any[]) => void;
 }) {
+  const { token: authToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [chatOrder, setChatOrder] = useState<Order | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [gpsOrder, setGpsOrder] = useState<Order | null>(null);
+  const [gpsDialogOpen, setGpsDialogOpen] = useState(false);
   const ordersRef = useRef(orders);
   useEffect(() => {
     ordersRef.current = orders;
@@ -267,6 +273,19 @@ export function OrdersTab({
                       {NEXT_ACTION_LABEL[order.status]}
                     </Button>
                   )}
+                  {order.customer_phone && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setGpsOrder(order);
+                        setGpsDialogOpen(true);
+                      }}
+                      title="عرض GPS"
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   {order.status !== "cancelled" && order.status !== "completed" && (
                     <Button
                       size="sm"
@@ -306,6 +325,25 @@ export function OrdersTab({
           orderId={chatOrder.id}
           customerName={chatOrder.customer_name}
         />
+      )}
+
+      {gpsOrder && (
+        <Dialog open={gpsDialogOpen} onOpenChange={setGpsDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border-emerald-500/50">
+            <DialogHeader>
+              <DialogTitle className="text-emerald-200">
+                تتبع GPS - {gpsOrder.customer_name}
+              </DialogTitle>
+            </DialogHeader>
+            {gpsOrder.customer_phone && (
+              <GpsDashboard
+                phoneNumber={gpsOrder.customer_phone}
+                context="delivery-hub"
+                token={authToken}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

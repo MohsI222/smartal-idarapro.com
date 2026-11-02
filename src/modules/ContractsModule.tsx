@@ -10,18 +10,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, FileText, Share2, Trash2, Eye, Copy, CheckCircle, ArrowLeft, Download } from "lucide-react";
+import { Plus, FileText, Share2, Trash2, Eye, Copy, CheckCircle, ArrowLeft, Download, MapPin, RefreshCw } from "lucide-react";
 import { fetchContracts, createContract, updateContract, deleteContract, fetchTemplates, createTemplate, deleteTemplate, fetchContract } from "@/lib/contracts/api";
 import { CONTRACT_STATUS_LABELS, CONTRACT_TYPE_LABELS, type Contract, type ContractType } from "@/lib/contracts/types";
 import html2pdf from 'html2pdf.js';
 import { useI18n } from "@/i18n/I18nProvider";
 import { compressImageUnder100KB } from "@/lib/imageUtils";
 import { uploadToCloudinary } from "@/lib/cloudinaryClient";
+import { useAuth } from "@/context/AuthContext";
+import { GpsDashboard } from "@/components/GpsDashboard";
 
 export function ContractsModule() {
   const navigate = useNavigate();
   const { id } = useParams();
   const { t } = useI18n();
+  const { token, isAdmin } = useAuth();
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +32,8 @@ export function ContractsModule() {
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [selectedContract, setSelectedContract] = useState<Contract | null>(null);
   const [signatures, setSignatures] = useState<any[]>([]);
+  const [selectedContractForGps, setSelectedContractForGps] = useState<Contract | null>(null);
+  const [gpsDialogOpen, setGpsDialogOpen] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -86,6 +91,7 @@ export function ContractsModule() {
       console.log("[ContractsModule] Contract data loaded:", data);
       console.log("[ContractsModule] Contract content:", data.contract?.content);
       console.log("[ContractsModule] Signatures count:", data.signatures?.length);
+      console.log("[ContractsModule] All signatures:", JSON.stringify(data.signatures, null, 2));
       console.log("[ContractsModule] First signature data length:", data.signatures?.[0]?.signature_data?.length);
       setSelectedContract(data.contract);
       setSignatures(data.signatures || []);
@@ -172,9 +178,31 @@ export function ContractsModule() {
       toast.success("تم حذف القالب بنجاح");
       loadData();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "فشل حذف القالب");
+      toast.error("فشل حذف القالب");
     }
   }, [loadData]);
+
+  const handleViewSignerLocation = useCallback(async (phoneNumber: string) => {
+    console.log('[Contracts] Viewing location for phone:', phoneNumber);
+    if (!token) return;
+    try {
+      const response = await fetch(`/api/gps/phone/${phoneNumber}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[Contracts] GPS response:', data);
+        if (data.location) {
+          window.open(`https://www.google.com/maps?q=${data.location.latitude},${data.location.longitude}`, "_blank");
+        } else {
+          toast.info("لا يوجد موقع GPS متاح لهذا الموقع");
+        }
+      }
+    } catch (error) {
+      console.error('[Contracts] Error fetching location:', error);
+      toast.error("فشل جلب موقع الموقع");
+    }
+  }, [token]);
 
   const handleShareContract = useCallback((contract: Contract) => {
     const token = localStorage.getItem("idara_token");
@@ -346,7 +374,7 @@ export function ContractsModule() {
         <body>
           <div class="container">
             <div class="header">
-              ${contract.logo_url ? `<img src="${contract.logo_url}" style="max-width: 100px; max-height: 50px; margin-bottom: 8px;">` : ''}
+              ${contract.logo_url ? `<img src="${contract.logo_url}" style="max-width: 150px; max-height: 80px; margin-bottom: 12px; object-fit: contain;" alt="شعار" onerror="this.style.display='none'">` : ''}
               <h1 class="title">${contract.title}</h1>
               ${contract.description ? `<p class="description">${contract.description}</p>` : ''}
               <div class="status">${CONTRACT_STATUS_LABELS[contract.status]}</div>
@@ -564,8 +592,10 @@ export function ContractsModule() {
             </CardHeader>
             <CardContent>
               <div style={{ display: 'block', visibility: 'visible' }}>
+                {console.log('[Contracts] Signatures:', signatures)}
                 {signatures.map((sig) => (
                   <div key={sig.id} style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', marginBottom: '16px', display: 'block', visibility: 'visible' }}>
+                    {console.log('[Contracts] Signature phone:', sig.signer_phone)}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                       <div style={{ display: 'block', visibility: 'visible' }}>
                         <Label style={{ fontSize: '12px', color: '#64748b', display: 'block', visibility: 'visible' }}>{t("contracts.signatures.signerName")}</Label>
@@ -578,7 +608,22 @@ export function ContractsModule() {
                       {sig.signer_phone && (
                         <div style={{ display: 'block', visibility: 'visible' }}>
                           <Label style={{ fontSize: '12px', color: '#64748b', display: 'block', visibility: 'visible' }}>{t("contracts.signatures.signerPhone")}</Label>
-                          <p style={{ fontWeight: '500', display: 'block', visibility: 'visible', color: '#000' }}>{sig.signer_phone}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <p style={{ fontWeight: '500', display: 'block', visibility: 'visible', color: '#000' }}>{sig.signer_phone}</p>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleViewSignerLocation(sig.signer_phone)}
+                              style={{ height: '28px', padding: '0 8px', fontSize: '11px', marginLeft: '8px' }}
+                            >
+                              📍 الموقع
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      {!sig.signer_phone && (
+                        <div style={{ display: 'block', visibility: 'visible', fontSize: '11px', color: '#999' }}>
+                          لا يوجد رقم هاتف
                         </div>
                       )}
                       <div style={{ display: 'block', visibility: 'visible' }}>
@@ -622,6 +667,74 @@ export function ContractsModule() {
 
   return (
     <div className="space-y-6">
+      {/* GPS Tracking Section - Admin Only */}
+      {isAdmin && !id && (
+        <Card className="border-2 border-pink-500/50 bg-gradient-to-br from-pink-950/30 to-slate-900">
+          <CardContent className="p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-bold text-pink-200 flex items-center gap-2">
+                <MapPin className="size-5" />
+                {t("tl.gpsTrackingTitle")} - {t("contracts.title")}
+              </h2>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              {t("tl.gpsTrackingDesc")}
+            </p>
+            <div className="space-y-2">
+              {contracts.slice(0, 5).map((contract) => (
+                <div
+                  key={contract.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-pink-500/20 bg-pink-950/20 p-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-white text-sm">{contract.title}</p>
+                    <p className="text-xs text-slate-400">ID: {contract.id.slice(0, 8)}...</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1 text-[10px] bg-pink-500/20 hover:bg-pink-500/30 text-pink-300"
+                      onClick={() => {
+                        setSelectedContractForGps(contract);
+                        setGpsDialogOpen(true);
+                      }}
+                    >
+                      <MapPin className="size-3" />
+                      {t("tl.viewLastLocation")}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {contracts.length === 0 && (
+                <p className="text-xs text-slate-500 text-center py-4">
+                  {t("contracts.noContracts")}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* GPS Dialog */}
+      <Dialog open={gpsDialogOpen} onOpenChange={setGpsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border-pink-500/50">
+          <DialogHeader>
+            <DialogTitle className="text-pink-200">
+              {t("tl.gpsTrackingTitle")} - {selectedContractForGps?.title}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedContractForGps && (
+            <GpsDashboard
+              publicLinkId={selectedContractForGps.id}
+              context="contract-signing"
+              token={token}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{t("contracts.title")}</h1>

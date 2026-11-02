@@ -6,6 +6,7 @@ import {
   Factory,
   Gauge,
   Link2,
+  MapPin,
   Settings,
   Shield,
   Train,
@@ -15,9 +16,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { GpsDashboard } from "@/components/GpsDashboard";
 import { getPublicOrigin } from "@/lib/publicOrigin";
-import { TL_DEPT_SLUGS, type TlDeptSlug } from "@/lib/tlApi";
+import { TL_DEPT_SLUGS, tlWorkers, type TlDeptSlug, type TlWorker } from "@/lib/tlApi";
 import { api } from "@/lib/api";
 import type { LogisticsQueueItem } from "@/lib/types";
 
@@ -31,10 +35,14 @@ const DEPT_ICONS: Record<TlDeptSlug, ReactNode> = {
 };
 
 export function TransportLogisticsHub() {
-  const { t } = useI18n();
+  const { t, token } = useI18n();
+  const { user } = useAuth();
   const [logisticsQueue, setLogisticsQueue] = useState<any[]>([]);
   const [logisticsBusy, setLogisticsBusy] = useState(false);
   const [selectedLogisticsItems, setSelectedLogisticsItems] = useState<Set<string>>(new Set());
+  const [workers, setWorkers] = useState<TlWorker[]>([]);
+  const [selectedWorkerForGps, setSelectedWorkerForGps] = useState<TlWorker | null>(null);
+  const [gpsDialogOpen, setGpsDialogOpen] = useState(false);
 
   /** نفس منشأ الصفحة إن وُجد (يتفادى اختلاف www/apex عن VITE_PUBLIC_APP_URL عند نسخ الرابط أو فتح الـ manifest). */
   const shareOrigin = useMemo(() => {
@@ -97,6 +105,23 @@ export function TransportLogisticsHub() {
   const deleteLogisticsItemHandler = async (id: string) => {
     console.warn("[tl hub] deleteLogisticsItem not implemented");
   };
+
+  // Load workers for GPS tracking
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    void (async () => {
+      try {
+        const data = await tlWorkers(token);
+        if (active) setWorkers(data);
+      } catch (error) {
+        console.error("[tl hub] Failed to load workers:", error);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   const deleteSelectedLogisticsItems = async () => {
     console.warn("[tl hub] deleteSelectedLogisticsItems not implemented");
@@ -244,6 +269,56 @@ export function TransportLogisticsHub() {
           )}
         </CardContent>
       </Card>
+
+      {/* GPS Tracking Section */}
+      <Card className="border-slate-800 bg-[#0a1628]/90">
+        <CardHeader className="border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <MapPin className="size-5 text-emerald-400" />
+            <p className="font-black text-white">{t("tl.gpsTrackingTitle")}</p>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {workers.length > 0 ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {workers.map((worker) => (
+                <Button
+                  key={worker.id}
+                  variant="outline"
+                  className="justify-start border-white/15 hover:border-emerald-500/50 hover:bg-emerald-950/20"
+                  onClick={() => {
+                    setSelectedWorkerForGps(worker);
+                    setGpsDialogOpen(true);
+                  }}
+                >
+                  <MapPin className="size-4 mr-2 text-emerald-400" />
+                  <span className="truncate">{worker.full_name}</span>
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-400 text-sm">{t("tl.noWorkersForGps")}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* GPS Dialog */}
+      <Dialog open={gpsDialogOpen} onOpenChange={setGpsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border-emerald-500/50">
+          <DialogHeader>
+            <DialogTitle className="text-emerald-200">
+              {t("tl.gpsTrackingTitle")} - {selectedWorkerForGps?.full_name}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedWorkerForGps && (
+            <GpsDashboard
+              workerId={selectedWorkerForGps.id}
+              context="magic-link-tl"
+              token={token}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <div className="rounded-xl border border-cyan-500/20 bg-cyan-950/20 p-4 text-sm text-cyan-100/90">
         <p className="flex items-center gap-2 font-semibold text-cyan-300">

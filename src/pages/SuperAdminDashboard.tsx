@@ -9,10 +9,11 @@ import {
   Database,
   GraduationCap,
   LayoutDashboard,
+  MapPin,
   Radar,
+  RefreshCw,
   Scale,
   ShieldCheck,
-  Sparkles,
   TrendingUp,
   Users,
   type LucideIcon,
@@ -34,9 +35,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { GpsDashboard } from "@/components/GpsDashboard";
 import type { SectionId } from "@/constants/sections";
 
 const SECTION_ICONS: Record<string, LucideIcon> = {
@@ -158,6 +161,8 @@ export function SuperAdminDashboard() {
   const [replyBody, setReplyBody] = useState("");
   const [mainTab, setMainTab] = useState("payments");
   const [sidebarActive, setSidebarActive] = useState<"dash" | "users" | "subs">("dash");
+  const [selectedUserForGps, setSelectedUserForGps] = useState<AdminUserRow | null>(null);
+  const [gpsDialogOpen, setGpsDialogOpen] = useState(false);
   const tabsAnchorRef = useRef<HTMLDivElement | null>(null);
 
   const load = useCallback(async () => {
@@ -498,6 +503,9 @@ export function SuperAdminDashboard() {
             <TabsTrigger value="users" className="data-[state=active]:bg-[#0052CC]/40">
               {t("admin.tabUsers")}
             </TabsTrigger>
+            <TabsTrigger value="gps" className="data-[state=active]:bg-emerald-500/40">
+              {t("tl.gpsTrackingTitle")}
+            </TabsTrigger>
             <TabsTrigger value="subs" className="data-[state=active]:bg-[#0052CC]/40">
               {t("admin.tabSubscriptions")}
             </TabsTrigger>
@@ -683,6 +691,98 @@ export function SuperAdminDashboard() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="gps">
+            <Card className="border-emerald-500/25 bg-[#121214]">
+              <CardContent className="p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <h2 className="text-lg font-bold text-emerald-200">{t("tl.gpsTrackingTitle")} - {t("gps.allContexts") || "All Contexts"}</h2>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void load()}
+                  >
+                    <RefreshCw className="size-4 mr-2" />
+                    {t("tl.refresh")}
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-400 mb-4">
+                  {t("gps.activeContextsDesc") || "Active Contexts: Transport & Logistics (magic-link-tl) | POS Agent (pos-agent) | Delivery Hub (delivery-hub) | Contracts (contract-signing)"}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div className="rounded-xl border border-blue-500/25 bg-blue-950/20 p-4">
+                    <h3 className="font-bold text-blue-200 text-sm mb-2">🚚 {t("tl.dept.transport")}</h3>
+                    <p className="text-xs text-slate-400">{t("gps.magicLinksWorkers") || "Magic links for workers"}</p>
+                  </div>
+                  <div className="rounded-xl border border-purple-500/25 bg-purple-950/20 p-4">
+                    <h3 className="font-bold text-purple-200 text-sm mb-2">🛒 POS Agent</h3>
+                    <p className="text-xs text-slate-400">{t("gps.salesRepApp") || "Sales representative app"}</p>
+                  </div>
+                  <div className="rounded-xl border border-orange-500/25 bg-orange-950/20 p-4">
+                    <h3 className="font-bold text-orange-200 text-sm mb-2">📦 Delivery Hub</h3>
+                    <p className="text-xs text-slate-400">{t("gps.orderRadarDelivery") || "Order radar & delivery"}</p>
+                  </div>
+                  <div className="rounded-xl border border-pink-500/25 bg-pink-950/20 p-4">
+                    <h3 className="font-bold text-pink-200 text-sm mb-2">📝 {t("contracts.title")}</h3>
+                    <p className="text-xs text-slate-400">{t("gps.electronicSignatures") || "Electronic signatures"}</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {adminUsers.slice(0, 10).map((u) => (
+                    <div
+                      key={u.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/20 bg-emerald-950/20 p-3"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-white text-sm">{u.name}</p>
+                        <p className="text-xs text-slate-400">{u.email}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-emerald-400">{t("tl.gpsActive")}</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="gap-1 text-[10px]"
+                          onClick={() => {
+                            setSelectedUserForGps(u);
+                            setGpsDialogOpen(true);
+                          }}
+                        >
+                          <MapPin className="size-3" />
+                          {t("tl.viewLastLocation")}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {adminUsers.length === 0 && (
+                    <p className="text-xs text-slate-500 text-center py-4">
+                      {t("gps.noActiveUsers") || "No active users currently"}
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* GPS Dialog */}
+          <Dialog open={gpsDialogOpen} onOpenChange={setGpsDialogOpen}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-slate-900 border-emerald-500/50">
+              <DialogHeader>
+                <DialogTitle className="text-emerald-200">
+                  {t("tl.gpsTrackingTitle")} - {selectedUserForGps?.name}
+                </DialogTitle>
+              </DialogHeader>
+              {selectedUserForGps && (
+                <GpsDashboard
+                  publicLinkId={selectedUserForGps.id}
+                  context="pos-agent"
+                  token={token}
+                />
+              )}
+            </DialogContent>
+          </Dialog>
 
           <TabsContent value="subs">
             <Card className="border-gray-800 bg-[#121214]">
