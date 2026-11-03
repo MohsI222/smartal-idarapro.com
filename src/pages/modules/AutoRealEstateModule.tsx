@@ -100,7 +100,8 @@ const TRANSLATIONS = {
     aiHeader: "الصياغة القانونية للعقود", aiSub: "عقود صارمة مبنية على القوانين والمساطر",
     carRent: "عقد كراء سيارة", carSale: "عقد بيع سيارة", propRent: "عقد كراء عقار", propSale: "عقد بيع عقار",
     exportBilan: "تصدير القوائم المالية (Bilan)", revenue: "المدخول اليومي", expenses: "المصاريف اليومية", cashflow: "المالية الحالية (Cashflow)",
-    all: "الكل"
+    all: "الكل",
+    insuranceExpiry: "تاريخ انتهاء التأمين", taxExpiry: "تاريخ انتهاء الضرائب"
   },
   fr: {
     dashboard: "Tableau", inventory: "Inventaire", contracts: "Contrats", accounting: "Comptabilité",
@@ -112,6 +113,7 @@ const TRANSLATIONS = {
     contractTitle: "Contrat de Vente / Location", contractGenDesc: "Générateur intelligent : remplissez les détails.",
     party1: "Première Partie", party2: "Deuxième Partie", inOut: "Entrées / Sorties",
     addSuccess: "Produit enregistré avec succès!", deleteSuccess: "Produit supprimé!",
+    insuranceExpiry: "Date d'expiration de l'assurance", taxExpiry: "Date d'expiration des impôts"
     dropzoneText: "Glissez et déposez les factures", uploadSuccess: "Fichier téléchargé!",
     save: "Enregistrer", cancel: "Annuler", generating: "Rédaction en cours...",
     aiHeader: "Générateur Juridique", aiSub: "Rédaction juridique précise et rigoureuse",
@@ -134,6 +136,7 @@ const TRANSLATIONS = {
     aiHeader: "Legal Contract Generator", aiSub: "Rigorous legally binding document drafting",
     carRent: "Car Rental Contract", carSale: "Car Sale Contract", propRent: "Property Rental Contract", propSale: "Property Sale Contract",
     exportBilan: "Export Financial Bilan", revenue: "Today's Income", expenses: "Today's Expenses", cashflow: "Current Cashflow",
+    insuranceExpiry: "Insurance Expiry Date", taxExpiry: "Tax Expiry Date"
     all: "All"
   }
 };
@@ -374,6 +377,8 @@ export default function AutoRealEstateModule() {
             amenities: newItem.amenities,
             zoning: newItem.zoning,
             sqm: newItem.sqm,
+            insuranceExpiry: newItem.insuranceExpiry,
+            taxExpiry: newItem.taxExpiry,
           }),
         });
 
@@ -438,6 +443,8 @@ export default function AutoRealEstateModule() {
             amenities: newItem.amenities,
             zoning: newItem.zoning,
             sqm: newItem.sqm,
+            insuranceExpiry: newItem.insuranceExpiry,
+            taxExpiry: newItem.taxExpiry,
           }),
         });
         console.log("[AutoRealEstate] Save response:", response);
@@ -1334,6 +1341,17 @@ export default function AutoRealEstateModule() {
                     <div>
                       <label className="block text-xs font-semibold text-slate-400 mb-1.5">{t.price} (MAD)</label>
                       <input type="number" value={newItem.price || ''} onChange={e => setNewItem({...newItem, price: Number(e.target.value)})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1.5">{t.insuranceExpiry}</label>
+                        <input type="date" value={newItem.insuranceExpiry || ''} onChange={e => setNewItem({...newItem, insuranceExpiry: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-400 mb-1.5">{t.taxExpiry}</label>
+                        <input type="date" value={newItem.taxExpiry || ''} onChange={e => setNewItem({...newItem, taxExpiry: e.target.value})} className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:ring-1 focus:ring-blue-500 outline-none" />
+                      </div>
                     </div>
 
                   </div>
