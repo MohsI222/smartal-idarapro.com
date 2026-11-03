@@ -169,6 +169,8 @@ CREATE TABLE IF NOT EXISTS auto_real_estate (
   amenities TEXT,
   zoning TEXT,
   sqm DOUBLE PRECISION,
+  insurance_expiry TEXT,
+  tax_expiry TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

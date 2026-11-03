@@ -270,19 +270,6 @@ export default function AutoRealEstateModule() {
     fetchInventory();
   }, [fetchInventory]);
 
-  // Polling for inventory changes (replaces Supabase Realtime)
-  useEffect(() => {
-    if (!user) return;
-
-    const interval = setInterval(async () => {
-      await fetchInventory();
-    }, 30000); // Poll every 30 seconds
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [user, fetchInventory]);
-
   // Pre-fill fields when selecting an asset for the contract
   useEffect(() => {
     const item = inventory.find(i => i.id === selectedItemId);

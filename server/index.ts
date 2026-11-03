@@ -205,6 +205,38 @@ async function migratePosAgentCheckFields() {
         console.error("[Migration] Error migrating GPS fields:", error.message);
       }
     }
+}
+
+async function migrateAutoRealEstateDateFields() {
+  try {
+    // Add insurance_expiry column
+    await db.prepare(`
+      ALTER TABLE auto_real_estate
+      ADD COLUMN IF NOT EXISTS insurance_expiry TEXT
+    `).run();
+    console.log("[Migration] insurance_expiry column added to auto_real_estate");
+  } catch (error: any) {
+    if (error.message.includes('already exists')) {
+      console.log("[Migration] insurance_expiry column already exists");
+    } else {
+      console.error("[Migration] Error adding insurance_expiry:", error.message);
+    }
+  }
+
+  // Add tax_expiry column
+  try {
+    await db.prepare(`
+      ALTER TABLE auto_real_estate
+      ADD COLUMN IF NOT EXISTS tax_expiry TEXT
+    `).run();
+    console.log("[Migration] tax_expiry column added to auto_real_estate");
+  } catch (error: any) {
+    if (error.message.includes('already exists')) {
+      console.log("[Migration] tax_expiry column already exists");
+    } else {
+      console.error("[Migration] Error adding tax_expiry:", error.message);
+    }
+  }
 
     // Create worker_location_logs table
     try {
@@ -6890,6 +6922,7 @@ const PORT = Number(process.env.PORT ?? 4000);
     await migrateDeliveryHubStockFields();
     await migrateDeliveryHubStoreFields();
     await migratePosAgentCheckFields();
+    await migrateAutoRealEstateDateFields();
     await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
     
     if (!process.env.VERCEL) {
