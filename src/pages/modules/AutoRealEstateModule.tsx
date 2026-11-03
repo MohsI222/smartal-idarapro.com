@@ -101,7 +101,7 @@ const TRANSLATIONS = {
     carRent: "عقد كراء سيارة", carSale: "عقد بيع سيارة", propRent: "عقد كراء عقار", propSale: "عقد بيع عقار",
     exportBilan: "تصدير القوائم المالية (Bilan)", revenue: "المدخول اليومي", expenses: "المصاريف اليومية", cashflow: "المالية الحالية (Cashflow)",
     all: "الكل",
-    insuranceExpiry: "تاريخ انتهاء التأمين", taxExpiry: "تاريخ انتهاء الضرائب"
+    insuranceExpiry: "تاريخ انتهاء التأمين", taxExpiry: "تاريخ انتهاء الضرائب",
   },
   fr: {
     dashboard: "Tableau", inventory: "Inventaire", contracts: "Contrats", accounting: "Comptabilité",
@@ -136,7 +136,7 @@ const TRANSLATIONS = {
     aiHeader: "Legal Contract Generator", aiSub: "Rigorous legally binding document drafting",
     carRent: "Car Rental Contract", carSale: "Car Sale Contract", propRent: "Property Rental Contract", propSale: "Property Sale Contract",
     exportBilan: "Export Financial Bilan", revenue: "Today's Income", expenses: "Today's Expenses", cashflow: "Current Cashflow",
-    insuranceExpiry: "Insurance Expiry Date", taxExpiry: "Tax Expiry Date"
+    insuranceExpiry: "Insurance Expiry Date", taxExpiry: "Tax Expiry Date",
     all: "All"
   }
 };
