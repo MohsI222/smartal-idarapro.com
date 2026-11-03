@@ -113,7 +113,7 @@ const TRANSLATIONS = {
     contractTitle: "Contrat de Vente / Location", contractGenDesc: "Générateur intelligent : remplissez les détails.",
     party1: "Première Partie", party2: "Deuxième Partie", inOut: "Entrées / Sorties",
     addSuccess: "Produit enregistré avec succès!", deleteSuccess: "Produit supprimé!",
-    insuranceExpiry: "Date d'expiration de l'assurance", taxExpiry: "Date d'expiration des impôts"
+    insuranceExpiry: "Date d'expiration de l'assurance", taxExpiry: "Date d'expiration des impôts",
     dropzoneText: "Glissez et déposez les factures", uploadSuccess: "Fichier téléchargé!",
     save: "Enregistrer", cancel: "Annuler", generating: "Rédaction en cours...",
     aiHeader: "Générateur Juridique", aiSub: "Rédaction juridique précise et rigoureuse",
