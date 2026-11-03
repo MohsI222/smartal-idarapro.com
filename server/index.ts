@@ -182,29 +182,33 @@ async function migratePosAgentCheckFields() {
         console.error("[Migration] Error migrating TPE field:", error.message);
       }
     }
+  } catch (error: any) {
+    console.error("[Migration] Error migrating pos agent check fields:", error.message);
+    // Don't throw - allow app to start even if migration fails
+  }
+}
 
-    // Add GPS location fields to tl_workers
-    try {
-      await db.prepare(`
-        ALTER TABLE tl_workers
-        ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION
-      `).run();
-      await db.prepare(`
-        ALTER TABLE tl_workers
-        ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION
-      `).run();
-      await db.prepare(`
-        ALTER TABLE tl_workers
-        ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMPTZ
-      `).run();
-      console.log("[Migration] GPS location fields added to tl_workers");
-    } catch (error: any) {
-      if (error.message.includes('already exists')) {
-        console.log("[Migration] GPS location fields already exist in tl_workers");
-      } else {
-        console.error("[Migration] Error migrating GPS fields:", error.message);
-      }
-    }
+// Add GPS location fields to tl_workers
+try {
+  await db.prepare(`
+    ALTER TABLE tl_workers
+    ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION
+  `).run();
+  await db.prepare(`
+    ALTER TABLE tl_workers
+    ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION
+  `).run();
+  await db.prepare(`
+    ALTER TABLE tl_workers
+    ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMPTZ
+  `).run();
+  console.log("[Migration] GPS location fields added to tl_workers");
+} catch (error: any) {
+  if (error.message.includes('already exists')) {
+    console.log("[Migration] GPS location fields already exist in tl_workers");
+  } else {
+    console.error("[Migration] Error migrating GPS fields:", error.message);
+  }
 }
 
 async function migrateAutoRealEstateDateFields() {
