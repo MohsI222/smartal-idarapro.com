@@ -237,120 +237,121 @@ async function migrateAutoRealEstateDateFields() {
       console.error("[Migration] Error adding tax_expiry:", error.message);
     }
   }
+}
 
-    // Create worker_location_logs table
-    try {
-      await db.prepare(`
-        CREATE TABLE IF NOT EXISTS worker_location_logs (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-          worker_id TEXT NOT NULL REFERENCES tl_workers (id) ON DELETE CASCADE,
-          latitude DOUBLE PRECISION NOT NULL,
-          longitude DOUBLE PRECISION NOT NULL,
-          accuracy DOUBLE PRECISION,
-          timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          source TEXT NOT NULL DEFAULT 'manual'
-        )
-      `).run();
-      console.log("[Migration] worker_location_logs table created");
-    } catch (error: any) {
-      console.error("[Migration] Error creating worker_location_logs table:", error.message);
-    }
+// Create worker_location_logs table
+try {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS worker_location_logs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      worker_id TEXT NOT NULL REFERENCES tl_workers (id) ON DELETE CASCADE,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      accuracy DOUBLE PRECISION,
+      timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      source TEXT NOT NULL DEFAULT 'manual'
+    )
+  `).run();
+  console.log("[Migration] worker_location_logs table created");
+} catch (error: any) {
+  console.error("[Migration] Error creating worker_location_logs table:", error.message);
+}
 
-    // Create gps_tracking_logs table (for continuous background GPS tracking)
-    try {
-      await db.prepare(`
-        CREATE TABLE IF NOT EXISTS gps_tracking_logs (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          latitude DOUBLE PRECISION NOT NULL,
-          longitude DOUBLE PRECISION NOT NULL,
-          accuracy REAL,
-          altitude REAL,
-          speed REAL,
-          heading REAL,
-          timestamp BIGINT NOT NULL,
-          context TEXT,
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-      `).run();
-      console.log("[Migration] gps_tracking_logs table created");
-    } catch (error: any) {
-      console.error("[Migration] Error creating gps_tracking_logs table:", error.message);
-    }
+// Create gps_tracking_logs table (for continuous background GPS tracking)
+try {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS gps_tracking_logs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      accuracy REAL,
+      altitude REAL,
+      speed REAL,
+      heading REAL,
+      timestamp BIGINT NOT NULL,
+      context TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  console.log("[Migration] gps_tracking_logs table created");
+} catch (error: any) {
+  console.error("[Migration] Error creating gps_tracking_logs table:", error.message);
+}
 
-    // Drop and recreate table to remove foreign key constraint
-    try {
-      await db.prepare(`DROP TABLE IF EXISTS gps_tracking_logs`).run();
-      await db.prepare(`
-        CREATE TABLE gps_tracking_logs (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL,
-          employee_id TEXT,
-          latitude DOUBLE PRECISION NOT NULL,
-          longitude DOUBLE PRECISION NOT NULL,
-          accuracy REAL,
-          altitude REAL,
-          speed REAL,
-          heading REAL,
-          timestamp BIGINT NOT NULL,
-          context TEXT,
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-      `).run();
-      console.log("[Migration] gps_tracking_logs table recreated without foreign key");
-    } catch (error: any) {
-      console.log("[Migration] Recreate check:", error.message);
-    }
+// Drop and recreate table to remove foreign key constraint
+try {
+  await db.prepare(`DROP TABLE IF EXISTS gps_tracking_logs`).run();
+  await db.prepare(`
+    CREATE TABLE gps_tracking_logs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      employee_id TEXT,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      accuracy REAL,
+      altitude REAL,
+      speed REAL,
+      heading REAL,
+      timestamp BIGINT NOT NULL,
+      context TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `).run();
+  console.log("[Migration] gps_tracking_logs table recreated without foreign key");
+} catch (error: any) {
+  console.log("[Migration] Recreate check:", error.message);
+}
 
-    // Add employee_id column if it doesn't exist (for existing databases)
-    try {
-      await db.prepare(`
-        ALTER TABLE gps_tracking_logs ADD COLUMN IF NOT EXISTS employee_id TEXT
-      `).run();
-      console.log("[Migration] employee_id column added to gps_tracking_logs");
-    } catch (error: any) {
-      console.log("[Migration] employee_id column check:", error.message);
-    }
+// Add employee_id column if it doesn't exist (for existing databases)
+try {
+  await db.prepare(`
+    ALTER TABLE gps_tracking_logs ADD COLUMN IF NOT EXISTS employee_id TEXT
+  `).run();
+  console.log("[Migration] employee_id column added to gps_tracking_logs");
+} catch (error: any) {
+  console.log("[Migration] employee_id column check:", error.message);
+}
 
-    // Add phone_number column for delivery hub order tracking
-    try {
-      await db.prepare(`
-        ALTER TABLE gps_tracking_logs ADD COLUMN IF NOT EXISTS phone_number TEXT
-      `).run();
-      console.log("[Migration] phone_number column added to gps_tracking_logs");
-    } catch (error: any) {
-      console.log("[Migration] phone_number column check:", error.message);
-    }
+// Add phone_number column for delivery hub order tracking
+try {
+  await db.prepare(`
+    ALTER TABLE gps_tracking_logs ADD COLUMN IF NOT EXISTS phone_number TEXT
+  `).run();
+  console.log("[Migration] phone_number column added to gps_tracking_logs");
+} catch (error: any) {
+  console.log("[Migration] phone_number column check:", error.message);
+}
 
-    // Add GPS columns to users table for quick access
-    try {
-      await db.prepare(`
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_latitude DOUBLE PRECISION
-      `).run();
-      await db.prepare(`
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_longitude DOUBLE PRECISION
-      `).run();
-      await db.prepare(`
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_gps_time TEXT
-      `).run();
-      console.log("[Migration] GPS columns added to users table");
-    } catch (error: any) {
-      console.log("[Migration] GPS columns check:", error.message);
-    }
+// Add GPS columns to users table for quick access
+try {
+  await db.prepare(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_latitude DOUBLE PRECISION
+  `).run();
+  await db.prepare(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_longitude DOUBLE PRECISION
+  `).run();
+  await db.prepare(`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_gps_time TEXT
+  `).run();
+  console.log("[Migration] GPS columns added to users table");
+} catch (error: any) {
+  console.log("[Migration] GPS columns check:", error.message);
+}
 
-    // Create visit_verifications table
-    try {
-      await db.prepare(`
-        CREATE TABLE IF NOT EXISTS visit_verifications (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-          worker_id TEXT NOT NULL REFERENCES tl_workers (id) ON DELETE CASCADE,
-          customer_id TEXT,
-          customer_name TEXT,
-          customer_latitude DOUBLE PRECISION,
-          customer_longitude DOUBLE PRECISION,
-          worker_latitude DOUBLE PRECISION NOT NULL,
+// Create visit_verifications table
+try {
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS visit_verifications (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+      worker_id TEXT NOT NULL REFERENCES tl_workers (id) ON DELETE CASCADE,
+      customer_id TEXT,
+      customer_name TEXT,
+      customer_latitude DOUBLE PRECISION,
+      customer_longitude DOUBLE PRECISION,
+      worker_latitude DOUBLE PRECISION NOT NULL,
           worker_longitude DOUBLE PRECISION NOT NULL,
           distance_meters DOUBLE PRECISION,
           is_verified BOOLEAN NOT NULL DEFAULT false,
@@ -442,10 +443,6 @@ async function migrateAutoRealEstateDateFields() {
     } catch (error: any) {
       console.error("[Migration] Error creating cash_drawer_summaries table:", error.message);
     }
-  } catch (error: any) {
-    console.error("[Migration] Error migrating pos agent check fields:", error.message);
-    // Don't throw - allow app to start even if migration fails
-  }
 }
 
 async function fetchSupabaseUserFromAccessToken(accessToken: string): Promise<{
@@ -6922,7 +6919,6 @@ const PORT = Number(process.env.PORT ?? 4000);
     await migrateDeliveryHubStockFields();
     await migrateDeliveryHubStoreFields();
     await migratePosAgentCheckFields();
-    await migrateAutoRealEstateDateFields();
     await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
     
     if (!process.env.VERCEL) {
