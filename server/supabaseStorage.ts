@@ -8,11 +8,17 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-if (!supabaseUrl || !supabaseServiceKey) {
+let supabase: ReturnType<typeof createClient> | null = null;
+
+if (supabaseUrl && supabaseServiceKey) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseServiceKey);
+  } catch (error) {
+    console.error('[Supabase Storage] Failed to create Supabase client:', error);
+  }
+} else {
   console.warn('[Supabase Storage] Missing Supabase credentials. Storage operations will be disabled.');
 }
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const BUCKET_NAME = 'app-files';
 
@@ -20,6 +26,11 @@ const BUCKET_NAME = 'app-files';
  * Initialize the app-files bucket if it doesn't exist
  */
 export async function initializeSupabaseStorage() {
+  if (!supabase) {
+    console.warn('[Supabase Storage] Skipping initialization - client not available');
+    return;
+  }
+
   try {
     // Check if bucket exists
     const { data: buckets, error: listError } = await supabase.storage.listBuckets();
@@ -72,6 +83,10 @@ export async function uploadFile(
   path: string,
   contentType: string
 ): Promise<string> {
+  if (!supabase) {
+    throw new Error('[Supabase Storage] Supabase client not available');
+  }
+
   try {
     console.log('[Supabase Storage] Uploading file:', { path, contentType, size: fileBuffer.length });
     
@@ -106,6 +121,10 @@ export async function uploadFile(
  * Delete a file from Supabase Storage
  */
 export async function deleteFile(path: string): Promise<void> {
+  if (!supabase) {
+    throw new Error('[Supabase Storage] Supabase client not available');
+  }
+
   try {
     const { error } = await supabase.storage.from(BUCKET_NAME).remove([path]);
     if (error) throw error;

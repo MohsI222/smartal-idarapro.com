@@ -82,7 +82,7 @@ router.post("/track", extractMagicUserId, extractPosAgentUserId, async (req, res
       context,
       public_link_id,
       employee_id,
-      phone_number,
+      phone_number: _phone_number,
     } = req.body as {
       latitude: number;
       longitude: number;

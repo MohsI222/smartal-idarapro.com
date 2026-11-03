@@ -9,19 +9,19 @@ import mammoth from "mammoth";
 import pdfParse from "pdf-parse";
 import sharp from "sharp";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { registerBackendServices } from "./backendServices.js";
-import { registerBase44StudioRoutes } from "./base44Studio.js";
-import { registerTlErpRoutes } from "./tlErpRoutes.js";
-import { registerDeliveryHubRoutes } from "./deliveryHubRoutes.js";
-import { registerPosAgentRoutes } from "./posAgentRoutes.js";
-import contractsRoutes, { initContractsTables } from "./contractsRoutes.js";
-import gpsRoutes from "./gpsRoutes.js";
-import { getTlUploadRoot, getUploadDir } from "./paths.js";
-import { getVisaRadarProService } from "./visaRadarPro.js";
+import { registerBackendServices } from "./backendServices";
+import { registerBase44StudioRoutes } from "./base44Studio";
+import { registerTlErpRoutes } from "./tlErpRoutes";
+import { registerDeliveryHubRoutes } from "./deliveryHubRoutes";
+import { registerPosAgentRoutes } from "./posAgentRoutes";
+import contractsRoutes, { initContractsTables } from "./contractsRoutes";
+import gpsRoutes from "./gpsRoutes";
+import { getTlUploadRoot, getUploadDir } from "./paths";
+import { getVisaRadarProService } from "./visaRadarPro";
 import { randomUUID } from "node:crypto";
-import { db, initDatabase } from "./db.js";
-import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto.js";
-import { ensureSuperAdmin, genReferralCode } from "./seed.js";
+import { db, initDatabase } from "./db";
+import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto";
+import { ensureSuperAdmin, genReferralCode } from "./seed";
 import {
   applySecurityMiddleware,
   authAdminBootstrapLimiter,
@@ -30,16 +30,16 @@ import {
   authSupabaseOauthLimiter,
   createAuthOriginGuard,
   createProductionCorsOptions,
-} from "./middleware.js";
-import { sanitizeEmail, sanitizeUserDisplayName } from "./stringUtil.js";
-import { paramString } from "./reqParams.js";
-import { vercelApiUrlRestore } from "./vercelUrlMiddleware.js";
-import { customDomainMiddleware } from "./customDomainMiddleware.js";
+} from "./middleware";
+import { sanitizeEmail, sanitizeUserDisplayName } from "./stringUtil";
+import { paramString } from "./reqParams";
+import { vercelApiUrlRestore } from "./vercelUrlMiddleware";
+import { customDomainMiddleware } from "./customDomainMiddleware";
 import {
   resolveGeminiImageApiKey,
-} from "./aiImageGeneration.js";
-import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage.js";
-import cloudinaryRouter from "./cloudinaryRoutes.js";
+} from "./aiImageGeneration";
+import { initializeSupabaseStorage, uploadFile } from "./supabaseStorage";
+import cloudinaryRouter from "./cloudinaryRoutes";
 
 const DEFAULT_TRIAL_BALANCE = 1000;
 
@@ -452,14 +452,14 @@ async function fetchSupabaseUserFromAccessToken(accessToken: string): Promise<{
 
 const REMEMBER_ME_MS =
   (Number(process.env.REMEMBER_ME_YEARS) || 5) * 365 * 864e5;
-import { buildAdminWhatsappUrl } from "./notify.js";
+import { buildAdminWhatsappUrl } from "./notify";
 import {
   FULL_MODULES_JSON,
   isPrimaryAdminUser,
   PRIMARY_ADMIN_SESSION_MS,
   SUBSCRIPTION_PERIOD_DAYS,
   SUPER_ADMIN_EMAIL,
-} from "./admin-config.js";
+} from "./admin-config";
 
 /** وحدات التجربة المجانية (5 أيام) — بدون رادار التأشيرة */
 const TRIAL_MODULE_IDS = new Set([
@@ -688,7 +688,7 @@ app.use("/api/auth", authOriginGuard);
 app.use(express.json({ limit: "50mb" }));
 
 // Register AI controller routes
-import aiRouter from "./controllers/ai.controller.js";
+import aiRouter from "./controllers/ai.controller";
 app.use("/api/ai", aiRouter);
 
 const upload = multer({ dest: uploadDir, limits: { fileSize: 8 * 1024 * 1024 } });
@@ -6882,22 +6882,29 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
 });
 
 const PORT = Number(process.env.PORT ?? 4000);
-if (!process.env.VERCEL) {
-  // Run migration before starting server
-  (async () => {
-    try {
-      await initDatabase();
-      await migrateDeliveryHubStockFields();
-      await migrateDeliveryHubStoreFields();
-      await migratePosAgentCheckFields();
-      await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
+
+// Run migrations (both local and Vercel)
+(async () => {
+  try {
+    await initDatabase();
+    await migrateDeliveryHubStockFields();
+    await migrateDeliveryHubStoreFields();
+    await migratePosAgentCheckFields();
+    await migrateAutoRealEstateFields();
+    await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
+    
+    if (!process.env.VERCEL) {
       app.listen(PORT, () => {
         console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
       });
-    } catch (error) {
-      console.error("Failed to initialize database:", error);
+    }
+  } catch (error) {
+    console.error("Failed to initialize database:", error);
+    if (!process.env.VERCEL) {
       process.exit(1);
     }
-  })();
-}
+  }
+})();
+
+// Export for Vercel serverless
 export default app;

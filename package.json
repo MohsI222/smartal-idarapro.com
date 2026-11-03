@@ -88,6 +88,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "^4.34.8",
     "@tailwindcss/vite": "^4.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
