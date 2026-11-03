@@ -218,7 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
-    const effectiveToken = localStorage.getItem(TOKEN_KEY);
+    const effectiveToken = token ?? localStorage.getItem(TOKEN_KEY);
     if (!effectiveToken) {
       setUser(null);
       setSubscription(null);
@@ -323,7 +323,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (token) {
       void refresh();
     }
-  }, [token]);
+  }, [token, refresh]);
 
   const login = async (email: string, password: string, rememberMe?: boolean) => {
     const fp = getDeviceFingerprint();
