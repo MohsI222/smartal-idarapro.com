@@ -6919,6 +6919,7 @@ const PORT = Number(process.env.PORT ?? 4000);
     await migrateDeliveryHubStockFields();
     await migrateDeliveryHubStoreFields();
     await migratePosAgentCheckFields();
+    await migrateAutoRealEstateDateFields();
     await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
     
     if (!process.env.VERCEL) {
