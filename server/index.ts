@@ -924,7 +924,7 @@ app.post("/api/auth/supabase-oauth", authSupabaseOauthLimiter, async (req, res) 
     String(meta.full_name ?? meta.name ?? emailRaw.split("@")[0] ?? "مستخدم")
   ) || "مستخدم";
 
-  let user = await db.prepare("SELECT * FROM users WHERE email = ?").get(emailRaw) as
+  let user = await db.prepare("SELECT id, email, password_hash, name, role, whatsapp, account_locked, trial_balance FROM users WHERE email = ?").get(emailRaw) as
     | {
         id: string;
         email: string;
@@ -958,7 +958,7 @@ app.post("/api/auth/supabase-oauth", authSupabaseOauthLimiter, async (req, res) 
       await db.prepare(
         `INSERT INTO users (id, email, password_hash, name, role, referred_by, referral_code, trial_ends_at, trial_balance) VALUES (?, ?, ?, ?, 'user', ?, ?, ?, ?)`
       ).run(id, emailRaw, hashPassword(randomUUID()), name, referredBy, code, trialIso, DEFAULT_TRIAL_BALANCE);
-      user = await db.prepare("SELECT * FROM users WHERE id = ?").get(id) as typeof user;
+      user = await db.prepare("SELECT id, email, password_hash, name, role, whatsapp, account_locked, trial_balance FROM users WHERE id = ?").get(id) as typeof user;
 
       // Create employee record for the new user
       const employeeId = randomUUID();
@@ -1059,7 +1059,7 @@ app.post("/api/auth/login", authLoginLimiter, async (req, res) => {
   }
 
   const user = await db
-    .prepare("SELECT * FROM users WHERE email = ?")
+    .prepare("SELECT id, email, password_hash, name, role, whatsapp, account_locked, trial_balance FROM users WHERE email = ?")
     .get(emailSafe) as
     | {
         id: string;
@@ -1547,7 +1547,7 @@ app.get("/api/super-admin/inventory-products", authMiddleware, platformSettingsE
   try {
     // Get all inventory products (bypass RLS)
     const products = await db
-      .prepare(`SELECT * FROM inventory_products ORDER BY name ASC`)
+      .prepare(`SELECT id, name, sku, category, price, stock_quantity, low_stock_threshold, image_url, created_at, updated_at FROM inventory_products ORDER BY name ASC`)
       .all();
     res.json(products);
   } catch (error) {
@@ -1724,7 +1724,7 @@ app.get("/api/super-admin/hr-absence-records", authMiddleware, platformSettingsE
   try {
     // Get all HR absence records (bypass RLS)
     const records = await db
-      .prepare(`SELECT * FROM hr_absence_records ORDER BY created_at DESC`)
+      .prepare(`SELECT id, user_id, employee_id, start_date, end_date, reason, status, created_at FROM hr_absence_records ORDER BY created_at DESC`)
       .all();
     res.json(records);
   } catch (error) {
@@ -1773,7 +1773,7 @@ app.get("/api/super-admin/shift-reports", authMiddleware, platformSettingsEditor
   try {
     // Get all shift reports (bypass RLS)
     const reports = await db
-      .prepare(`SELECT * FROM shift_reports ORDER BY shift_date DESC`)
+      .prepare(`SELECT id, user_id, shift_date, opening_cash, closing_cash, sales_total, total_expenses, notes, created_at FROM shift_reports ORDER BY shift_date DESC`)
       .all();
     res.json(reports);
   } catch (error) {
@@ -1854,7 +1854,7 @@ app.get("/api/shift-reports", authMiddleware, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     console.log("[Server /api/shift-reports] Fetching reports for userId:", userId);
     const reports = await db
-      .prepare(`SELECT * FROM shift_reports WHERE user_id = ? ORDER BY shift_date DESC`)
+      .prepare(`SELECT id, user_id, shift_date, opening_cash, closing_cash, sales_total, total_expenses, notes, created_at FROM shift_reports WHERE user_id = ? ORDER BY shift_date DESC`)
       .all(userId);
     console.log("[Server /api/shift-reports] Found reports:", reports.length);
     // Log first report's user_id to verify
@@ -2538,7 +2538,7 @@ app.get("/api/admin/referral-rewards", authMiddleware, superAdminOnly, async (_r
 app.post("/api/admin/referral-reward/approve/:rewardId", authMiddleware, superAdminOnly, async (req, res) => {
   const rewardId = paramString(req.params.rewardId);
   const rw = await db
-    .prepare(`SELECT * FROM referral_rewards WHERE id = ? AND status = 'pending'`)
+    .prepare(`SELECT id, user_id, tier FROM referral_rewards WHERE id = ? AND status = 'pending'`)
     .get(rewardId) as { id: string; user_id: string; tier: string } | undefined;
   if (!rw) {
     res.status(404).json({ error: "طلب غير موجود" });
@@ -2924,7 +2924,7 @@ app.get("/api/admin/sales-analytics", authMiddleware, superAdminOnly, async (_re
 
 app.get("/api/hr/employees", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const rows = await db.prepare("SELECT * FROM hr_employees WHERE user_id = ?").all(userId);
+  const rows = await db.prepare("SELECT id, user_id, name, position, department, hire_date, salary, created_at, updated_at FROM hr_employees WHERE user_id = ?").all(userId);
   res.json({ employees: rows });
 });
 
@@ -3070,7 +3070,7 @@ app.delete("/api/hr/employees/:id", authMiddleware, async (req, res) => {
 // HR Absence Records endpoints for regular users
 app.get("/api/hr/absence-records", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const rows = await db.prepare("SELECT * FROM hr_absence_records WHERE user_id = ? ORDER BY created_at DESC").all(userId);
+  const rows = await db.prepare("SELECT id, user_id, employee_id, start_date, end_date, reason, status, created_at FROM hr_absence_records WHERE user_id = ? ORDER BY created_at DESC").all(userId);
   res.json({ records: rows });
 });
 
@@ -3101,7 +3101,7 @@ app.get("/api/hr/permissions/:employeeId", authMiddleware, async (req, res) => {
   const employeeId = paramString(req.params.employeeId);
   try {
     const permissions = await db.prepare(`
-      SELECT * FROM permissions WHERE employee_id = ?
+      SELECT id, employee_id, can_access_inventory, can_access_hr, can_access_delivery, can_access_transport_logistics, can_access_wedding_invitations, can_access_auto_real_estate, can_access_contracts, can_access_legal, can_access_ai, can_access_settings, is_admin FROM permissions WHERE employee_id = ?
     `).get(employeeId);
     res.json({ permissions: permissions || null });
   } catch (error) {
@@ -3259,7 +3259,7 @@ app.patch("/api/hr/metrics/:id", authMiddleware, async (req, res) => {
 app.get("/api/hr/metrics", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   let rows = await db
-    .prepare("SELECT * FROM production_metrics WHERE user_id = ? ORDER BY week_label")
+    .prepare("SELECT id, user_id, week_label, target_quantity, actual_quantity, efficiency_score, created_at FROM production_metrics WHERE user_id = ? ORDER BY week_label")
     .all(userId) as Record<string, unknown>[];
   if (rows.length === 0) {
     const weeks = ["أسبوع 1", "أسبوع 2", "أسبوع 3", "أسبوع 4"];
@@ -3277,7 +3277,7 @@ app.get("/api/hr/metrics", authMiddleware, async (req, res) => {
       );
     }
     rows = await db
-      .prepare("SELECT * FROM production_metrics WHERE user_id = ? ORDER BY week_label")
+      .prepare("SELECT id, user_id, week_label, target_quantity, actual_quantity, efficiency_score, created_at FROM production_metrics WHERE user_id = ? ORDER BY week_label")
       .all(userId) as Record<string, unknown>[];
   }
   res.json({ metrics: rows });
@@ -3379,7 +3379,7 @@ app.get("/api/law/cases", authMiddleware, async (req, res) => {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const rows = await db.prepare("SELECT * FROM lawyer_cases WHERE user_id = ?").all(userId);
+  const rows = await db.prepare("SELECT id, user_id, case_number, client_name, case_type, status, next_hearing_date, notes, created_at FROM lawyer_cases WHERE user_id = ?").all(userId);
   res.json({ cases: rows });
 });
 
@@ -3403,7 +3403,7 @@ app.get("/api/acc/reports", authMiddleware, async (req, res) => {
     res.status(403).json({ error: "القسم غير مفعّل" });
     return;
   }
-  const rows = await db.prepare("SELECT * FROM accountant_reports WHERE user_id = ?").all(userId);
+  const rows = await db.prepare("SELECT id, user_id, report_type, period, total_revenue, total_expenses, net_profit, notes, created_at FROM accountant_reports WHERE user_id = ?").all(userId);
   res.json({ reports: rows });
 });
 
@@ -3457,7 +3457,7 @@ app.patch("/api/acc/reports/:id", authMiddleware, async (req, res) => {
 
 app.get("/api/reminders", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
-  const rows = await db.prepare("SELECT * FROM reminders WHERE user_id = ?").all(userId);
+  const rows = await db.prepare("SELECT id, user_id, title, description, due_date, is_completed, created_at FROM reminders WHERE user_id = ?").all(userId);
   res.json({ reminders: rows });
 });
 
@@ -4760,7 +4760,7 @@ app.get("/api/auto-real-estate", authMiddleware, async (req, res) => {
       return;
     }
 
-    const rows = await db.prepare("SELECT * FROM auto_real_estate WHERE user_id = ? ORDER BY created_at DESC").all(userId);
+    const rows = await db.prepare("SELECT id, user_id, type, brand, model, year, price, location, status, insurance_expiry, tax_expiry, created_at, updated_at FROM auto_real_estate WHERE user_id = ? ORDER BY created_at DESC").all(userId);
     res.json({ data: rows });
   } catch (error) {
     console.error("[AutoRealEstate] Error fetching:", error);
@@ -4800,7 +4800,7 @@ app.post("/api/auto-real-estate", authMiddleware, async (req, res) => {
       item.amenities || null, item.zoning || null, item.sqm || null
     );
 
-    const newRow = await db.prepare("SELECT * FROM auto_real_estate WHERE id = ?").get(id);
+    const newRow = await db.prepare("SELECT id, user_id, type, brand, model, year, price, location, status, insurance_expiry, tax_expiry, created_at, updated_at FROM auto_real_estate WHERE id = ?").get(id);
     res.json({ data: newRow });
   } catch (error) {
     console.error("[AutoRealEstate] Error creating:", error);
@@ -4837,7 +4837,7 @@ app.patch("/api/auto-real-estate/:id", authMiddleware, async (req, res) => {
       item.amenities || null, item.zoning || null, item.sqm || null, id, userId
     );
 
-    const updatedRow = await db.prepare("SELECT * FROM auto_real_estate WHERE id = ?").get(id);
+    const updatedRow = await db.prepare("SELECT id, user_id, type, brand, model, year, price, location, status, insurance_expiry, tax_expiry, created_at, updated_at FROM auto_real_estate WHERE id = ?").get(id);
     res.json({ data: updatedRow });
   } catch (error) {
     console.error("[AutoRealEstate] Error updating:", error);
@@ -4881,7 +4881,7 @@ app.get("/api/visa/profile", authMiddleware, async (req, res) => {
     return;
   }
   const row = await db
-    .prepare("SELECT * FROM visa_user_profile WHERE user_id = ?")
+    .prepare("SELECT id, user_id, nationality, passport_number, visa_type, expiry_date, created_at FROM visa_user_profile WHERE user_id = ?")
     .get(userId) as Record<string, unknown> | undefined;
   res.json({ profile: row ?? null });
 });
@@ -5584,7 +5584,7 @@ app.post("/api/inventory/sale", authMiddleware, async (req, res) => {
   }
   const qty = Math.max(1, Math.floor(Number(b.qty_pieces)));
   const product = await db
-    .prepare("SELECT * FROM inventory_products WHERE id = ? AND user_id = ?")
+    .prepare("SELECT id, name, sku, category, price, stock_quantity, low_stock_threshold, image_url, created_at, updated_at FROM inventory_products WHERE id = ? AND user_id = ?")
     .get(b.product_id, userId) as
     | {
         id: string;
@@ -5682,7 +5682,7 @@ app.post("/api/inventory/sale-batch", authMiddleware, async (req, res) => {
         }
         const qty = Math.max(1, Math.floor(Number(row.qty_pieces)));
         const product = (await pq(
-          "SELECT * FROM inventory_products WHERE id = ? AND user_id = ?"
+          "SELECT id, name, sku, category, price, stock_quantity, low_stock_threshold, image_url, created_at, updated_at FROM inventory_products WHERE id = ? AND user_id = ?"
         ).get(row.product_id, userId)) as
           | {
               id: string;
@@ -5759,7 +5759,7 @@ app.get("/api/inventory/invoices", authMiddleware, async (req, res) => {
     return;
   }
   const rows = await db
-    .prepare("SELECT * FROM pos_invoices WHERE user_id = ? ORDER BY created_at DESC LIMIT 200")
+    .prepare("SELECT id, user_id, invoice_number, total_amount, payment_method, status, created_at FROM pos_invoices WHERE user_id = ? ORDER BY created_at DESC LIMIT 200")
     .all(userId);
   res.json({ invoices: rows });
 });
@@ -5838,7 +5838,7 @@ app.get("/api/inventory/production-requests", authMiddleware, async (req, res) =
     return;
   }
   const rows = (await db
-    .prepare("SELECT * FROM production_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 200")
+    .prepare("SELECT id, user_id, product_id, quantity, status, created_at FROM production_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 200")
     .all(userId)) as Record<string, unknown>[];
   res.json({ requests: rows.map(parseProductionRequestRow) });
 });
@@ -5887,7 +5887,7 @@ app.post("/api/inventory/production-requests", authMiddleware, async (req, res) 
     `INSERT INTO logistics_queue (id, user_id, production_request_id, product_id, assigned_to, status, created_at)
      VALUES (?, ?, ?, ?, ?, 'scheduled', NOW())`
   ).run(logId, userId, id, id, requestedBy);
-  const row = (await db.prepare("SELECT * FROM production_requests WHERE id = ? AND user_id = ?").get(id, userId)) as
+  const row = (await db.prepare("SELECT id, user_id, product_id, quantity, status, created_at FROM production_requests WHERE id = ? AND user_id = ?").get(id, userId)) as
     | Record<string, unknown>
     | undefined;
   res.json({ request: row ? parseProductionRequestRow(row) : { id, title, target_quantity: targetQty, status } });
@@ -5900,7 +5900,7 @@ app.get("/api/inventory/logistics-queue", authMiddleware, async (req, res) => {
     return;
   }
   const rows = await db
-    .prepare("SELECT * FROM logistics_queue WHERE user_id = ? ORDER BY created_at DESC LIMIT 200")
+    .prepare("SELECT id, user_id, order_id, status, priority, created_at FROM logistics_queue WHERE user_id = ? ORDER BY created_at DESC LIMIT 200")
     .all(userId);
   res.json({ items: rows });
 });
@@ -6026,7 +6026,7 @@ app.get("/api/inventory/activity-logs", authMiddleware, async (req, res) => {
     return;
   }
   const { shiftId, date } = req.query;
-  let query = "SELECT * FROM inventory_activity_logs WHERE user_id = ?";
+  let query = "SELECT id, user_id, action, product_id, quantity, created_at FROM inventory_activity_logs WHERE user_id = ?";
   const params: any[] = [userId];
   
   if (shiftId) {
@@ -6114,7 +6114,7 @@ app.get("/api/exported-documents", authMiddleware, async (req, res) => {
       `).run();
     }
 
-    let query = "SELECT * FROM exported_documents WHERE user_id = ?";
+    let query = "SELECT id, user_id, document_type, file_url, created_at FROM exported_documents WHERE user_id = ?";
     const params: any[] = [userId];
 
     if (kind) {
@@ -6260,7 +6260,7 @@ app.get("/api/media-library", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   try {
     const rows = await db.prepare(`
-      SELECT * FROM media_library 
+      SELECT id, user_id, title, type, url, sort_order, created_at FROM media_library 
       WHERE user_id = ? 
       ORDER BY sort_order ASC, created_at DESC
     `).all(userId);
@@ -6330,7 +6330,7 @@ app.post("/api/media-library", authMiddleware, async (req, res) => {
     `).run(id, userId, type, title, url || null, youtube_video_id || null, maxOrder.max_order + 1, isPublic);
 
     const item = await db.prepare(`
-      SELECT * FROM media_library WHERE id = ?
+      SELECT id, user_id, title, type, url, sort_order, created_at FROM media_library WHERE id = ?
     `).get(id);
 
     res.json({ item });
@@ -6404,7 +6404,7 @@ app.post("/api/media-library", authMiddleware, async (req, res) => {
     `).run(id, userId, type, title, url, file_path, file_name, file_mime, maxOrder.max_order + 1, isPublic);
 
     const item = await db.prepare(`
-      SELECT * FROM media_library WHERE id = ?
+      SELECT id, user_id, title, type, url, sort_order, created_at FROM media_library WHERE id = ?
     `).get(id);
 
     console.log("[api] Create successful:", item);
@@ -6428,7 +6428,7 @@ app.put("/api/media-library/:id", authMiddleware, async (req, res) => {
 
   try {
     const existing = await db.prepare(`
-      SELECT * FROM media_library WHERE id = ? AND user_id = ?
+      SELECT id, user_id, title, type, url, sort_order, created_at FROM media_library WHERE id = ? AND user_id = ?
     `).get(itemId, userId);
 
     if (!existing) {
@@ -6466,7 +6466,7 @@ app.delete("/api/media-library/:id", authMiddleware, async (req, res) => {
 
   try {
     const existing = await db.prepare(`
-      SELECT * FROM media_library WHERE id = ? AND user_id = ?
+      SELECT id, user_id, title, type, url, sort_order, created_at FROM media_library WHERE id = ? AND user_id = ?
     `).get(itemId, userId);
 
     if (!existing) {
@@ -6546,7 +6546,7 @@ app.get("/api/academy-media", authMiddleware, async (req, res) => {
   const userId = (req as express.Request & { userId: string }).userId;
   try {
     const rows = await db.prepare(`
-      SELECT * FROM academy_media
+      SELECT id, user_id, title, type, url, created_at FROM academy_media
       WHERE user_id = ?
       ORDER BY sort_order ASC, created_at DESC
     `).all(userId);
@@ -6588,7 +6588,7 @@ app.post("/api/academy-media", authMiddleware, async (req, res) => {
     `).run(id, userId, type || "image", title || null, description || null, url, file_path, file_name, file_mime, maxOrder.max_order + 1);
 
     const item = await db.prepare(`
-      SELECT * FROM academy_media WHERE id = ?
+      SELECT id, user_id, title, type, url, created_at FROM academy_media WHERE id = ?
     `).get(id);
 
     console.log("[api] Academy item created:", item);
@@ -6668,7 +6668,7 @@ app.post("/api/academy-media/upload", authMiddleware, (req, res, next) => {
     `).run(id, userId, type, title || null, description || null, publicUrl, storagePath, safeFileName, file.mimetype, maxOrder.max_order + 1);
 
     const item = await db.prepare(`
-      SELECT * FROM academy_media WHERE id = ?
+      SELECT id, user_id, title, type, url, created_at FROM academy_media WHERE id = ?
     `).get(id);
 
     console.log("[api] Academy upload successful:", item);
@@ -6686,7 +6686,7 @@ app.delete("/api/academy-media/:id", authMiddleware, async (req, res) => {
 
   try {
     const existing = await db.prepare(`
-      SELECT * FROM academy_media WHERE id = ? AND user_id = ?
+      SELECT id, user_id, title, type, url, created_at FROM academy_media WHERE id = ? AND user_id = ?
     `).get(itemId, userId);
 
     if (!existing) {
@@ -6723,7 +6723,7 @@ app.put("/api/academy-media/:id", authMiddleware, async (req, res) => {
 
   try {
     const existing = await db.prepare(`
-      SELECT * FROM academy_media WHERE id = ? AND user_id = ?
+      SELECT id, user_id, title, type, url, created_at FROM academy_media WHERE id = ? AND user_id = ?
     `).get(itemId, userId);
 
     if (!existing) {
@@ -6890,7 +6890,6 @@ const PORT = Number(process.env.PORT ?? 4000);
     await migrateDeliveryHubStockFields();
     await migrateDeliveryHubStoreFields();
     await migratePosAgentCheckFields();
-    await migrateAutoRealEstateFields();
     await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
     
     if (!process.env.VERCEL) {
