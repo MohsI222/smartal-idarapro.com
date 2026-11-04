@@ -251,6 +251,8 @@ export default function AutoRealEstateModule() {
           amenities: item.amenities,
           zoning: item.zoning,
           sqm: item.sqm,
+          insuranceExpiry: item.insuranceExpiry || item.insurance_expiry,
+          taxExpiry: item.taxExpiry || item.tax_expiry,
         }));
         setInventory(transformedInventory);
       } else {
