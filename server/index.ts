@@ -6938,12 +6938,11 @@ const PORT = Number(process.env.PORT ?? 4000);
     await migrateAutoRealEstateDateFields();
     await migrateGpsAndRelatedTables();
     await initializeSupabaseStorage(); // Initialize Supabase Storage bucket
-    
-    if (!process.env.VERCEL) {
-      app.listen(PORT, () => {
-        console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
-      });
-    }
+
+    // Always listen on PORT for all platforms (Render, Vercel, local)
+    app.listen(PORT, () => {
+      console.log(`Smart Al-Idara Pro API http://localhost:${PORT}`);
+    });
   } catch (error) {
     console.error("Failed to initialize database:", error);
     if (!process.env.VERCEL) {
