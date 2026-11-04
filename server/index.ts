@@ -4795,7 +4795,15 @@ app.get("/api/auto-real-estate", authMiddleware, async (req, res) => {
     }
 
     const rows = await db.prepare("SELECT * FROM auto_real_estate WHERE user_id = ? ORDER BY created_at DESC").all(userId);
-    res.json({ data: rows });
+    
+    // Map snake_case to camelCase for frontend
+    const mappedRows = rows.map((row: any) => ({
+      ...row,
+      insuranceExpiry: row.insurance_expiry,
+      taxExpiry: row.tax_expiry
+    }));
+    
+    res.json({ data: mappedRows });
   } catch (error) {
     console.error("[AutoRealEstate] Error fetching:", error);
     res.status(500).json({ error: "فشل جلب البيانات" });
