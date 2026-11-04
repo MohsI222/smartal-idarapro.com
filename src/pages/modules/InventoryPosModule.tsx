@@ -1226,18 +1226,6 @@ export function InventoryPosModule() {
     }
   };
 
-  // Polling for inventory updates (replaces Supabase Realtime)
-  // Reduced to 1 second for near real-time sync with POS Agent
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const interval = setInterval(async () => {
-      await refreshInventoryTables();
-    }, 1000); // Poll every 1 second for near real-time sync
-
-    return () => clearInterval(interval);
-  }, [user?.id, refreshInventoryTables]);
-
   const handleEditProduct = (productId: string) => {
     // ... (rest of the code remains the same)
     const product = products.find((p) => p.id === productId);

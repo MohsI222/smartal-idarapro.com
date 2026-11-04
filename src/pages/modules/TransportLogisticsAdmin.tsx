@@ -145,11 +145,6 @@ export function TransportLogisticsAdmin() {
 
   useEffect(() => {
     void reload();
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(() => {
-      void reload();
-    }, 30000);
-    return () => clearInterval(interval);
   }, [reload]);
 
   /** رابط مباشر للقسم مع الرمز السحري — يفتح مباشرة بدون طلب تسجيل الدخول */

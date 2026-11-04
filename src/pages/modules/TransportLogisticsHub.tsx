@@ -69,21 +69,6 @@ export function TransportLogisticsHub() {
     };
   }, []);
 
-  // Polling for logistics queue updates (replaces Supabase Realtime)
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await api<{ items: LogisticsQueueItem[] }>("/inventory/logistics-queue");
-        const queue = res.items || [];
-        setLogisticsQueue(Array.isArray(queue) ? queue : []);
-      } catch (error) {
-        console.error("[tl hub] polling fetchLogisticsQueue failed", error);
-      }
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, []);
-
   const assignAutoDispatch = async (id: string) => {
     setLogisticsBusy(true);
     try {

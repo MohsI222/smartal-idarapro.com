@@ -4822,8 +4822,8 @@ app.post("/api/auto-real-estate", authMiddleware, async (req, res) => {
         id, user_id, type, brand_or_title, plate_or_address, specs, price, status,
         expiry_date, image, color, fuel, mileage, defects, rent_start, rent_end,
         prop_type, commercial_type, floor_num, total_floors, rooms, bathrooms,
-        amenities, zoning, sqm, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
+        amenities, zoning, sqm, insurance_expiry, tax_expiry, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`
     ).run(
       id, userId, item.type, item.brandOrTitle, item.plateOrAddress, item.specs || '',
       item.price || 0, item.status || 'Available', item.expiryDate || null,
@@ -4831,7 +4831,8 @@ app.post("/api/auto-real-estate", authMiddleware, async (req, res) => {
       item.defects || null, item.rentStart || null, item.rentEnd || null,
       item.propType || null, item.commercialType || null, item.floorNum || null,
       item.totalFloors || null, item.rooms || null, item.bathrooms || null,
-      item.amenities || null, item.zoning || null, item.sqm || null
+      item.amenities || null, item.zoning || null, item.sqm || null,
+      item.insuranceExpiry || null, item.taxExpiry || null
     );
 
     const newRow = await db.prepare("SELECT * FROM auto_real_estate WHERE id = ?").get(id);
@@ -4859,7 +4860,8 @@ app.patch("/api/auto-real-estate/:id", authMiddleware, async (req, res) => {
         type = ?, brand_or_title = ?, plate_or_address = ?, specs = ?, price = ?, status = ?,
         expiry_date = ?, image = ?, color = ?, fuel = ?, mileage = ?, defects = ?,
         rent_start = ?, rent_end = ?, prop_type = ?, commercial_type = ?, floor_num = ?,
-        total_floors = ?, rooms = ?, bathrooms = ?, amenities = ?, zoning = ?, sqm = ?, updated_at = NOW()
+        total_floors = ?, rooms = ?, bathrooms = ?, amenities = ?, zoning = ?, sqm = ?,
+        insurance_expiry = ?, tax_expiry = ?, updated_at = NOW()
       WHERE id = ? AND user_id = ?`
     ).run(
       item.type, item.brandOrTitle, item.plateOrAddress, item.specs || '',
@@ -4868,7 +4870,8 @@ app.patch("/api/auto-real-estate/:id", authMiddleware, async (req, res) => {
       item.defects || null, item.rentStart || null, item.rentEnd || null,
       item.propType || null, item.commercialType || null, item.floorNum || null,
       item.totalFloors || null, item.rooms || null, item.bathrooms || null,
-      item.amenities || null, item.zoning || null, item.sqm || null, id, userId
+      item.amenities || null, item.zoning || null, item.sqm || null,
+      item.insuranceExpiry || null, item.taxExpiry || null, id, userId
     );
 
     const updatedRow = await db.prepare("SELECT * FROM auto_real_estate WHERE id = ?").get(id);

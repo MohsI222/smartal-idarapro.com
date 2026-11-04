@@ -96,26 +96,6 @@ export function DeliveryHubModule() {
     };
   }, [token, isAdmin]);
 
-  // Polling for orders and products updates (replaces Supabase Realtime)
-  useEffect(() => {
-    if (!store?.id || !token) return;
-    
-    const interval = setInterval(async () => {
-      try {
-        const [ordersData, productsData] = await Promise.all([
-          fetchOrders(store.id, token),
-          fetchProductsFromBackend(store.id, token)
-        ]);
-        setOrders(ordersData);
-        setProducts(productsData);
-      } catch (err) {
-        console.error('Error polling delivery hub data:', err);
-      }
-    }, 30000); // Poll every 30 seconds
-    
-    return () => clearInterval(interval);
-  }, [store?.id, token]);
-
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center text-slate-400">

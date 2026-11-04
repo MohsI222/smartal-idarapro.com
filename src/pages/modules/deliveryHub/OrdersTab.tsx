@@ -100,20 +100,8 @@ export function OrdersTab({
         if (!cancelled) setLoading(false);
       });
 
-    const unsubscribe = pollStoreOrders(storeId, {
-      onInsert: (order) => {
-        onOrdersChange([order, ...ordersRef.current]);
-        playNewOrderChime();
-        toast.success(`طلب جديد من ${order.customer_name} 🔔`);
-      },
-      onUpdate: (order) => {
-        onOrdersChange(ordersRef.current.map((o) => (o.id === order.id ? { ...o, ...order } : o)));
-      },
-    }, 5000); // Poll every 5 seconds
-
     return () => {
       cancelled = true;
-      unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);

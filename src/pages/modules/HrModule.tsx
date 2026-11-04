@@ -182,17 +182,6 @@ function HrModule() {
     void load();
   }, [load]);
 
-  // Polling for employee data updates (replaces Supabase Realtime)
-  useEffect(() => {
-    if (!allowed || !user?.id) return;
-    
-    const interval = setInterval(async () => {
-      await load();
-    }, 30000); // Poll every 30 seconds
-    
-    return () => clearInterval(interval);
-  }, [allowed, user?.id, load]);
-
   useEffect(() => {
     const d: Record<string, HrEmployee> = {};
     for (const e of employees) d[e.id] = { ...e };
