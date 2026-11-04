@@ -9,6 +9,7 @@ import {
 import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
+import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import html2pdf from 'html2pdf.js';
 import { compressImageUnder100KB } from "@/lib/imageUtils";
 import { uploadToCloudinary } from "@/lib/cloudinaryClient";
@@ -269,6 +270,25 @@ export default function AutoRealEstateModule() {
   useEffect(() => {
     fetchInventory();
   }, [fetchInventory]);
+
+  // Realtime sync for auto_real_estate (replaces polling)
+  useSupabaseRealtime({
+    table: 'auto_real_estate',
+    filter: `user_id=eq.${user?.id}`,
+    enabled: !!user?.id && !!token,
+    onUpdate: () => {
+      console.log('[Realtime] Auto/Real Estate item updated, refreshing...');
+      fetchInventory();
+    },
+    onInsert: () => {
+      console.log('[Realtime] Auto/Real Estate item inserted, refreshing...');
+      fetchInventory();
+    },
+    onDelete: () => {
+      console.log('[Realtime] Auto/Real Estate item deleted, refreshing...');
+      fetchInventory();
+    }
+  });
 
   // Pre-fill fields when selecting an asset for the contract
   useEffect(() => {

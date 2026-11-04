@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { GpsDashboard } from "@/components/GpsDashboard";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { TL_DEPT_SLUGS, tlWorkers, type TlDeptSlug, type TlWorker } from "@/lib/tlApi";
@@ -107,6 +108,24 @@ export function TransportLogisticsHub() {
       active = false;
     };
   }, [token]);
+
+  // Realtime sync for TL workers (magic link hub)
+  useSupabaseRealtime({
+    table: 'tl_workers',
+    enabled: !!token,
+    onUpdate: (payload) => {
+      console.log('[Realtime] TL worker updated in hub, refreshing...');
+      setWorkers(prev => prev.map(w => w.id === payload.id ? { ...w, ...payload } : w));
+    },
+    onInsert: (payload) => {
+      console.log('[Realtime] TL worker inserted in hub, adding...');
+      setWorkers(prev => [...prev, payload]);
+    },
+    onDelete: (payload) => {
+      console.log('[Realtime] TL worker deleted in hub, removing...');
+      setWorkers(prev => prev.filter(w => w.id !== payload.id));
+    }
+  });
 
   const deleteSelectedLogisticsItems = async () => {
     console.warn("[tl hub] deleteSelectedLogisticsItems not implemented");

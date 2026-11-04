@@ -85,6 +85,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.0",
     "tesseract.js": "^5.1.1",
+    "tsx": "^4.19.2",
     "uuid": "^11.0.4",
     "xlsx": "^0.18.5"
   },
@@ -109,7 +110,6 @@
     "imagemin-pngquant": "^10.0.0",
     "imagemin-svgo": "^12.0.0",
     "tailwindcss": "^4.0.0",
-    "tsx": "^4.19.2",
     "typescript": "~5.7.2",
     "vite": "^6.0.7"
   }

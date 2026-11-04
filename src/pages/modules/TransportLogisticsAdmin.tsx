@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import { GpsDashboard } from "@/components/GpsDashboard";
 import {
   TL_DEPT_SLUGS,
@@ -146,6 +147,24 @@ export function TransportLogisticsAdmin() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Realtime sync for TL workers (replaces polling)
+  useSupabaseRealtime({
+    table: 'tl_workers',
+    enabled: !!token && allowed,
+    onUpdate: () => {
+      console.log('[Realtime] TL worker updated, refreshing...');
+      void reload();
+    },
+    onInsert: () => {
+      console.log('[Realtime] TL worker inserted, refreshing...');
+      void reload();
+    },
+    onDelete: () => {
+      console.log('[Realtime] TL worker deleted, refreshing...');
+      void reload();
+    }
+  });
 
   /** رابط مباشر للقسم مع الرمز السحري — يفتح مباشرة بدون طلب تسجيل الدخول */
   const magicLoginUrl = (w: TlWorker) => {

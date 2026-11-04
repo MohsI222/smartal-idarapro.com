@@ -30,6 +30,7 @@ import { downloadTableAsWordDocx } from "@/lib/wordExport";
 import { downloadXlsxWorkbook } from "@/lib/excelDownload";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
 import {
   assignLogisticsItemBackend,
   createProductionRequestBackend,
@@ -599,6 +600,25 @@ export function InventoryPosModule() {
       setLoading(false);
     }
   }, [token, user?.id]);
+
+  // Realtime sync for inventory products (replaces polling)
+  useSupabaseRealtime({
+    table: 'inventory_products',
+    filter: `user_id=eq.${user?.id}`,
+    enabled: !!user?.id && !!token,
+    onUpdate: () => {
+      console.log('[Realtime] Inventory product updated, refreshing...');
+      void refreshInventoryTables();
+    },
+    onInsert: () => {
+      console.log('[Realtime] Inventory product inserted, refreshing...');
+      void refreshInventoryTables();
+    },
+    onDelete: () => {
+      console.log('[Realtime] Inventory product deleted, refreshing...');
+      void refreshInventoryTables();
+    }
+  });
 
   const saveBrandingActivity = async () => {
     if (!token || isSavingActivity) return;
