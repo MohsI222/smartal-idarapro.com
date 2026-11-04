@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
-import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
+import { useServerEvents } from "@/hooks/useServerEvents";
 import { GpsDashboard } from "@/components/GpsDashboard";
 import {
   TL_DEPT_SLUGS,
@@ -148,20 +148,20 @@ export function TransportLogisticsAdmin() {
     void reload();
   }, [reload]);
 
-  // Realtime sync for TL workers (replaces polling)
-  useSupabaseRealtime({
+  // Realtime sync for TL workers using SSE (replaces polling and Supabase Realtime)
+  useServerEvents({
     table: 'tl_workers',
     enabled: !!token && allowed,
     onUpdate: () => {
-      console.log('[Realtime] TL worker updated, refreshing...');
+      console.log('[SSE] TL worker updated, refreshing...');
       void reload();
     },
     onInsert: () => {
-      console.log('[Realtime] TL worker inserted, refreshing...');
+      console.log('[SSE] TL worker inserted, refreshing...');
       void reload();
     },
     onDelete: () => {
-      console.log('[Realtime] TL worker deleted, refreshing...');
+      console.log('[SSE] TL worker deleted, refreshing...');
       void reload();
     }
   });

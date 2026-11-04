@@ -30,7 +30,7 @@ import { downloadTableAsWordDocx } from "@/lib/wordExport";
 import { downloadXlsxWorkbook } from "@/lib/excelDownload";
 import { useAuth } from "@/context/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
-import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
+import { useServerEvents } from "@/hooks/useServerEvents";
 import {
   assignLogisticsItemBackend,
   createProductionRequestBackend,
@@ -601,21 +601,20 @@ export function InventoryPosModule() {
     }
   }, [token, user?.id]);
 
-  // Realtime sync for inventory products (replaces polling)
-  useSupabaseRealtime({
+  // Realtime sync for inventory products using SSE (replaces polling and Supabase Realtime)
+  useServerEvents({
     table: 'inventory_products',
-    filter: `user_id=eq.${user?.id}`,
     enabled: !!user?.id && !!token,
     onUpdate: () => {
-      console.log('[Realtime] Inventory product updated, refreshing...');
+      console.log('[SSE] Inventory product updated, refreshing...');
       void refreshInventoryTables();
     },
     onInsert: () => {
-      console.log('[Realtime] Inventory product inserted, refreshing...');
+      console.log('[SSE] Inventory product inserted, refreshing...');
       void refreshInventoryTables();
     },
     onDelete: () => {
-      console.log('[Realtime] Inventory product deleted, refreshing...');
+      console.log('[SSE] Inventory product deleted, refreshing...');
       void refreshInventoryTables();
     }
   });

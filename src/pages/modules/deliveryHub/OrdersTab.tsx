@@ -18,7 +18,7 @@ import { ORDER_STATUS_FLOW, ORDER_STATUS_LABELS, type Order, type OrderStatus } 
 import { OrderChatModal } from "./ChatModal";
 import { GpsDashboard } from "@/components/GpsDashboard";
 import { useAuth } from "@/context/AuthContext";
-import { useSupabaseRealtime } from "@/hooks/useSupabaseRealtime";
+import { useServerEvents } from "@/hooks/useServerEvents";
 
 const NEXT_ACTION_LABEL: Record<OrderStatus, string> = {
   pending: "تأكيد الطلب",
@@ -107,29 +107,28 @@ export function OrdersTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId]);
 
-  // Realtime sync for delivery hub orders (replaces polling)
-  useSupabaseRealtime({
+  // Realtime sync for delivery hub orders using SSE (replaces polling and Supabase Realtime)
+  useServerEvents({
     table: 'delivery_hub_orders',
-    filter: `store_id=eq.${storeId}`,
     enabled: !!storeId && !!token,
-    onUpdate: (payload) => {
-      console.log('[Realtime] Delivery order updated, refreshing...');
+    onUpdate: () => {
+      console.log('[SSE] Delivery order updated, refreshing...');
       fetchOrders(storeId, token || undefined)
         .then((rows) => onOrdersChange(rows))
         .catch((err) => toast.error(err instanceof Error ? err.message : "تعذر تحديث الطلبات"));
     },
     onInsert: (payload) => {
-      console.log('[Realtime] New delivery order, refreshing...');
+      console.log('[SSE] New delivery order, refreshing...');
       fetchOrders(storeId, token || undefined)
         .then((rows) => {
           onOrdersChange(rows);
           playNewOrderChime();
-          toast.success(`طلب جديد من ${payload.customer_name} 🔔`);
+          toast.success(`طلب جديد من ${payload.row?.customer_name || 'عميل'} 🔔`);
         })
         .catch((err) => toast.error(err instanceof Error ? err.message : "تعذر تحديث الطلبات"));
     },
-    onDelete: (payload) => {
-      console.log('[Realtime] Delivery order deleted, refreshing...');
+    onDelete: () => {
+      console.log('[SSE] Delivery order deleted, refreshing...');
       fetchOrders(storeId, token || undefined)
         .then((rows) => onOrdersChange(rows))
         .catch((err) => toast.error(err instanceof Error ? err.message : "تعذر تحديث الطلبات"));

@@ -1,0 +1,74 @@
+import { useEffect, useRef } from 'react';
+import { useAuth } from '@/context/AuthContext';
+
+interface ServerEventOptions {
+  onInsert?: (payload: any) => void;
+  onUpdate?: (payload: any) => void;
+  onDelete?: (payload: any) => void;
+  table?: string;
+  enabled?: boolean;
+}
+
+export function useServerEvents({
+  onInsert,
+  onUpdate,
+  onDelete,
+  table,
+  enabled = true
+}: ServerEventOptions) {
+  const { token } = useAuth();
+  const eventSourceRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !token) return;
+
+    // Connect to SSE endpoint
+    const eventSource = new EventSource('/api/events', {
+      withCredentials: true
+    });
+
+    eventSourceRef.current = eventSource;
+
+    eventSource.onopen = () => {
+      console.log('[SSE] Connection opened');
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('[SSE] Received event:', data);
+
+        // Filter by table if specified
+        if (table && data.table !== table) return;
+
+        switch (data.event) {
+          case 'INSERT':
+            onInsert?.(data);
+            break;
+          case 'UPDATE':
+            onUpdate?.(data);
+            break;
+          case 'DELETE':
+            onDelete?.(data);
+            break;
+        }
+      } catch (error) {
+        console.error('[SSE] Error parsing event:', error);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('[SSE] Connection error:', error);
+      eventSource.close();
+    };
+
+    return () => {
+      console.log('[SSE] Cleaning up connection');
+      eventSource.close();
+    };
+  }, [token, table, onInsert, onUpdate, onDelete, enabled]);
+
+  return {
+    connected: eventSourceRef.current?.readyState === EventSource.OPEN
+  };
+}

@@ -22,6 +22,7 @@ import { randomUUID } from "node:crypto";
 import { db, initDatabase } from "./db";
 import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto";
 import { ensureSuperAdmin, genReferralCode } from "./seed";
+import { EventEmitter } from "node:events";
 import {
   applySecurityMiddleware,
   authAdminBootstrapLimiter,
@@ -4844,6 +4845,10 @@ app.post("/api/auto-real-estate", authMiddleware, async (req, res) => {
     );
 
     const newRow = await db.prepare("SELECT * FROM auto_real_estate WHERE id = ?").get(id);
+
+    // Emit SSE event for realtime sync
+    emitDatabaseChange("INSERT", "auto_real_estate", { userId, row: newRow });
+
     res.json({ data: newRow });
   } catch (error) {
     console.error("[AutoRealEstate] Error creating:", error);
@@ -4883,6 +4888,10 @@ app.patch("/api/auto-real-estate/:id", authMiddleware, async (req, res) => {
     );
 
     const updatedRow = await db.prepare("SELECT * FROM auto_real_estate WHERE id = ?").get(id);
+
+    // Emit SSE event for realtime sync
+    emitDatabaseChange("UPDATE", "auto_real_estate", { userId, row: updatedRow });
+
     res.json({ data: updatedRow });
   } catch (error) {
     console.error("[AutoRealEstate] Error updating:", error);
@@ -4906,6 +4915,9 @@ app.delete("/api/auto-real-estate/:id", authMiddleware, async (req, res) => {
       res.status(404).json({ error: "غير موجود" });
       return;
     }
+
+    // Emit SSE event for realtime sync
+    emitDatabaseChange("DELETE", "auto_real_estate", { userId, id });
 
     res.json({ success: true });
   } catch (error) {
@@ -6925,6 +6937,48 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
   console.error("[api]", err);
   res.status(500).json({ error: "Internal Server Error" });
 });
+
+// ============================================================================
+// Server-Sent Events (SSE) for Realtime Sync
+// ============================================================================
+const eventEmitter = new EventEmitter();
+
+// SSE endpoint for realtime updates
+app.get("/api/events", authMiddleware, (req, res) => {
+  const userId = (req as express.Request & { userId: string }).userId;
+
+  // Set SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+
+  console.log(`[SSE] Client connected for user: ${userId}`);
+
+  // Send initial connection message
+  res.write(`data: ${JSON.stringify({ type: "connected", userId })}\n\n`);
+
+  // Listen for database changes
+  const onChange = (data: any) => {
+    // Only send if the change is for this user's tenant
+    if (data.userId === userId || !data.userId) {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    }
+  };
+
+  eventEmitter.on("db_change", onChange);
+
+  // Cleanup on client disconnect
+  req.on("close", () => {
+    console.log(`[SSE] Client disconnected for user: ${userId}`);
+    eventEmitter.off("db_change", onChange);
+  });
+});
+
+// Helper function to emit database changes
+export function emitDatabaseChange(event: string, table: string, data: any) {
+  eventEmitter.emit("db_change", { event, table, ...data });
+}
 
 const PORT = Number(process.env.PORT ?? 4000);
 
