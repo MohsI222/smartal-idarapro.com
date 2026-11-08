@@ -6967,7 +6967,7 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
 // ============================================================================
 
 // SSE endpoint for realtime updates
-app.get("/api/events", (req, res) => {
+app.get("/api/events", async (req, res) => {
   // Get token from Authorization header or query parameter
   const authHeader = req.headers.authorization;
   const queryToken = req.query.token as string;
@@ -6981,9 +6981,12 @@ app.get("/api/events", (req, res) => {
   // Verify token and get userId
   let userId: string;
   try {
-    const { verifyToken } = await import("./backendServices.js");
     const decoded = verifyToken(token);
-    userId = decoded.userId;
+    if (!decoded) {
+      res.status(401).json({ error: "Invalid token" });
+      return;
+    }
+    userId = decoded.sub;
   } catch (error) {
     console.error("[SSE] Invalid token:", error);
     res.status(401).json({ error: "Invalid token" });
