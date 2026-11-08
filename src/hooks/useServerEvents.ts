@@ -22,10 +22,9 @@ export function useServerEvents({
   useEffect(() => {
     if (!enabled || !token) return;
 
-    // Connect to SSE endpoint
-    const eventSource = new EventSource('/api/events', {
-      withCredentials: true
-    });
+    // Connect to SSE endpoint with token as query parameter
+    // EventSource doesn't support custom headers, so we use query param
+    const eventSource = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
 
     eventSourceRef.current = eventSource;
 

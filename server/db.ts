@@ -117,7 +117,14 @@ function buildPoolConfig(): PoolConfigWithPrepare {
 
 export function getPool(): Pool {
   if (!poolInstance) {
-    poolInstance = new Pool(buildPoolConfig());
+    const config = buildPoolConfig();
+    poolInstance = new Pool(config);
+    
+    // Handle pool errors to prevent server crashes
+    poolInstance.on('error', (err) => {
+      console.error('[DB Pool] Unexpected error on idle client:', err);
+      // Don't throw - let the application handle errors per-query
+    });
   }
   return poolInstance;
 }

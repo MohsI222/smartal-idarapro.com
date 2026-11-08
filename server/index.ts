@@ -6967,8 +6967,28 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
 // ============================================================================
 
 // SSE endpoint for realtime updates
-app.get("/api/events", authMiddleware, (req, res) => {
-  const userId = (req as express.Request & { userId: string }).userId;
+app.get("/api/events", (req, res) => {
+  // Get token from Authorization header or query parameter
+  const authHeader = req.headers.authorization;
+  const queryToken = req.query.token as string;
+  const token = authHeader?.replace("Bearer ", "") || queryToken;
+
+  if (!token) {
+    res.status(401).json({ error: "No token provided" });
+    return;
+  }
+
+  // Verify token and get userId
+  let userId: string;
+  try {
+    const { verifyToken } = await import("./backendServices.js");
+    const decoded = verifyToken(token);
+    userId = decoded.userId;
+  } catch (error) {
+    console.error("[SSE] Invalid token:", error);
+    res.status(401).json({ error: "Invalid token" });
+    return;
+  }
 
   // Set SSE headers
   res.setHeader("Content-Type", "text/event-stream");
