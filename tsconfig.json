@@ -17,10 +17,12 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
+    "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] },
     "outDir": "./dist",
     "allowJs": true,
-    "checkJs": false
+    "checkJs": false,
+    "ignoreDeprecations": "6.0"
   },
   "include": ["server"],
   "exclude": ["node_modules", "dist", "src", "api"]
