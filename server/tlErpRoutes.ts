@@ -5,6 +5,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { db } from "./db.js";
 import { paramString } from "./reqParams.js";
 import { buildTlGridExcelBuffer, parseTlGridDeptFromFilename } from "./tlGridExport.js";
+import { emitDatabaseChange } from "./index.js";
 
 export type TlFilesConfig = {
   uploadTl: { single: (field: string) => express.RequestHandler };
@@ -588,6 +589,10 @@ export function registerTlErpRoutes(
         magic
       );
       const row = await db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
+      
+      // Emit SSE event for realtime sync
+      emitDatabaseChange("INSERT", "tl_workers", { userId, id, row });
+      
       res.json({ worker: row });
     } catch (error: any) {
       console.error("Error creating TL worker:", error);
@@ -619,6 +624,10 @@ export function registerTlErpRoutes(
       userId
     );
     const row = await db.prepare(`SELECT * FROM tl_workers WHERE id = ?`).get(id) as RowWorker;
+    
+    // Emit SSE event for realtime sync
+    emitDatabaseChange("UPDATE", "tl_workers", { userId, id, row });
+    
     res.json({ worker: row });
   });
 

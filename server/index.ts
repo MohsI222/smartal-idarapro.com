@@ -5256,6 +5256,10 @@ app.post("/api/inventory/products", authMiddleware, async (req, res) => {
         existingId,
         userId
       );
+      
+      // Emit SSE event for realtime sync
+      emitDatabaseChange("UPDATE", "inventory_products", { userId, id: existingId });
+      
       res.json({ id: existingId, updated: true });
     } else {
       // Insert new product
@@ -5276,6 +5280,10 @@ app.post("/api/inventory/products", authMiddleware, async (req, res) => {
         expiry,
         lowAlert
       );
+      
+      // Emit SSE event for realtime sync
+      emitDatabaseChange("INSERT", "inventory_products", { userId, id });
+      
       res.json({ id, updated: false });
     }
   } catch (error) {
@@ -5432,6 +5440,10 @@ app.patch("/api/inventory/products/:id", authMiddleware, async (req, res) => {
       res.status(404).json({ error: "لم يتم تحديث المنتج" });
       return;
     }
+    
+    // Emit SSE event for realtime sync
+    emitDatabaseChange("UPDATE", "inventory_products", { userId, id });
+    
     res.json({ ok: true });
   } catch (error) {
     console.error("[api/inventory/products/:id] Error:", error);
@@ -5455,6 +5467,10 @@ app.patch("/api/inventory/products/:id/stock", authMiddleware, async (req, res) 
       res.status(404).json({ error: "المنتج غير موجود" });
       return;
     }
+    
+    // Emit SSE event for realtime sync
+    emitDatabaseChange("UPDATE", "inventory_products", { userId, id });
+    
     res.json({ ok: true });
   } catch (error) {
     console.error("[api/inventory/products/:id/stock] Error:", error);
@@ -5467,6 +5483,10 @@ app.delete("/api/inventory/products/:id", authMiddleware, async (req, res) => {
     const userId = (req as express.Request & { userId: string }).userId;
     const { id } = req.params;
     await db.prepare(`DELETE FROM inventory_products WHERE id = ? AND user_id = ?`).run(id, userId);
+    
+    // Emit SSE event for realtime sync
+    emitDatabaseChange("DELETE", "inventory_products", { userId, id });
+    
     res.json({ ok: true });
   } catch (error) {
     console.error("[api/inventory/products DELETE] Error:", error);
@@ -5798,6 +5818,10 @@ app.post("/api/inventory/sale-batch", authMiddleware, async (req, res) => {
       );
       return { invId, grandTotal, credit };
     });
+    
+    // Emit SSE event for realtime sync (sale updates inventory)
+    emitDatabaseChange("UPDATE", "inventory_products", { userId });
+    
     res.json({ id: out.invId, total: out.grandTotal, credit: out.credit });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "فشل البيع";
