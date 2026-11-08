@@ -24,55 +24,17 @@ const BUCKET_NAME = 'app-files';
 
 /**
  * Initialize the app-files bucket if it doesn't exist
+ * NOTE: Disabled to avoid Supabase egress quota issues. Use Cloudinary instead.
  */
 export async function initializeSupabaseStorage() {
-  if (!supabase) {
-    console.warn('[Supabase Storage] Skipping initialization - client not available');
-    return;
-  }
-
-  try {
-    // Check if bucket exists
-    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-
-    if (listError) {
-      console.error('[Supabase Storage] Error listing buckets:', listError);
-      return;
-    }
-
-    const bucketExists = buckets?.some(b => b.name === BUCKET_NAME);
-
-    if (!bucketExists) {
-      console.log(`[Supabase Storage] Creating bucket: ${BUCKET_NAME}`);
-      const { error: createError } = await supabase.storage.createBucket(BUCKET_NAME, {
-        public: true,
-        fileSizeLimit: 1048576 * 5, // 5MB limit
-      });
-
-      if (createError) {
-        console.error('[Supabase Storage] Error creating bucket:', createError);
-      } else {
-        console.log(`[Supabase Storage] Bucket ${BUCKET_NAME} created successfully`);
-        
-        // Enable public access policy
-        try {
-          await supabase.storage.from(BUCKET_NAME).createSignedUrl('test', 60);
-          // This will fail if bucket doesn't have proper policies, but bucket is public so it should work
-          console.log('[Supabase Storage] Bucket is public, no additional policies needed');
-        } catch (e) {
-          console.log('[Supabase Storage] Policy check (expected):', e);
-        }
-      }
-    } else {
-      console.log(`[Supabase Storage] Bucket ${BUCKET_NAME} already exists`);
-    }
-  } catch (error) {
-    console.error('[Supabase Storage] Initialization error:', error);
-  }
+  // Skip initialization to avoid egress quota consumption
+  console.log('[Supabase Storage] Initialization skipped to avoid egress quota. Using Cloudinary instead.');
+  return;
 }
 
 /**
  * Upload a file to Supabase Storage (app-files bucket)
+ * NOTE: Disabled to avoid Supabase egress quota issues. Use Cloudinary instead.
  * @param fileBuffer - Buffer of the file to upload
  * @param path - Storage path (e.g., 'media-library/uuid.jpg')
  * @param contentType - MIME type of the file
@@ -83,38 +45,8 @@ export async function uploadFile(
   path: string,
   contentType: string
 ): Promise<string> {
-  if (!supabase) {
-    throw new Error('[Supabase Storage] Supabase client not available');
-  }
-
-  try {
-    console.log('[Supabase Storage] Uploading file:', { path, contentType, size: fileBuffer.length });
-    
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .upload(path, fileBuffer, {
-        upsert: true,
-        contentType,
-      });
-
-    if (error) {
-      console.error('[Supabase Storage] Upload error details:', error);
-      throw error;
-    }
-
-    console.log('[Supabase Storage] Upload successful:', data);
-
-    // Get public URL
-    const { data: publicUrlData } = supabase.storage
-      .from(BUCKET_NAME)
-      .getPublicUrl(data.path);
-
-    console.log('[Supabase Storage] Public URL:', publicUrlData.publicUrl);
-    return publicUrlData.publicUrl;
-  } catch (error) {
-    console.error('[Supabase Storage] Upload error:', error);
-    throw error;
-  }
+  // Disabled to avoid egress quota consumption
+  throw new Error('Supabase Storage upload disabled due to egress quota. Please use Cloudinary instead.');
 }
 
 /**
