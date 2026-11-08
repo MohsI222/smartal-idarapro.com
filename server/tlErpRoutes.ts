@@ -5,7 +5,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { db } from "./db.js";
 import { paramString } from "./reqParams.js";
 import { buildTlGridExcelBuffer, parseTlGridDeptFromFilename } from "./tlGridExport.js";
-import { emitDatabaseChange } from "./index.js";
+import { emitDatabaseChange } from "./eventEmitter.js";
 
 export type TlFilesConfig = {
   uploadTl: { single: (field: string) => express.RequestHandler };

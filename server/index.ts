@@ -22,7 +22,7 @@ import { randomUUID } from "node:crypto";
 import { db, initDatabase } from "./db";
 import { hashPassword, signToken, verifyPassword, verifyToken } from "./crypto";
 import { ensureSuperAdmin, genReferralCode } from "./seed";
-import { EventEmitter } from "node:events";
+import { eventEmitter, emitDatabaseChange } from "./eventEmitter";
 import {
   applySecurityMiddleware,
   authAdminBootstrapLimiter,
@@ -6965,7 +6965,6 @@ app.use((err: unknown, req: express.Request, res: express.Response, next: expres
 // ============================================================================
 // Server-Sent Events (SSE) for Realtime Sync
 // ============================================================================
-const eventEmitter = new EventEmitter();
 
 // SSE endpoint for realtime updates
 app.get("/api/events", authMiddleware, (req, res) => {
@@ -6998,11 +6997,6 @@ app.get("/api/events", authMiddleware, (req, res) => {
     eventEmitter.off("db_change", onChange);
   });
 });
-
-// Helper function to emit database changes
-export function emitDatabaseChange(event: string, table: string, data: any) {
-  eventEmitter.emit("db_change", { event, table, ...data });
-}
 
 const PORT = Number(process.env.PORT ?? 4000);
 
