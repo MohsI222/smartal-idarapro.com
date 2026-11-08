@@ -1,13 +1,13 @@
 import {
   buildOfficialDocumentFullHtml,
   buildPlatformReportFullHtml,
-} from "@/lib/legalApplicationPrint";
-import { pushDocumentActivity } from "@/lib/documentActivityLog";
-import { fetchBackendPrintHtml, fetchBackendPrintHtmlMagicToken } from "@/lib/backendExportClient";
-import { downloadPdfFromFullHtmlDocument } from "@/lib/pdfCanvasExport";
-import { escapeHtmlPdf } from "@/lib/htmlEscape";
-import { isTrialWatermarkExport } from "@/lib/exportPolicy";
-import { fixArabicText } from "@/lib/arabicPdfText";
+} from "./legalApplicationPrint";
+import { pushDocumentActivity } from "./documentActivityLog";
+import { fetchBackendPrintHtml, fetchBackendPrintHtmlMagicToken } from "./backendExportClient";
+import { downloadPdfFromFullHtmlDocument } from "./pdfCanvasExport";
+import { escapeHtmlPdf } from "./htmlEscape";
+import { isTrialWatermarkExport } from "./exportPolicy";
+import { fixArabicText } from "./arabicPdfText";
 
 export { escapeHtmlPdf };
 
