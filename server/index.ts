@@ -5816,12 +5816,15 @@ app.post("/api/inventory/sale-batch", authMiddleware, async (req, res) => {
         credit,
         credit > 0 ? (b.due_at ?? null) : null
       );
-      return { invId, grandTotal, credit };
+      return { invId, grandTotal, credit, productIds: linesOut.map(l => l.product_id) };
     });
-    
+
     // Emit SSE event for realtime sync (sale updates inventory)
-    emitDatabaseChange("UPDATE", "inventory_products", { userId });
-    
+    // Include all product IDs that were updated
+    const productIds = linesOut.map(l => l.product_id);
+    console.log("[sale-batch] Emitting SSE event for inventory update:", { userId, productIds });
+    emitDatabaseChange("UPDATE", "inventory_products", { userId, productIds });
+
     res.json({ id: out.invId, total: out.grandTotal, credit: out.credit });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "فشل البيع";

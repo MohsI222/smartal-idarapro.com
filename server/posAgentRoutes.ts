@@ -475,7 +475,7 @@ router.post("/sales", async (req, res) => {
 
       // Emit SSE event for realtime sync to inventory dashboard
       console.log("[POS Agent] Emitting SSE event for inventory update:", { userId: (tokenData as any).user_id, productId: line.product_id, quantity: line.quantity });
-      emitDatabaseChange("UPDATE", "inventory_products", { userId: (tokenData as any).user_id, id: line.product_id });
+      emitDatabaseChange("UPDATE", "inventory_products", { userId: (tokenData as any).user_id, productIds: [line.product_id] });
 
       // Sync to Supabase for real-time updates
       await updateSupabaseStock(line.product_id, -line.quantity, (tokenData as any).user_id);
@@ -1457,7 +1457,8 @@ router.post("/standalone-returns", async (req, res) => {
       ).run(line.quantity, line.product_id, (tokenData as any).user_id);
 
       // Emit SSE event for realtime sync to inventory dashboard
-      emitDatabaseChange("UPDATE", "inventory_products", { userId: (tokenData as any).user_id, id: line.product_id });
+      console.log("[POS Agent Return] Emitting SSE event for inventory update:", { userId: (tokenData as any).user_id, productId: line.product_id, quantity: line.quantity });
+      emitDatabaseChange("UPDATE", "inventory_products", { userId: (tokenData as any).user_id, productIds: [line.product_id] });
 
       console.log("[POS Agent] Return stock update result:", { productId: line.product_id, quantity: line.quantity, changes: updateResult.changes });
       

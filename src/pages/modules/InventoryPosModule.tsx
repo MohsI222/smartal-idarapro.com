@@ -605,8 +605,8 @@ export function InventoryPosModule() {
   useServerEvents({
     table: 'inventory_products',
     enabled: !!user?.id && !!token,
-    onUpdate: () => {
-      console.log('[SSE] Inventory product updated, refreshing...');
+    onUpdate: (data) => {
+      console.log('[SSE] Inventory product updated, refreshing...', data);
       void refreshInventoryTables();
     },
     onInsert: () => {
