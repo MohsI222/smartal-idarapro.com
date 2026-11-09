@@ -69,7 +69,7 @@ export function useServerEvents({
       console.log('[SSE] Cleaning up connection');
       eventSource.close();
     };
-  }, [token, table, onInsert, onUpdate, onDelete, enabled]);
+  }, [token, table, enabled]); // Remove onInsert/onUpdate/onDelete from deps to prevent reconnection loops
 
   return {
     connected: eventSourceRef.current?.readyState === EventSource.OPEN

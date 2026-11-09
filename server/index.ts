@@ -6998,11 +6998,22 @@ app.get("/api/events", async (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
 
   console.log(`[SSE] Client connected for user: ${userId}`);
 
   // Send initial connection message
   res.write(`data: ${JSON.stringify({ type: "connected", userId })}\n\n`);
+
+  // Send keep-alive heartbeat every 30 seconds to prevent connection timeout
+  const heartbeatInterval = setInterval(() => {
+    try {
+      res.write(`: heartbeat\n\n`);
+    } catch (error) {
+      console.error(`[SSE] Heartbeat failed for user ${userId}:`, error);
+      clearInterval(heartbeatInterval);
+    }
+  }, 30000);
 
   // Listen for database changes
   const onChange = (data: any) => {
@@ -7022,6 +7033,7 @@ app.get("/api/events", async (req, res) => {
   req.on("close", () => {
     console.log(`[SSE] Client disconnected for user: ${userId}`);
     eventEmitter.off("db_change", onChange);
+    clearInterval(heartbeatInterval);
   });
 });
 
