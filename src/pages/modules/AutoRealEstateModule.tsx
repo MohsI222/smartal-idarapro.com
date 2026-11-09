@@ -224,7 +224,15 @@ export default function AutoRealEstateModule() {
     );
   }
   
-  const [lang, setLang] = useState<Lang>(locale as Lang || "ar");
+  const [lang, setLang] = useState<Lang>(locale.startsWith("ar") ? "ar" : locale as Lang || "ar");
+
+  // Sync lang with locale from useI18n
+  useEffect(() => {
+    const newLang = locale.startsWith("ar") ? "ar" : locale as Lang || "ar";
+    if (newLang !== lang) {
+      setLang(newLang);
+    }
+  }, [locale, lang]);
   const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "contracts" | "accounting">("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState<ItemStatus | "All">("All");
@@ -264,7 +272,8 @@ export default function AutoRealEstateModule() {
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
 
-  const t = TRANSLATIONS[lang];
+  const langKey = locale.startsWith("ar") ? "ar" : locale.startsWith("fr") ? "fr" : locale.startsWith("es") ? "es" : "en";
+  const t = TRANSLATIONS[langKey];
   const isRTL = locale === "ar";
 
   // LOAD DATA FROM NEON API - All users (including Super Admin) use the same endpoint
@@ -716,9 +725,9 @@ export default function AutoRealEstateModule() {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 7 && diffDays >= 0) {
-          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].rent})`, daysLeft: diffDays, urgency: 'warning', type: 'rent' });
+          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.rent})`, daysLeft: diffDays, urgency: 'warning', type: 'rent' });
         } else if (diffDays < 0) {
-          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].rent})`, daysLeft: diffDays, urgency: 'danger', type: 'rent' });
+          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.rent})`, daysLeft: diffDays, urgency: 'danger', type: 'rent' });
         }
       }
 
@@ -729,9 +738,9 @@ export default function AutoRealEstateModule() {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 30 && diffDays >= 0) {
-          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].insurance})`, daysLeft: diffDays, urgency: 'warning', type: 'insurance' });
+          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.insurance})`, daysLeft: diffDays, urgency: 'warning', type: 'insurance' });
         } else if (diffDays < 0) {
-          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].insurance})`, daysLeft: diffDays, urgency: 'danger', type: 'insurance' });
+          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.insurance})`, daysLeft: diffDays, urgency: 'danger', type: 'insurance' });
         }
       }
 
@@ -742,14 +751,14 @@ export default function AutoRealEstateModule() {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 30 && diffDays >= 0) {
-          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].tax})`, daysLeft: diffDays, urgency: 'warning', type: 'tax' });
+          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.tax})`, daysLeft: diffDays, urgency: 'warning', type: 'tax' });
         } else if (diffDays < 0) {
-          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].tax})`, daysLeft: diffDays, urgency: 'danger', type: 'tax' });
+          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.tax})`, daysLeft: diffDays, urgency: 'danger', type: 'tax' });
         }
       }
     });
     return alerts.sort((a, b) => a.daysLeft - b.daysLeft);
-  }, [inventory, locale]);
+  }, [inventory, locale, langKey]);
 
   const filteredInventory = useMemo(() => inventory.filter(item => {
     const matchesSearch = item.brandOrTitle.toLowerCase().includes(searchQuery.toLowerCase()) || item.plateOrAddress.toLowerCase().includes(searchQuery.toLowerCase());
