@@ -2159,6 +2159,12 @@ export function PosAgentApp() {
         "fr": "Produits",
         "es": "Productos"
       },
+      "addProduct": {
+        "ar": "إضافة منتج",
+        "en": "Add Product",
+        "fr": "Ajouter un produit",
+        "es": "Agregar producto"
+      },
       "filter": {
         "ar": "تصفية",
         "en": "Filter",
@@ -3157,7 +3163,7 @@ export function PosAgentApp() {
                         className="bg-green-600 border-green-500 text-white hover:bg-green-700"
                       >
                         <Package className="w-4 h-4 mr-2" />
-                        {t.posAgent.addProduct}
+                        {getText("addProduct")}
                       </Button>
                       <Button
                         variant="outline"
@@ -3380,7 +3386,7 @@ export function PosAgentApp() {
                                   className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs py-1"
                                 >
                                   <ShoppingCart className="w-3 h-3 mr-1" />
-                                  {t.posAgent.addedToCart}
+                                  {isArabic ? "أضيف للسلة" : locale === 'fr' ? "Ajouté au panier" : locale === 'es' ? "Añadido al carrito" : "Added to cart"}
                                 </Button>
                                 <Button
                                   size="sm"
@@ -4244,9 +4250,9 @@ export function PosAgentApp() {
       <Dialog open={showProductDialog} onOpenChange={setShowProductDialog}>
         <DialogContent className="bg-slate-900 border-white/20 text-white max-w-2xl max-h-[600px] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProduct ? t.posAgent.editProduct : t.posAgent.addProductNew}</DialogTitle>
+            <DialogTitle>{editingProduct ? (isArabic ? "تعديل المنتج" : locale === 'fr' ? "Modifier le produit" : locale === 'es' ? "Editar producto" : "Edit Product") : (isArabic ? "إضافة منتج جديد" : locale === 'fr' ? "Ajouter un nouveau produit" : locale === 'es' ? "Agregar nuevo producto" : "Add New Product")}</DialogTitle>
             <DialogDescription className="text-white/70">
-              {editingProduct ? t.posAgent.editProductDesc : t.posAgent.addProductDesc}
+              {editingProduct ? (isArabic ? "تعديل تفاصيل المنتج" : locale === 'fr' ? "Modifier les détails du produit" : locale === 'es' ? "Editar detalles del producto" : "Edit product details") : (isArabic ? "أدخل تفاصيل المنتج الجديد" : locale === 'fr' ? "Entrez les détails du nouveau produit" : locale === 'es' ? "Ingrese los detalles del nuevo producto" : "Enter new product details")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -4418,9 +4424,9 @@ export function PosAgentApp() {
       <Dialog open={showAddProductDialog} onOpenChange={setShowAddProductDialog}>
         <DialogContent className="bg-slate-900 border-white/20 text-white max-w-md">
           <DialogHeader>
-            <DialogTitle>{t.posAgent.addProductNew}</DialogTitle>
+            <DialogTitle>{isArabic ? "إضافة منتج جديد" : locale === 'fr' ? "Ajouter un nouveau produit" : locale === 'es' ? "Agregar nuevo producto" : "Add New Product"}</DialogTitle>
             <DialogDescription className="text-white/70">
-              {t.posAgent.barcodeNotFound} {newProductBarcode}. {t.posAgent.enterProductDetails}.
+              {isArabic ? "الباركود غير موجود" : locale === 'fr' ? "Code-barres introuvable" : locale === 'es' ? "Código de barras no encontrado" : "Barcode not found"} {newProductBarcode}. {isArabic ? "أدخل تفاصيل المنتج" : locale === 'fr' ? "Entrez les détails du produit" : locale === 'es' ? "Ingrese los detalles del producto" : "Enter product details"}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -4522,7 +4528,7 @@ export function PosAgentApp() {
                 className="flex-1 bg-green-600 hover:bg-green-700 text-white"
               >
                 <Check className="w-4 h-4 mr-2" />
-                {t.posAgent.addProduct}
+                {getText("addProduct")}
               </Button>
               <Button
                 onClick={() => {

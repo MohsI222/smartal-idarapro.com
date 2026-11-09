@@ -186,7 +186,7 @@ const alertTranslations = {
 // ----------------------------------------------------------------------
 export default function AutoRealEstateModule() {
   const { user, isAdmin, isApproved, approvedModules } = useAuth();
-  const { locale, t } = useI18n();
+  const { locale } = useI18n();
   const token = localStorage.getItem('idara_token');
   const autoRealEstateAllowed = isAdmin || (isApproved && approvedModules.includes("auto_real_estate"));
   
