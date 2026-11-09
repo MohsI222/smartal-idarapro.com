@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { GlobalAiAssistant } from "@/components/ai/GlobalAiAssistant";
 import { useAuth } from "@/context/AuthContext";
+import { useI18n } from "@/i18n/I18nProvider";
 import { api } from "@/lib/api";
 import { useServerEvents } from "@/hooks/useServerEvents";
 import html2pdf from 'html2pdf.js';
@@ -172,11 +173,20 @@ const TRANSLATIONS = {
   }
 };
 
+// Translation object for alerts
+const alertTranslations = {
+  ar: { rent: "كراء", insurance: "تأمين", tax: "ضريبة" },
+  en: { rent: "Rental", insurance: "Insurance", tax: "Tax" },
+  fr: { rent: "Location", insurance: "Assurance", tax: "Impôt" },
+  es: { rent: "Alquiler", insurance: "Seguro", tax: "Impuesto" }
+};
+
 // ----------------------------------------------------------------------
 // MAIN COMPONENT
 // ----------------------------------------------------------------------
 export default function AutoRealEstateModule() {
   const { user, isAdmin, isApproved, approvedModules } = useAuth();
+  const { locale, t } = useI18n();
   const token = localStorage.getItem('idara_token');
   const autoRealEstateAllowed = isAdmin || (isApproved && approvedModules.includes("auto_real_estate"));
   
@@ -190,7 +200,7 @@ export default function AutoRealEstateModule() {
     );
   }
   
-  const [lang, setLang] = useState<Lang>("ar");
+  const [lang, setLang] = useState<Lang>(locale as Lang || "ar");
   const [activeTab, setActiveTab] = useState<"dashboard" | "inventory" | "contracts" | "accounting">("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
   const [inventoryFilter, setInventoryFilter] = useState<ItemStatus | "All">("All");
@@ -231,7 +241,7 @@ export default function AutoRealEstateModule() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
 
   const t = TRANSLATIONS[lang];
-  const isRTL = lang === "ar";
+  const isRTL = locale === "ar";
 
   // LOAD DATA FROM NEON API - All users (including Super Admin) use the same endpoint
   // This ensures complete tenant isolation - each user sees only their own data
@@ -682,9 +692,9 @@ export default function AutoRealEstateModule() {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 7 && diffDays >= 0) {
-          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.rent})`, daysLeft: diffDays, urgency: 'warning', type: 'rent' });
+          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].rent})`, daysLeft: diffDays, urgency: 'warning', type: 'rent' });
         } else if (diffDays < 0) {
-          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.rent})`, daysLeft: diffDays, urgency: 'danger', type: 'rent' });
+          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].rent})`, daysLeft: diffDays, urgency: 'danger', type: 'rent' });
         }
       }
 
@@ -695,9 +705,9 @@ export default function AutoRealEstateModule() {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 30 && diffDays >= 0) {
-          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.insurance})`, daysLeft: diffDays, urgency: 'warning', type: 'insurance' });
+          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].insurance})`, daysLeft: diffDays, urgency: 'warning', type: 'insurance' });
         } else if (diffDays < 0) {
-          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.insurance})`, daysLeft: diffDays, urgency: 'danger', type: 'insurance' });
+          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].insurance})`, daysLeft: diffDays, urgency: 'danger', type: 'insurance' });
         }
       }
 
@@ -708,14 +718,14 @@ export default function AutoRealEstateModule() {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 30 && diffDays >= 0) {
-          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.tax})`, daysLeft: diffDays, urgency: 'warning', type: 'tax' });
+          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].tax})`, daysLeft: diffDays, urgency: 'warning', type: 'tax' });
         } else if (diffDays < 0) {
-          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.tax})`, daysLeft: diffDays, urgency: 'danger', type: 'tax' });
+          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${alertTranslations[locale as keyof typeof alertTranslations].tax})`, daysLeft: diffDays, urgency: 'danger', type: 'tax' });
         }
       }
     });
     return alerts.sort((a, b) => a.daysLeft - b.daysLeft);
-  }, [inventory]);
+  }, [inventory, locale]);
 
   const filteredInventory = useMemo(() => inventory.filter(item => {
     const matchesSearch = item.brandOrTitle.toLowerCase().includes(searchQuery.toLowerCase()) || item.plateOrAddress.toLowerCase().includes(searchQuery.toLowerCase());

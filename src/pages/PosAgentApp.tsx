@@ -70,7 +70,7 @@ type AgentView = "login" | "pos" | "dashboard" | "settings" | "returns";
 
 export function PosAgentApp() {
   const [searchParams] = useSearchParams();
-  const { locale: globalLocale, isRtl } = useI18n();
+  const { locale: globalLocale, isRtl, t } = useI18n();
   const [locale, setLocale] = useState(() => localStorage.getItem('pos_locale') || globalLocale || "ar");
   const urlToken = searchParams.get("token"); // Changed from "sessionToken" to "token"
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem('pos_session_sessionToken') || urlToken || null);
