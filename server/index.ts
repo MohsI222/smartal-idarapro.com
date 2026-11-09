@@ -7007,8 +7007,12 @@ app.get("/api/events", async (req, res) => {
   // Listen for database changes
   const onChange = (data: any) => {
     // Only send if the change is for this user's tenant
+    console.log(`[SSE] onChange called for user ${userId}, data:`, data);
     if (data.userId === userId || !data.userId) {
+      console.log(`[SSE] Sending event to user ${userId}:`, data);
       res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } else {
+      console.log(`[SSE] Skipping event - userId mismatch: data.userId=${data.userId}, expected=${userId}`);
     }
   };
 

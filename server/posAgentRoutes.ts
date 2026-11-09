@@ -474,6 +474,7 @@ router.post("/sales", async (req, res) => {
       ).run(line.quantity, line.product_id, (tokenData as any).user_id);
 
       // Emit SSE event for realtime sync to inventory dashboard
+      console.log("[POS Agent] Emitting SSE event for inventory update:", { userId: (tokenData as any).user_id, productId: line.product_id, quantity: line.quantity });
       emitDatabaseChange("UPDATE", "inventory_products", { userId: (tokenData as any).user_id, id: line.product_id });
 
       // Sync to Supabase for real-time updates

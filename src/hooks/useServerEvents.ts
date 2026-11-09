@@ -38,8 +38,12 @@ export function useServerEvents({
         console.log('[SSE] Received event:', data);
 
         // Filter by table if specified
-        if (table && data.table !== table) return;
+        if (table && data.table !== table) {
+          console.log(`[SSE] Skipping event - table mismatch: data.table=${data.table}, expected=${table}`);
+          return;
+        }
 
+        console.log(`[SSE] Processing event: ${data.event} for table: ${data.table}`);
         switch (data.event) {
           case 'INSERT':
             onInsert?.(data);
