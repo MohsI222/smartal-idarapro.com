@@ -75,6 +75,8 @@ export function PosAgentApp() {
   const urlToken = searchParams.get("token"); // Changed from "sessionToken" to "token"
   const [sessionToken, setSessionToken] = useState(() => localStorage.getItem('pos_session_sessionToken') || urlToken || null);
 
+  const isArabic = locale.startsWith("ar");
+
   const [currentView, setCurrentView] = useState<AgentView>("login");
   const [loading, setLoading] = useState(true);
   const [validatingToken, setValidatingToken] = useState(true);
