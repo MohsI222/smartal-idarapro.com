@@ -107,6 +107,12 @@ const TRANSLATIONS = {
     rent: "كراء",
     insurance: "تأمين",
     tax: "ضريبة",
+    alertsTitle: "تنبيهات التأمين والضرائب",
+    noAlerts: "لا توجد تنبيهات",
+    expiredAgo: "انتهى منذ",
+    expiresToday: "ينتهي اليوم!",
+    expiresIn: "ينتهي بعد",
+    days: "أيام",
   },
   fr: {
     dashboard: "Tableau", inventory: "Inventaire", contracts: "Contrats", accounting: "Comptabilité",
@@ -127,7 +133,13 @@ const TRANSLATIONS = {
     aiHeader: "Générateur Juridique", aiSub: "Rédaction juridique précise et rigoureuse",
     carRent: "Contrat Location Voiture", carSale: "Contrat Vente Voiture", propRent: "Contrat Location Immo", propSale: "Contrat Vente Immo",
     exportBilan: "Exporter Bilan Financier", revenue: "Revenus du Jour", expenses: "Dépenses du Jour", cashflow: "Flux de Trésorerie",
-    all: "Tout"
+    all: "Tout",
+    alertsTitle: "Alertes d'assurance et d'impôts",
+    noAlerts: "Aucune alerte",
+    expiredAgo: "Expiré depuis",
+    expiresToday: "Expire aujourd'hui!",
+    expiresIn: "Expire dans",
+    days: "jours",
   },
   en: {
     dashboard: "Dashboard", inventory: "Inventory", contracts: "Smart Contracts", accounting: "Accounting",
@@ -148,7 +160,13 @@ const TRANSLATIONS = {
     rent: "Rental",
     insurance: "Insurance",
     tax: "Tax",
-    all: "All"
+    all: "All",
+    alertsTitle: "Insurance & Tax Alerts",
+    noAlerts: "No alerts",
+    expiredAgo: "Expired",
+    expiresToday: "Expires today!",
+    expiresIn: "Expires in",
+    days: "days",
   },
   es: {
     dashboard: "Tablero", inventory: "Inventario", contracts: "Contratos", accounting: "Contabilidad",
@@ -169,7 +187,13 @@ const TRANSLATIONS = {
     rent: "Alquiler",
     insurance: "Seguro",
     tax: "Impuesto",
-    all: "Todo"
+    all: "Todo",
+    alertsTitle: "Alertas de seguro e impuestos",
+    noAlerts: "Sin alertas",
+    expiredAgo: "Expiró hace",
+    expiresToday: "¡Expira hoy!",
+    expiresIn: "Expira en",
+    days: "días",
   }
 };
 
@@ -1148,9 +1172,9 @@ export default function AutoRealEstateModule() {
               
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-1 bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-800 p-6 flex flex-col h-full overflow-hidden">
-                  <h3 className="flex items-center gap-2 font-bold text-lg mb-4 text-white"><Bell size={20} className="text-rose-400" /> تنبيهات التأمين والضرائب</h3>
+                  <h3 className="flex items-center gap-2 font-bold text-lg mb-4 text-white"><Bell size={20} className="text-rose-400" /> {t.alertsTitle}</h3>
                   {activeAlerts.length === 0 ? (
-                    <p className="text-slate-500 text-sm text-center py-6">لا توجد تنبيهات</p>
+                    <p className="text-slate-500 text-sm text-center py-6">{t.noAlerts}</p>
                   ) : (
                     <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 pr-1">
                       {activeAlerts.map(alert => {
@@ -1176,7 +1200,7 @@ export default function AutoRealEstateModule() {
                               <Clock size={16} className={`${typeIconColors[alert.type]} ${alert.urgency === 'danger' ? 'animate-pulse' : ''}`} />
                             </div>
                             <p className="text-xs text-slate-400">
-                              {alert.daysLeft < 0 ? `انتهى منذ ${Math.abs(alert.daysLeft)} أيام!` : alert.daysLeft === 0 ? 'ينتهي اليوم!' : `ينتهي بعد ${alert.daysLeft} أيام`}
+                              {alert.daysLeft < 0 ? `${t.expiredAgo} ${Math.abs(alert.daysLeft)} ${t.days}!` : alert.daysLeft === 0 ? t.expiresToday : `${t.expiresIn} ${alert.daysLeft} ${t.days}`}
                             </p>
                           </div>
                         );

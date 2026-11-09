@@ -2845,12 +2845,6 @@ export function PosAgentApp() {
         "fr": "Ajouter une dépense",
         "es": "Agregar gasto"
       },
-      "addProduct": {
-        "ar": "إضافة منتج",
-        "en": "Add Product",
-        "fr": "Ajouter un produit",
-        "es": "Agregar producto"
-      },
       "addProductNew": {
         "ar": "إضافة منتج جديد",
         "en": "Add New Product",
