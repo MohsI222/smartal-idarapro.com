@@ -1159,30 +1159,17 @@ export function InventoryPosModule() {
       
       console.log("submitQuickDraft - Sale API response:", saleResponse);
 
-      // Immediately refresh to show stock changes in POS Agent
-      await refreshInventoryTables();
-
       // Store draft lines for undo functionality
       const previousDraftLines = [...draftLines];
       setPreviousDraftLines(previousDraftLines);
-      
+
       setDraftLines([]);
       setManualTotalOverride("");
-      
-      // Update local state immediately without full refresh
-      setProducts((prevProducts) => 
-        prevProducts.map((product) => {
-          const soldLine = draftLines.find((l) => l.product_id === product.id);
-          if (soldLine) {
-            return {
-              ...product,
-              stock_pieces: Math.max(0, Number(product.stock_pieces || 0) - soldLine.qty_pieces),
-            };
-          }
-          return product;
-        })
-      );
-      
+
+      // Don't refresh manually - SSE will handle the refresh automatically
+      // This prevents double refresh and race conditions
+      // Also don't do optimistic updates - let SSE handle the refresh
+
       // Play success sound
       playSuccessSound();
       
