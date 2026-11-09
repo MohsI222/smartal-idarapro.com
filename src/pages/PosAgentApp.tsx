@@ -2837,6 +2837,48 @@ export function PosAgentApp() {
         "fr": "Ajouter une dépense",
         "es": "Agregar gasto"
       },
+      "addProduct": {
+        "ar": "إضافة منتج",
+        "en": "Add Product",
+        "fr": "Ajouter un produit",
+        "es": "Agregar producto"
+      },
+      "addProductNew": {
+        "ar": "إضافة منتج جديد",
+        "en": "Add New Product",
+        "fr": "Ajouter un nouveau produit",
+        "es": "Agregar nuevo producto"
+      },
+      "editProduct": {
+        "ar": "تعديل المنتج",
+        "en": "Edit Product",
+        "fr": "Modifier le produit",
+        "es": "Editar producto"
+      },
+      "editProductDesc": {
+        "ar": "قم بتعديل بيانات المنتج",
+        "en": "Edit product details",
+        "fr": "Modifier les détails du produit",
+        "es": "Editar detalles del producto"
+      },
+      "addProductDesc": {
+        "ar": "أدخل بيانات المنتج الجديد",
+        "en": "Enter new product details",
+        "fr": "Saisir les détails du nouveau produit",
+        "es": "Ingresar detalles del nuevo producto"
+      },
+      "barcodeNotFound": {
+        "ar": "الباركود",
+        "en": "Barcode",
+        "fr": "Code-barres",
+        "es": "Código de barras"
+      },
+      "enterProductDetails": {
+        "ar": "غير موجود. أدخل بيانات المنتج.",
+        "en": "not found. Enter product details.",
+        "fr": "introuvable. Saisir les détails du produit.",
+        "es": "no encontrado. Ingrese detalles del producto."
+      },
       "amount": {
         "ar": "المبلغ",
         "en": "Amount",
@@ -3115,7 +3157,7 @@ export function PosAgentApp() {
                         className="bg-green-600 border-green-500 text-white hover:bg-green-700"
                       >
                         <Package className="w-4 h-4 mr-2" />
-                        إضافة منتج
+                        {t.posAgent.addProduct}
                       </Button>
                       <Button
                         variant="outline"
@@ -3338,7 +3380,7 @@ export function PosAgentApp() {
                                   className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs py-1"
                                 >
                                   <ShoppingCart className="w-3 h-3 mr-1" />
-                                  إضافة
+                                  {t.posAgent.addedToCart}
                                 </Button>
                                 <Button
                                   size="sm"
@@ -4202,9 +4244,9 @@ export function PosAgentApp() {
       <Dialog open={showProductDialog} onOpenChange={setShowProductDialog}>
         <DialogContent className="bg-slate-900 border-white/20 text-white max-w-2xl max-h-[600px] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProduct ? "تعديل المنتج" : "إضافة منتج جديد"}</DialogTitle>
+            <DialogTitle>{editingProduct ? t.posAgent.editProduct : t.posAgent.addProductNew}</DialogTitle>
             <DialogDescription className="text-white/70">
-              {editingProduct ? "قم بتعديل بيانات المنتج" : "أدخل بيانات المنتج الجديد"}
+              {editingProduct ? t.posAgent.editProductDesc : t.posAgent.addProductDesc}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -4376,9 +4418,9 @@ export function PosAgentApp() {
       <Dialog open={showAddProductDialog} onOpenChange={setShowAddProductDialog}>
         <DialogContent className="bg-slate-900 border-white/20 text-white max-w-md">
           <DialogHeader>
-            <DialogTitle>إضافة منتج جديد</DialogTitle>
+            <DialogTitle>{t.posAgent.addProductNew}</DialogTitle>
             <DialogDescription className="text-white/70">
-              الباركود {newProductBarcode} غير موجود. أدخل بيانات المنتج.
+              {t.posAgent.barcodeNotFound} {newProductBarcode}. {t.posAgent.enterProductDetails}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -4480,7 +4522,7 @@ export function PosAgentApp() {
                 className="flex-1 bg-green-600 hover:bg-green-700 text-white"
               >
                 <Check className="w-4 h-4 mr-2" />
-                إضافة
+                {t.posAgent.addProduct}
               </Button>
               <Button
                 onClick={() => {

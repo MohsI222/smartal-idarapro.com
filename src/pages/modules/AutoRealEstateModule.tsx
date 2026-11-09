@@ -103,6 +103,9 @@ const TRANSLATIONS = {
     exportBilan: "تصدير القوائم المالية (Bilan)", revenue: "المدخول اليومي", expenses: "المصاريف اليومية", cashflow: "المالية الحالية (Cashflow)",
     all: "الكل",
     insuranceExpiry: "تاريخ انتهاء التأمين", taxExpiry: "تاريخ انتهاء الضرائب",
+    rent: "كراء",
+    insurance: "تأمين",
+    tax: "ضريبة",
   },
   fr: {
     dashboard: "Tableau", inventory: "Inventaire", contracts: "Contrats", accounting: "Comptabilité",
@@ -113,6 +116,9 @@ const TRANSLATIONS = {
     generateContract: "Générer Juridiquement", printStock: "Imprimer Stock (PDF)", export: "Exporter (CSV)",
     contractTitle: "Contrat de Vente / Location", contractGenDesc: "Générateur intelligent : remplissez les détails.",
     party1: "Première Partie", party2: "Deuxième Partie", inOut: "Entrées / Sorties",
+    rent: "Location",
+    insurance: "Assurance",
+    tax: "Impôt",
     addSuccess: "Produit enregistré avec succès!", deleteSuccess: "Produit supprimé!",
     insuranceExpiry: "Date d'expiration de l'assurance", taxExpiry: "Date d'expiration des impôts",
     dropzoneText: "Glissez et déposez les factures", uploadSuccess: "Fichier téléchargé!",
@@ -138,7 +144,31 @@ const TRANSLATIONS = {
     carRent: "Car Rental Contract", carSale: "Car Sale Contract", propRent: "Property Rental Contract", propSale: "Property Sale Contract",
     exportBilan: "Export Financial Bilan", revenue: "Today's Income", expenses: "Today's Expenses", cashflow: "Current Cashflow",
     insuranceExpiry: "Insurance Expiry Date", taxExpiry: "Tax Expiry Date",
+    rent: "Rental",
+    insurance: "Insurance",
+    tax: "Tax",
     all: "All"
+  },
+  es: {
+    dashboard: "Tablero", inventory: "Inventario", contracts: "Contratos", accounting: "Contabilidad",
+    totalProducts: "Stock Disponible", capitalInvested: "Valor de Activos", itemsSold: "Vendidos", activeRentals: "Alquileres Activos",
+    search: "Buscar...", addProduct: "Agregar Producto", editProduct: "Editar Producto",
+    brand: "Marca/Título", plate: "Matrícula/ID", specs: "Detalles", status: "Estado", price: "Precio", actions: "Acciones",
+    available: "Disponible", rented: "Alquilado", sold: "Vendido", maintenance: "Mantenimiento",
+    generateContract: "Generar Jurídicamente", printStock: "Imprimir Stock (PDF)", export: "Exportar (CSV)",
+    contractTitle: "Contrato de Venta / Alquiler", contractGenDesc: "Generador inteligente: llene los detalles.",
+    party1: "Primera Parte", party2: "Segunda Parte", inOut: "Entradas / Salidas",
+    addSuccess: "Producto guardado con éxito!", deleteSuccess: "Producto eliminado!",
+    insuranceExpiry: "Fecha de vencimiento del seguro", taxExpiry: "Fecha de vencimiento de impuestos",
+    dropzoneText: "Arrastra y suelta facturas aquí", uploadSuccess: "Archivo subido!",
+    save: "Guardar", cancel: "Cancelar", generating: "Redactando documento...",
+    aiHeader: "Generador de Contratos Legales", aiSub: "Redacción jurídica precisa y rigurosa",
+    carRent: "Contrato Alquiler Vehículo", carSale: "Contrato Venta Vehículo", propRent: "Contrato Alquiler Inmueble", propSale: "Contrato Venta Inmueble",
+    exportBilan: "Exportar Balance Financiero", revenue: "Ingresos del Día", expenses: "Gastos del Día", cashflow: "Flujo de Caja",
+    rent: "Alquiler",
+    insurance: "Seguro",
+    tax: "Impuesto",
+    all: "Todo"
   }
 };
 
@@ -652,9 +682,9 @@ export default function AutoRealEstateModule() {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 7 && diffDays >= 0) {
-          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (كراء)`, daysLeft: diffDays, urgency: 'warning', type: 'rent' });
+          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.rent})`, daysLeft: diffDays, urgency: 'warning', type: 'rent' });
         } else if (diffDays < 0) {
-          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (كراء)`, daysLeft: diffDays, urgency: 'danger', type: 'rent' });
+          alerts.push({ id: `${item.id}-rent`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.rent})`, daysLeft: diffDays, urgency: 'danger', type: 'rent' });
         }
       }
 
@@ -665,9 +695,9 @@ export default function AutoRealEstateModule() {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 30 && diffDays >= 0) {
-          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (تأمين)`, daysLeft: diffDays, urgency: 'warning', type: 'insurance' });
+          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.insurance})`, daysLeft: diffDays, urgency: 'warning', type: 'insurance' });
         } else if (diffDays < 0) {
-          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (تأمين)`, daysLeft: diffDays, urgency: 'danger', type: 'insurance' });
+          alerts.push({ id: `${item.id}-insurance`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.insurance})`, daysLeft: diffDays, urgency: 'danger', type: 'insurance' });
         }
       }
 
@@ -678,9 +708,9 @@ export default function AutoRealEstateModule() {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         if (diffDays <= 30 && diffDays >= 0) {
-          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (ضريبة)`, daysLeft: diffDays, urgency: 'warning', type: 'tax' });
+          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.tax})`, daysLeft: diffDays, urgency: 'warning', type: 'tax' });
         } else if (diffDays < 0) {
-          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (ضريبة)`, daysLeft: diffDays, urgency: 'danger', type: 'tax' });
+          alerts.push({ id: `${item.id}-tax`, title: `${item.brandOrTitle} - ${item.plateOrAddress} (${t.autoRealEstate.tax})`, daysLeft: diffDays, urgency: 'danger', type: 'tax' });
         }
       }
     });

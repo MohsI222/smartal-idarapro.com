@@ -1,6 +1,7 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { db } from "./db.js";
+import { emitDatabaseChange } from "./eventEmitter.js";
 
 // Helper function to update Supabase for real-time sync
 async function updateSupabaseStock(productId: string, _stockChange: number, userId: string) {
@@ -471,7 +472,10 @@ router.post("/sales", async (req, res) => {
          SET stock_pieces = stock_pieces - ?
          WHERE id = ? AND user_id = ?`
       ).run(line.quantity, line.product_id, (tokenData as any).user_id);
-      
+
+      // Emit SSE event for realtime sync to inventory dashboard
+      emitDatabaseChange("UPDATE", "inventory_products", { userId: (tokenData as any).user_id, id: line.product_id });
+
       // Sync to Supabase for real-time updates
       await updateSupabaseStock(line.product_id, -line.quantity, (tokenData as any).user_id);
     }
@@ -1450,7 +1454,10 @@ router.post("/standalone-returns", async (req, res) => {
          SET stock_pieces = stock_pieces + ?
          WHERE id = ? AND user_id = ?`
       ).run(line.quantity, line.product_id, (tokenData as any).user_id);
-      
+
+      // Emit SSE event for realtime sync to inventory dashboard
+      emitDatabaseChange("UPDATE", "inventory_products", { userId: (tokenData as any).user_id, id: line.product_id });
+
       console.log("[POS Agent] Return stock update result:", { productId: line.product_id, quantity: line.quantity, changes: updateResult.changes });
       
       // Sync to Supabase for real-time updates
